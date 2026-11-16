@@ -5,7 +5,7 @@
             "label": "Chat & Widget",
             "icon": "messages-square",
             "doctype": "FAC Chat Settings",
-            "units": ["ui_settings_tab", "retention_tab"]
+            "units": ["ui_settings_tab", "chat_relay_section", "retention_tab"]
         },
         {
             "key": "other_apps",
@@ -35,7 +35,7 @@
             "label": "Security",
             "icon": "shield",
             "doctype": "Assistant Core Settings",
-            "units": ["execution_limits_section", "audit_log_section"]
+            "units": ["execution_limits_section", "audit_log_section", "data_migration_section"]
         },
         {
             "key": "ocr",

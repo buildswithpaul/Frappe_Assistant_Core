@@ -30,6 +30,15 @@
 				@reject="(blockId, responses) => $emit('reject', blockId, responses)"
 			/>
 
+			<!-- Switch-on writes in one pause: one Go-live card, each one's code a click away -->
+			<GoLiveCard
+				v-else-if="segment.type === 'go_live_batch'"
+				:blocks="segment.blocks"
+				:submitting="isResuming"
+				@approve="(blockId, responses) => $emit('approve', blockId, responses)"
+				@reject="(blockId, responses) => $emit('reject', blockId, responses)"
+			/>
+
 			<!-- Interaction Card: HITL approval + LLM questions -->
 			<InteractionCard
 				v-else-if="segment.type === 'interaction'"
@@ -97,6 +106,24 @@
 				:block="segment"
 			/>
 
+			<!-- The user's answer to a question FACO asked, where they gave it (#34546) -->
+			<UserAnswer v-else-if="segment.type === 'user_answer'" :text="segment.text" />
+
+			<!-- A mapping this turn saved: the user can review and change it here (#34415) -->
+			<MappingReviewBlock
+				v-else-if="segment.type === 'mapping_review'"
+				:session="segment.session"
+			/>
+
+			<!-- An import this turn started: its progress, live while it runs (#34416) -->
+			<ImportProgressBlock
+				v-else-if="segment.type === 'import_progress'"
+				:session="segment.session"
+			/>
+
+			<!-- A migration plan this turn ran: each file's status while it runs (#34351) -->
+			<PlanProgressBlock v-else-if="segment.type === 'plan_progress'" :plan="segment.plan" />
+
 			<!-- Records this turn created without asking, each with Undo. -->
 			<ChangesBlock
 				v-else-if="segment.type === 'changes_made'"
@@ -119,7 +146,11 @@
 		</div>
 
 		<!-- Processing indicator when waiting between blocks -->
-		<ProcessingIndicator v-if="showProcessingIndicator" :blocks="blocks" />
+		<ProcessingIndicator
+			v-if="showProcessingIndicator"
+			:blocks="blocks"
+			:busy-retrying="busyRetrying"
+		/>
 	</div>
 </template>
 
@@ -130,12 +161,20 @@ import ProcessingIndicator from "./ProcessingIndicator.vue";
 import InteractionCard from "./InteractionCard.vue";
 import QuestionGroupCard from "./interactions/QuestionGroupCard.vue";
 import BatchedApprovalCard from "./interactions/BatchedApprovalCard.vue";
+import GoLiveCard from "./interactions/GoLiveCard.vue";
 import { findApprovalBatch } from "./interactions/approvalBatch";
+import { findGoLiveBatch } from "./interactions/goLiveBatch";
 import ChangesBlock from "./ChangesBlock.vue";
 import { findQuestionGroups } from "./interactions/questionGroup";
 import SourcesBlock from "./SourcesBlock.vue";
 import GeneratedDocumentsBlock from "./GeneratedDocumentsBlock.vue";
 import WorkflowCreatedBlock from "./WorkflowCreatedBlock.vue";
+import ImportProgressBlock from "./ImportProgressBlock.vue";
+import MappingReviewBlock from "./MappingReviewBlock.vue";
+import PlanProgressBlock from "./PlanProgressBlock.vue";
+import UserAnswer from "./interactions/UserAnswer.vue";
+import { userAnswer } from "./interactions/userAnswer";
+import { mappingSteps, startedImports, startedPlans } from "@/utils/importSessions";
 import FacPageChip from "./pages/FacPageChip.vue";
 import { usePagePanel } from "@/composables/usePagePanel";
 import { chipsForMessage } from "@/utils/pageChips";
@@ -168,6 +207,11 @@ const props = defineProps({
 	// resolved, but the message streams again only once the resume's first event
 	// lands (chatStore.isSubmittingInterrupts spans that round trip).
 	isResuming: {
+		type: Boolean,
+		default: false,
+	},
+	// FAC is waiting to re-open a stream AR refused because it was busy.
+	busyRetrying: {
 		type: Boolean,
 		default: false,
 	},
@@ -235,13 +279,22 @@ const groupedContent = computed(() => {
 	let sealedByApproval = false;
 	const questionGroups = findQuestionGroups(props.blocks);
 	const grouped = new Set([...questionGroups.values()].flat().map((b) => b.id));
-	const approvalBatch = findApprovalBatch(props.blocks);
+	const goLiveBatch = findGoLiveBatch(props.blocks);
+	const goingLive = new Set(goLiveBatch.map((b) => b.id));
+	const approvalBatch = findApprovalBatch(props.blocks.filter((b) => !goingLive.has(b.id)));
 	const batched = new Set(approvalBatch.map((b) => b.id));
 	// The changes list sits under the answer, wherever the turn's events placed its block.
 	const changeLists = props.blocks.filter((b) => b.type === "changes_made" && b.changes?.length);
 
 	for (const block of props.blocks) {
-		if (block.type === "interaction" && batched.has(block.id)) {
+		if (block.type === "interaction" && goingLive.has(block.id)) {
+			// The whole batch renders where its first switch-on sits.
+			if (block.id === goLiveBatch[0].id) {
+				currentGroup = null;
+				sealedByApproval = false;
+				segments.push({ type: "go_live_batch", id: `gl_${block.id}`, blocks: goLiveBatch });
+			}
+		} else if (block.type === "interaction" && batched.has(block.id)) {
 			// The whole batch renders where its first approval sits.
 			if (block.id === approvalBatch[0].id) {
 				currentGroup = null;
@@ -277,6 +330,13 @@ const groupedContent = computed(() => {
 				} else {
 					segments.push(block);
 				}
+				const answer = userAnswer(block);
+				if (answer) {
+					// The user's words show as theirs, where they said them; the steps after start below
+					segments.push({ type: "user_answer", id: `ua_${block.id}`, text: answer });
+					currentGroup = null;
+					sealedByApproval = false;
+				}
 			}
 		} else if (block.type === "thinking" || block.type === "tool_call") {
 			if (!currentGroup || sealedByApproval) {
@@ -310,6 +370,25 @@ const groupedContent = computed(() => {
 		}
 	}
 
+	// Derived from the tool_call blocks at render time, so a reloaded conversation keeps them.
+	const importing = startedImports(props.blocks);
+	// a session this turn also imported shows its progress, not a mapping that can't change now.
+	// Each review sits with the step that saved its mapping, after what the turn said about it:
+	// at the end, it fell below a later "the import is running" (DM53).
+	const reviews = mappingSteps(props.blocks).filter((step) => !importing.includes(step.session));
+	for (const step of reviews.slice().reverse()) {
+		let at = segments.findIndex((s) => s.blocks?.some((b) => b.id === step.blockId));
+		if (at === -1) at = segments.length - 1;
+		at += 1;
+		while (segments[at]?.type === "text") at += 1;
+		segments.splice(at, 0, { type: "mapping_review", id: `mapping_review:${step.session}`, session: step.session });
+	}
+	for (const session of importing) {
+		segments.push({ type: "import_progress", id: `import_progress:${session}`, session });
+	}
+	for (const plan of startedPlans(props.blocks)) {
+		segments.push({ type: "plan_progress", id: `plan_progress:${plan}`, plan });
+	}
 	segments.push(...changeLists);
 
 	// Derived from the tool_call blocks at render time, so a reloaded conversation keeps its chips.

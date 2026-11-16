@@ -4,7 +4,7 @@
 (function () {
 	// Desk's build version (v15 and v16 set it in the page template), so a rebuilt kit is refetched.
 	const KIT_CSS_URL = `/assets/frappe_assistant_core/css/mockup_kit.css?v=${window._version_number || ""}`;
-	// fac.chart, built from the chat's pageCharts module (vite.pagecharts.config.js).
+	// fac.chart and fac.report, built from the chat's pageFacBundle module (vite.pagecharts.config.js).
 	const CHARTS_URL = `/assets/frappe_assistant_core/js/fac_page_charts.js?v=${window._version_number || ""}`;
 	// A personal page's frame and bridge, built from the chat's pageFrameHost module
 	// (vite.pageframehost.config.js).
@@ -19,10 +19,14 @@
 	let shown = null;
 	// The personal page's frame shown, disposed when the user moves on.
 	let shown_frame = null;
+	// The page shown, whose theme follows Desk's unless it sets its own colours.
+	let shown_data = null;
 
 	// fac_page_draft_srcdoc and fac_page_draft_frame, inlined by render_include on page load.
 	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_draft.js" %}
-	// fac_page_index, inlined the same way.
+	// fac_page_card and fac_page_index, the Pages gallery, inlined the same way; the card first,
+	// since the gallery builds its cards with it.
+	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_card.js" %}
 	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_index.js" %}
 	// fac_page_frappe, the frappe a Shared page's script gets, inlined the same way.
 	// {% include "frappe_assistant_core/assistant_core/page/fac_pages/fac_page_frappe.js" %}
@@ -67,6 +71,7 @@
 	// FAC Chat. The chat link shows only to those who can.
 	function show_index(page, is_latest) {
 		dispose_shown();
+		clear_header_actions(page);
 		page.set_title(__("Pages"));
 		show_message(page, __("Loading…"));
 		const pages = frappe.xcall("frappe_assistant_core.api.fac_page.list_pages", {}, "GET");
@@ -74,15 +79,22 @@
 			.xcall("frappe_assistant_core.chat.api.settings.access.can_use_faco", {}, "GET")
 			.then((access) => Boolean(access && access.can_use))
 			.catch(() => false);
-		Promise.all([pages, chat])
-			.then(([list, can_chat]) => {
+		Promise.all([pages, chat, load_kit()])
+			.then(([list, can_chat, kit_css]) => {
 				if (!is_latest()) return;
+				const actions = gallery_actions(page, is_latest);
+				if (can_chat) {
+					page.set_primary_action(__("New page"), actions.new_page);
+					page.set_secondary_action(__("Open in FAC Chat"), () => (window.location.href = "/copilot/pages"));
+				}
 				page.main.empty().append(
 					fac_page_index({
 						pages: list,
 						href: (name) => frappe.router.make_url(["fac-pages", name]),
 						updated: (modified) => frappe.datetime.prettyDate(modified),
-						chat_url: can_chat ? "/copilot/pages" : "",
+						kit_css,
+						can_chat,
+						actions,
 					})
 				);
 			})
@@ -91,8 +103,43 @@
 			});
 	}
 
+	function clear_header_actions(page) {
+		page.clear_primary_action();
+		page.clear_secondary_action();
+	}
+
+	// FACO asks in a chat, so Edit and Share open one with the request waiting in its composer and
+	// the page beside it (usePromptFromRoute). Rename and Delete go through frappe.client, so the
+	// FAC Page controller and its permissions decide; the gallery only offers what they allow.
+	function gallery_actions(page, is_latest) {
+		const chat = (prompt, name) =>
+			(window.location.href =
+				`/copilot/chat?prompt=${encodeURIComponent(prompt)}` + (name ? `&page=${encodeURIComponent(name)}` : ""));
+		const reload = () => is_latest() && show_index(page, is_latest);
+		return {
+			new_page: () => chat(`${__("Build me a page that")} `),
+			edit: (p) => chat(`${__("Change my page “{0}” ({1}):", [p.title, p.name])} `, p.name),
+			share: (p) => chat(__("Share my page “{0}” ({1}) with my team", [p.title, p.name]), p.name),
+			rename: (p) =>
+				frappe.prompt(
+					{ fieldname: "title", fieldtype: "Data", label: __("Title"), reqd: 1, default: p.title },
+					({ title }) =>
+						frappe
+							.xcall("frappe.client.set_value", { doctype: "FAC Page", name: p.name, fieldname: "title", value: title })
+							.then(reload),
+					__("Rename page"),
+					__("Rename")
+				),
+			remove: (p) =>
+				frappe.confirm(fac_page_delete_message(p.title), () =>
+					frappe.xcall("frappe.client.delete", { doctype: "FAC Page", name: p.name }).then(reload)
+				),
+		};
+	}
+
 	function render(page, name, data, is_latest) {
 		dispose_shown();
+		clear_header_actions(page);
 		page.set_title(data.title);
 		// Only a page that says it is not a draft runs, so a response missing the flag fails closed.
 		if (data.draft !== false) {
@@ -100,6 +147,7 @@
 			return;
 		}
 		page.main.empty();
+		if (data.draft === false) page.set_secondary_action(__("Present"), () => present(page, data, is_latest));
 		// Only a page that says it is Shared runs in Desk itself; any other runs in the frame.
 		if (data.visibility === "Shared") render_shared(page, data, is_latest);
 		else render_personal(page, name, data, is_latest);
@@ -113,6 +161,7 @@
 		ready.then(() => {
 			if (!is_latest()) return;
 			shown = make_fac();
+			shown_data = data;
 			const frame = document.createElement("div");
 			frame.className = "fac-page-frame";
 			frame.style.cssText = PAGE_FRAME_STYLE;
@@ -125,8 +174,10 @@
 				host,
 				`<div class="fac-page-root">${data.html || ""}</div>`,
 				css,
-				with_page_globals(script)
+				with_page_globals(script, fac_page_theme_of(data))
 			);
+			// Also set here: a page whose script does not parse never runs the line that sets it.
+			set_shadow_theme(fac_page_theme_of(data));
 		});
 	}
 
@@ -144,15 +195,18 @@
 			const box = document.createElement("div");
 			box.className = "fac-page-frame";
 			box.style.cssText = PAGE_FRAME_STYLE;
+			shown_data = data;
 			shown_frame = host.createPageFrame({
 				page: data,
 				kitCss: kit_css,
+				theme: fac_page_theme_of(data),
 				user: frappe.session.user,
 				version: window._version_number || "",
 				pageName: name,
 				transport: host.fetchTransport(() => frappe.csrf_token),
 				askUser: (request) => ask_user(prompts, request),
 				onHeight: (height) => (shown_frame.element.style.height = `${Math.max(height, 200)}px`),
+				onPresentKey: (key) => presenting && presenting.key(key),
 			});
 			shown_frame.element.style.cssText = "display:block;width:100%;height:480px;border:0;";
 			box.append(shown_frame.element);
@@ -292,12 +346,87 @@
 		});
 	}
 
+	// Present mode (pagePresent.js, in the charts bundle): a shared page's sections are switched in
+	// its shadow root here; a personal page switches its own inside its frame. `presenting` is a
+	// start token until the controls are up, then their handle, so a second press, a stop or a move
+	// away while starting never leaves a second presentation or a stray key listener behind.
+	let presenting = null;
+	function present(page, data, is_latest) {
+		if (presenting) return;
+		const token = {};
+		presenting = token;
+		const give_up = () => {
+			if (presenting === token) presenting = null;
+		};
+		load_script(CHARTS_URL, "charts").then(() => {
+			const bundle = window.fac_page_charts;
+			const box = page.main.find(".fac-page-frame").get(0);
+			// create_shadow_element puts the shadow root on a custom element inside the box.
+			const shadow_host = box && [...box.querySelectorAll("*")].find((el) => el.shadowRoot);
+			if (presenting !== token || !is_latest() || !bundle || !box) return give_up();
+			if (data.visibility === "Shared" && !shadow_host) return give_up();
+			const deck =
+				data.visibility === "Shared" ? bundle.makePresenter(shadow_host.shadowRoot) : bundle.remoteDeck(shown_frame);
+			let handle = null;
+			bundle
+				.mountPresentControls({
+					container: box,
+					deck,
+					theme: () => fac_page_theme_of(data),
+					onExit: () => {
+						if (presenting === handle || presenting === token) presenting = null;
+					},
+				})
+				.then((started) => {
+					handle = started;
+					if (presenting !== token || !is_latest() || !started.active) {
+						started.stop();
+						return give_up();
+					}
+					presenting = started;
+				})
+				.catch(() => {
+					give_up();
+					frappe.show_alert({ message: __("This page could not be presented."), indicator: "orange" });
+				});
+		});
+	}
+
+	function stop_presenting() {
+		if (presenting && presenting.stop) presenting.stop();
+		presenting = null;
+	}
+
+	// Leaving fac-pages for another Desk page stops presenting, so its keys are Desk's again.
+	frappe.pages["fac-pages"].on_page_hide = stop_presenting;
+
+	function set_shadow_theme(theme) {
+		document.querySelectorAll(".fac-page-frame *").forEach((el) => {
+			if (el.shadowRoot) el.setAttribute("data-theme", theme);
+		});
+	}
+
+	// Desk's theme changed: the page shown follows it, unless it sets its own colours, and a draft or
+	// a preview that follows it, which runs nothing, is redrawn in it.
+	new MutationObserver(() => {
+		if (shown_data) {
+			set_shadow_theme(fac_page_theme_of(shown_data));
+			if (shown_frame && shown_frame.setTheme) shown_frame.setTheme(fac_page_theme_of(shown_data));
+		}
+		const theme = fac_page_theme();
+		document.querySelectorAll("iframe[data-fac-follows-theme]").forEach((frame) => {
+			frame.srcdoc = frame.srcdoc.replace(/^<!doctype html><html data-theme="\w+">/, `<!doctype html><html data-theme="${theme}">`);
+		});
+	}).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
 	function dispose_shown() {
+		stop_presenting();
 		dispose_shown_charts();
 		open_prompts.forEach((decide) => decide(false));
 		prompt_chain = Promise.resolve();
 		if (shown_frame) shown_frame.dispose();
 		shown_frame = null;
+		shown_data = null;
 	}
 
 	function load_kit() {
@@ -326,7 +455,8 @@
 		return loaded[key];
 	}
 
-	// fac.chart as the chat panel offers it, recording each chart so the next render disposes it.
+	// fac.chart and fac.report as the chat panel offers them, recording each chart so the next render
+	// disposes it.
 	function make_fac() {
 		const handles = [];
 		const fac = {
@@ -339,7 +469,16 @@
 				if (!shown || shown.fac !== fac) dispose();
 				return handle;
 			},
+			report(name, filters) {
+				const bundle = window.fac_page_charts;
+				if (!bundle) throw new Error(__("Reports could not be loaded"));
+				return bundle.report(frappe, name, filters);
+			},
 		};
+		// The page tools, from the same bundle; loaded before the script runs (render_shared). They
+		// send their calls with fetch, so a refused save opens no Desk dialog over the page.
+		const bundle = window.fac_page_charts;
+		if (bundle && bundle.deskBlocks) Object.assign(fac, bundle.deskBlocks(frappe, () => frappe.csrf_token));
 		const dispose = () => handles.splice(0).forEach((handle) => handle.dispose());
 		return { fac, dispose };
 	}
@@ -354,11 +493,14 @@
 	// starts. The chat panel runs it as new Function("root_element", "frappe", "__", "fac", script),
 	// so here it runs as a function of fac and frappe as well: the same scoping, no global named
 	// fac, and a frappe.format that returns text as the panel's does (fac_page_frappe.js).
-	function with_page_globals(script) {
+	function with_page_globals(script, theme) {
 		const entry = frappe.pages["fac-pages"];
 		entry.fac = shown.fac;
 		entry.page_frappe = entry.page_frappe || fac_page_frappe(frappe);
+		// The kit's dark tokens key on the shadow host, so it carries Desk's theme before the page's
+		// script runs; a chart the script draws reads it.
 		return (
+			`root_element.host.setAttribute("data-theme", ${JSON.stringify(theme === "dark" ? "dark" : "light")});\n` +
 			`(function (fac, frappe) {\n${script}\n})` +
 			`(frappe.pages["fac-pages"].fac, frappe.pages["fac-pages"].page_frappe);`
 		);
@@ -374,7 +516,10 @@
 				.empty()
 				.append(
 					$('<p class="text-muted"></p>').text(__("Draft. Scripts run once the page is published.")),
-					fac_page_draft_frame({ html: data.html, style: data.style, kit_css })
+					fac_page_mark_follows_theme(
+						fac_page_draft_frame({ html: data.html, style: data.style, kit_css, theme: fac_page_theme_of(data) }),
+						data
+					)
 				);
 		});
 	}

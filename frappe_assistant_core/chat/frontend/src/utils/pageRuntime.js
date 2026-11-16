@@ -48,13 +48,22 @@ function guard(target, path, report) {
 	});
 }
 
+/** A failed call as FACO's page_errors reads it: the method, the HTTP status when the server answered, and the message. */
+export function failedCallText(method, error) {
+	const message = String(error?.userMessage || error?.message || __("The request failed"));
+	const status = Number(error?.status) || 0;
+	return status
+		? __("{0} failed (HTTP {1}): {2}", [method, status, message])
+		: __("{0} failed: {1}", [method, message]);
+}
+
 /**
  * The `frappe` a page script sees in the panel.
  *
  * @param {{baseCall: Function, getCall: Function, user: string}} api the SPA transport and session user
- * @param {{onUnsupported?: (name: string) => void, onError?: (error: Error) => void, formatSettings?: object}} options
- *   `onUnsupported` gets each unsupported member's path; `onError` gets a failed call the script
- *   passed no error callback for, which would otherwise leave part of the page silently empty.
+ * @param {{onUnsupported?: (name: string) => void, onError?: (error: Error, method: string) => void, formatSettings?: object}} options
+ *   `onUnsupported` gets each unsupported member's path; `onError` gets a failed call the script passed no
+ *   error callback for, with its method, which would otherwise leave part of the page silently empty.
  *   `formatSettings` is get_page's `format_settings`, so `frappe.format` and
  *   `frappe.datetime.str_to_user` show what Desk shows (pageFormat.js).
  */
@@ -84,7 +93,7 @@ export function makeFrappeStandIn(api, { onUnsupported, onError, formatSettings 
 			},
 			(error) => {
 				if (o.error) o.error(error);
-				else onError?.(error);
+				else onError?.(error, o.method);
 				throw error;
 			},
 		);

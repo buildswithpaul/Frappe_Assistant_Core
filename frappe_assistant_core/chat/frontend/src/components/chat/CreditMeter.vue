@@ -12,6 +12,7 @@
 			<div class="meter-fill" :style="{ width: `${clampedPercent}%` }"></div>
 		</div>
 		<span class="meter-label">{{ label }}</span>
+		<span v-if="scope.stale" class="meter-stale">{{ __("May be out of date") }}</span>
 	</button>
 </template>
 
@@ -112,6 +113,13 @@ function formatCredits(value) {
 	border-radius: 999px;
 	background: var(--ql-accent, #0f766e);
 	transition: width 0.4s ease;
+}
+
+.meter-stale {
+	font-size: 0.75rem;
+	color: var(--ql-text-muted, #6b7280);
+	white-space: nowrap;
+	font-style: italic;
 }
 
 .meter-label {

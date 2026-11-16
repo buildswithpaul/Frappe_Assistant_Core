@@ -71,6 +71,13 @@ class TestSDKPin(unittest.TestCase):
 
         self.assertIn("reasoning_effort", inspect.signature(AssistantRuntimeClient.stream_chat).parameters)
 
+    def test_the_installed_sdk_streams_with_a_low_balance_confirmation(self):
+        import inspect
+
+        from assistant_runtime_sdk.client import AssistantRuntimeClient
+
+        self.assertIn("confirm_low_balance", inspect.signature(AssistantRuntimeClient.stream_chat).parameters)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,11 +6,29 @@ function make(query, isNew = true) {
 	const route = reactive({ path: "/chat", query });
 	const router = { replace: vi.fn() };
 	const pendingPrompt = ref("");
-	usePromptFromRoute({ route, router, pendingPrompt, isNewChat: () => isNew });
-	return { route, router, pendingPrompt };
+	const openPage = vi.fn();
+	usePromptFromRoute({ route, router, pendingPrompt, isNewChat: () => isNew, openPage });
+	return { route, router, pendingPrompt, openPage };
 }
 
 describe("usePromptFromRoute", () => {
+	it("opens the named page beside a new chat whose prompt it fills, and strips both params", () => {
+		// The Desk Pages gallery links Edit with FACO and Share as /copilot/chat?prompt=…&page=<name>.
+		const { router, openPage, pendingPrompt } = make({ prompt: "Change my page", page: "payment-tracker-3fa9c1" });
+		expect(pendingPrompt.value).toBe("Change my page");
+		expect(openPage).toHaveBeenCalledWith("payment-tracker-3fa9c1");
+		const query = router.replace.mock.calls[0][0].query;
+		expect(query.prompt).toBeUndefined();
+		expect(query.page).toBeUndefined();
+		expect("page" in query).toBe(true);
+	});
+	it("opens no page for an existing chat, and still strips both params", () => {
+		const { router, openPage } = make({ prompt: "hi", page: "p" }, false);
+		expect(openPage).not.toHaveBeenCalled();
+		const query = router.replace.mock.calls[0][0].query;
+		expect([query.prompt, query.page]).toEqual([undefined, undefined]);
+	});
+
 	it("prefills a new chat and strips the query", () => {
 		const { router, pendingPrompt } = make({ prompt: "Show overdue invoices" });
 		expect(pendingPrompt.value).toBe("Show overdue invoices");

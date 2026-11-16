@@ -34,6 +34,7 @@ import { routingPreferences } from "./domains/routingPreferences";
 import { sharedKnowledge } from "./domains/sharedKnowledge";
 import { suggestions } from "./domains/suggestions";
 import { home } from "./domains/home";
+import { imports } from "./domains/imports";
 import { support } from "./domains/support";
 import { templates } from "./domains/templates";
 import { tools } from "./domains/tools";
@@ -63,6 +64,7 @@ export const api = {
 	registration,
 	suggestions,
 	home,
+	imports,
 	support,
 	templates,
 	models,

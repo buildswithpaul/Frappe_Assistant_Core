@@ -6,6 +6,7 @@ vi.mock("@/api/client", () => ({
 }));
 import { api } from "@/api/client";
 import { useNotificationStore } from "@/stores/notificationStore";
+import { useUserStore } from "@/stores/userStore";
 
 const N = (over = {}) => ({
 	id: "n1", title: "t", message: "m", type: "info", priority: "normal",
@@ -16,6 +17,8 @@ const N = (over = {}) => ({
 describe("notificationStore", () => {
 	beforeEach(() => {
 		setActivePinia(createPinia());
+		// Production sets "ready" once the access check answers.
+		useUserStore().registrationStatus = "ready";
 		localStorage.clear();
 		vi.useFakeTimers();
 		api.notifications.get.mockReset();

@@ -104,6 +104,7 @@ import ThinkingLevelMenu from "@/components/chat/ThinkingLevelMenu.vue";
 import AttachedFilePreview from "@/components/chat/AttachedFilePreview.vue";
 import InputToolbar from "@/components/chat/InputToolbar.vue";
 import { keepComposerFocus, onComposerFocusRequest } from "@/composables/useComposerFocus";
+import { onComposerFiles } from "@/composables/useComposerFileDrop";
 import {
 	useComposerAttachments,
 	UPLOAD_ACCEPT_ATTR,
@@ -148,12 +149,15 @@ const MAX_TEXTAREA_HEIGHT = 240;
 const {
 	attachedFiles,
 	fileInput,
+	addFiles,
 	triggerFileInput,
 	handleFileSelect,
 	handlePaste,
 	removeFile,
 	clearAttachments,
 } = useComposerAttachments(emit);
+// Files dropped anywhere on the chat come here, the way the attach button's do.
+onComposerFiles(addFiles);
 
 const message = ref("");
 const textInput = ref(null);

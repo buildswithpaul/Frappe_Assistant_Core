@@ -20,6 +20,8 @@ const TOOL_PHRASING = {
 	list_documents: { verb: "Listed", noun: "records" },
 	get_document: { verb: "Read", noun: "record" },
 	get_doctype_info: { verb: "Read", noun: "doctype" },
+	get_import_schema: { verb: "Read", noun: "import fields" },
+	set_column_mapping: { verb: "Saved", noun: "column mapping" },
 	run_database_query: { verb: "Queried", noun: "the database" },
 	create_document: { verb: "Prepared", noun: "new record" },
 	update_document: { verb: "Prepared", noun: "update" },

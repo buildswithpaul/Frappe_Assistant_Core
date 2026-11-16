@@ -16,6 +16,8 @@ export const ALLOWED_UPLOAD_EXTENSIONS = [
 	".csv",
 	".json",
 	".xml",
+	".xlsx",
+	".xls",
 ];
 
 const ALLOWED_EXTENSION_SET = new Set(ALLOWED_UPLOAD_EXTENSIONS);
@@ -50,7 +52,14 @@ export function useComposerAttachments(emit) {
 		}
 		if (!accepted.length) return;
 		attachedFiles.value.push(...accepted);
-		emit("file-upload", accepted);
+		emit("file-upload", accepted, dropFile);
+	}
+
+	// Handed to the upload handler so a file the server rejects doesn't stay
+	// staged as a chip with nothing uploaded behind it.
+	function dropFile(file) {
+		const index = attachedFiles.value.indexOf(file);
+		if (index !== -1) attachedFiles.value.splice(index, 1);
 	}
 
 	function handleFileSelect(event) {
@@ -90,6 +99,7 @@ export function useComposerAttachments(emit) {
 	return {
 		attachedFiles,
 		fileInput,
+		addFiles,
 		triggerFileInput,
 		handleFileSelect,
 		handlePaste,

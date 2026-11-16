@@ -48,6 +48,7 @@ PRIVILEGED_TOOLS = {
     "run_database_query",
     "delete_document",
     "document_action",  # can cancel, which reverses accounting and stock entries
+    "run_migration_plan",  # creates masters and imports every file of a plan, submitting opening entries
 }
 
 # Tools that are always categorized as read_only (hardcoded list)
@@ -62,6 +63,7 @@ READ_ONLY_TOOLS = {
     # Metadata tools
     "get_doctype_info",
     "metadata_doctype",
+    "get_import_schema",  # Reads metadata; its create/import checks only decide what to report
     # Report tools
     "report_execute",
     "report_list",
@@ -94,12 +96,34 @@ READ_ONLY_TOOLS = {
     "browser_capture_diagnostics",  # Reads console/network buffers + captures the page
     "browser_wait_for_page",  # Waits for load; no-op on data
     "browser_navigate_to",  # Changes the viewed page only, not data
+    # Writes only import sessions and cleaned copies of the user's file (a preset's), never
+    # business data.
+    # As a write tool it would put an approval card on starting every import.
+    "start_import_session",
+    # Writes only the session's mapping; as a write tool every correction would raise a card.
+    "set_column_mapping",
+    # Writes only the session's settings and mapping, as set_column_mapping does.
+    "set_opening_stock",
+    "set_opening_invoices",
+    "set_opening_balances",
+    # Every row it inserts is rolled back; it writes only the sessions, their result files and a
+    # plan's answers (with plan: a create answer only plans the record, see plan_migration below).
+    "dry_run_import",
+    # A migration plan's own settings, as the session tools write theirs: a plan cost five
+    # approval cards before its run (#34547). A create answer only plans the record, and
+    # run_migration_plan creates it, on the one card that lists every decision.
+    "plan_migration",  # makes a migration plan and links import sessions to it
 }
 
 # Tools that are always categorized as write (hardcoded list)
 WRITE_TOOLS = {
     # Document tools
     "create_document",
+    "start_import",  # imports the checked file through Data Import
+    "stop_migration_plan",  # stops a running plan after its current file
+    "import_opening_stock",  # creates and submits Stock Reconciliations
+    "import_opening_invoices",  # creates and submits opening invoices
+    "import_opening_balances",  # creates and submits the opening Journal Entry
     "update_document",
     # Document generation (saves a private Frappe File — a create side effect)
     "generate_document",  # Markdown -> PDF saved as a File record; NOT read-only

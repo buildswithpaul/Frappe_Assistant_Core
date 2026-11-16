@@ -422,6 +422,7 @@ class TestAccessGate(BaseAssistantTest):
     def _clear_member_cache(self, *emails):
         for email in emails:
             frappe.cache.delete_value(f"faco_member:{email}")
+            frappe.cache.delete_value(f"faco_member_last:{email}")
 
     def test_member_active_status_grants(self):
         from frappe_assistant_core.chat.api.settings.access import _is_faco_member

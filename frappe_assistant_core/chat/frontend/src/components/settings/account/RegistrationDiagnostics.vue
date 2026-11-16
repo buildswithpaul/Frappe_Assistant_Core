@@ -187,19 +187,24 @@
 				<pre class="raw-result">{{ JSON.stringify(result, null, 2) }}</pre>
 			</div>
 		</div>
+
+		<!-- Server setup travels with every diagnostics result, whatever the registration status -->
+		<ServerSetupRows :server-setup="serverSetup" />
 	</div>
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
+import ServerSetupRows from "./ServerSetupRows.vue";
 
 defineEmits(["open-rebind"]);
 
 const running = ref(false);
 const result = ref(null);
 const error = ref(null);
+const serverSetup = computed(() => result.value?.server_setup || null);
 
 async function runDiagnostics() {
 	running.value = true;

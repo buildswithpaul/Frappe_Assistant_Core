@@ -35,6 +35,28 @@ try:
 except ImportError:  # Frappe v15
     from frappe.tests.utils import FrappeTestCase as IntegrationTestCase
 
+# The one role of the "someone else" a test acts as: desk access and no permission rules, which
+# is what a role an administrator has just added looks like. Every right its user has then comes
+# from the rules Frappe gives every desk user (All, Desk User). No role Frappe ships does this on
+# every version (v16 dropped the blog roles the tests used), so the role is made here when missing.
+NO_RIGHTS_ROLE = "FAC Test No Rights"
+
+
+def item_hsn_fields() -> dict:
+    """The HSN code a test Item needs on this site: ``{"gst_hsn_code": ...}`` or ``{}``.
+
+    India Compliance adds ``gst_hsn_code`` to Item and refuses a sales Item without a GST HSN
+    Code, so an Item fixture can't be saved there without one. An eight-digit code is valid at
+    every "minimum HSN digits" setting. Without India Compliance there is no such field, and
+    nothing is set.
+    """
+    if not frappe.get_meta("Item").has_field("gst_hsn_code"):
+        return {}
+    codes = frappe.get_all(
+        "GST HSN Code", filters={"name": ("like", "_" * 8)}, pluck="name", order_by="name", limit=1
+    )
+    return {"gst_hsn_code": codes[0]} if codes else {}
+
 
 CUSTOM_TEST_DOCTYPE = "FAC Test Chat Record"
 
@@ -66,6 +88,21 @@ class BaseAssistantTest(IntegrationTestCase):
 
     SHOW_TRANSACTION_COMMIT_WARNINGS = True
 
+    def name_customers_by(self, mode: str) -> None:
+        """Customers are named by ``mode`` ("Customer Name" or "Naming Series") for this test.
+
+        Only what Customer.autoname reads is patched: the default is never written, because a
+        commit later in the test (an import's row-by-row commits) would make it permanent.
+        """
+        real = frappe.defaults.get_global_default
+
+        def get_global_default(key, *args, **kwargs):
+            return mode if key == "cust_master_name" else real(key, *args, **kwargs)
+
+        patcher = patch.object(frappe.defaults, "get_global_default", get_global_default)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     @classmethod
     def setUpClass(cls):
         """Set up class-level test environment.
@@ -86,6 +123,42 @@ class BaseAssistantTest(IntegrationTestCase):
             frappe.set_user("Administrator")
 
         cls._block_commits()
+        cls._delete_files_from_disk_at_once()
+
+    @classmethod
+    def _delete_files_from_disk_at_once(cls):
+        """Delete a File's content from disk when the File is deleted, as Frappe 15 does.
+
+        Frappe 16 (November 2026) queues it for after the commit, which a test never reaches
+        (``_block_commits``). A deleted file then stayed on disk: the next upload of the same
+        name got a hash suffix (customers.csv became customers3f2a1b.csv), and a file a test
+        expects gone was still there. Worse, a test that commits for real ran every delete
+        queued before it, and one could remove the test's own file of that name.
+
+        While a File's on_trash runs, its own disk delete runs instead of being queued; every
+        other callback is queued as before. Frappe 15 deletes at once and queues nothing, so
+        nothing changes there.
+        """
+        from frappe.core.doctype.file.file import File
+        from frappe.utils import CallbackManager
+
+        on_trash = File.on_trash
+        add = CallbackManager.add
+
+        def on_trash_now(doc, *args, **kwargs):
+            def add_or_run(manager, func):
+                if getattr(func, "__self__", None) is doc and (
+                    getattr(func, "__func__", None) is File._delete_file_on_disk
+                ):
+                    return func()
+                return add(manager, func)
+
+            with patch.object(CallbackManager, "add", add_or_run):
+                return on_trash(doc, *args, **kwargs)
+
+        patcher = patch.object(File, "on_trash", on_trash_now)
+        patcher.start()
+        cls.addClassCleanup(patcher.stop)
 
     @classmethod
     def _block_commits(cls):
@@ -210,9 +283,10 @@ class BaseAssistantTest(IntegrationTestCase):
                 settings = frappe.get_single("Assistant Core Settings")
                 enabled_plugins = json.loads(settings.enabled_plugins_list or "[]")
 
-                # Enable core plugin if not already enabled
-                if "core" not in enabled_plugins:
-                    enabled_plugins.append("core")
+                # Enable core plugin, and migration's import tools, if not already enabled
+                missing = [p for p in ("core", "migration") if p not in enabled_plugins]
+                if missing:
+                    enabled_plugins += missing
                     settings.enabled_plugins_list = json.dumps(enabled_plugins)
                     settings.save(ignore_permissions=True)
             else:
@@ -221,7 +295,7 @@ class BaseAssistantTest(IntegrationTestCase):
                     {
                         "doctype": "Assistant Core Settings",
                         "server_enabled": 0,
-                        "enabled_plugins_list": json.dumps(["core"]),
+                        "enabled_plugins_list": json.dumps(["core", "migration"]),
                     }
                 )
                 doc.insert(ignore_permissions=True)
@@ -309,6 +383,70 @@ class BaseAssistantTest(IntegrationTestCase):
             }
         ).insert(ignore_permissions=True)
         return email
+
+    def make_desk_user(self, prefix: str) -> str:
+        """A fresh desk (System) user whose only own role grants nothing: see ``NO_RIGHTS_ROLE``.
+
+        For tests that must act as an ordinary user without rights on the records they touch.
+        The user and the role are rolled back with the test transaction.
+        """
+        if not frappe.db.exists("Role", NO_RIGHTS_ROLE):
+            frappe.get_doc({"doctype": "Role", "role_name": NO_RIGHTS_ROLE, "desk_access": 1}).insert(
+                ignore_permissions=True
+            )
+        email = self.make_throwaway_user(prefix, roles=(NO_RIGHTS_ROLE,))
+        self.assertEqual(frappe.db.get_value("User", email, "user_type"), "System User")
+        return email
+
+    def track_test_files(self) -> None:
+        """Note each File this test inserts, for ``delete_test_files`` and ``new_files``.
+
+        Only the test's own: a File a user uploads to the site while the suite runs is theirs,
+        and a snapshot of every File on the site took it too (#34606).
+        """
+        from frappe.core.doctype.file.file import File
+
+        self.test_files = []
+        after_insert = File.after_insert
+
+        def noted(doc, *args, **kwargs):
+            self.test_files.append(doc.name)
+            return after_insert(doc, *args, **kwargs)
+
+        patcher = patch.object(File, "after_insert", noted)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def new_files(self) -> set:
+        """The Files this test inserted that are still there."""
+        return {name for name in self.test_files if frappe.db.exists("File", name)}
+
+    def delete_test_files(self) -> None:
+        """Delete the Files this test inserted. The rollback removes their rows, not the files on disk."""
+        for name in self.new_files():
+            frappe.delete_doc("File", name, force=True, ignore_permissions=True)
+
+    def run_retention_on(self, *sessions: str) -> int:
+        """Chat retention's daily purge_old_sessions, which picks the ended sessions it purges,
+        purging only ``sessions``: the site's real ones are not the test's to delete (#34606)."""
+        from frappe_assistant_core.utils import import_retention
+
+        purge = import_retention.purge
+
+        def purge_only_these(names, *args, **kwargs):
+            return purge([name for name in names if name in sessions], *args, **kwargs)
+
+        with patch.object(import_retention, "purge", purge_only_these):
+            return import_retention.purge_old_sessions()
+
+    def assert_cannot(self, user: str, ptype: str, doctype: str, doc: str | None = None):
+        """``user`` lacks ``ptype`` on ``doctype`` (or on the record ``doc``), by Frappe's own rules.
+
+        A test that proves a refusal checks this first, so a role that quietly grants the right
+        makes it fail instead of passing for another reason (#34412).
+        """
+        allowed = frappe.has_permission(doctype, ptype, doc=doc, user=user)
+        self.assertFalse(allowed, f"{user} may {ptype} {doc or doctype}")
 
     def create_test_document(self, doctype, data):
         """Create a test document"""

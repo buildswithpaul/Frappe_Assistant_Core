@@ -4,6 +4,7 @@ import { api } from "@/api/client";
 import { useProjectsStore } from "@/stores/projectsStore";
 import { logger } from "@/utils/logger";
 import { siteRefusal } from "@/utils/siteRefusal";
+import { setUploadLimit } from "@/utils/uploadLimit";
 
 export const useUserStore = defineStore("user", () => {
 	// State
@@ -194,11 +195,16 @@ export const useUserStore = defineStore("user", () => {
 	 * Load the caller's own credit cap so the meter can show what will actually
 	 * block them. Fails soft: with no result the meter falls back to the team
 	 * pool, which is the right number for members who share it.
+	 *
+	 * Asks nothing until registration is ready, and treats `no_seat` (no billed seat) and
+	 * `unavailable` (FAC Cloud could not answer) as no figure. A `stale` figure is kept as is.
 	 */
 	async function loadMyCreditStatus() {
+		if (registrationStatus.value !== "ready") return;
 		try {
 			const result = await api.users.getMyCreditStatus();
-			myCreditStatus.value = result && !result.error ? result : null;
+			const usable = result && !result.error && !result.no_seat && !result.unavailable;
+			myCreditStatus.value = usable ? result : null;
 		} catch (err) {
 			logger.warn("Failed to load personal credit status:", err);
 			myCreditStatus.value = null;
@@ -414,6 +420,7 @@ export const useUserStore = defineStore("user", () => {
 			// and `if (data.outstanding)` would leave a settled balance showing
 			// until the next full reload.
 			outstanding.value = data.outstanding || null;
+			setUploadLimit(data.upload_limit);
 
 			// Hydrate capabilities
 			if (data.capabilities) {

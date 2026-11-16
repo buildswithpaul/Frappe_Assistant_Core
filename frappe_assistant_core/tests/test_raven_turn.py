@@ -216,6 +216,41 @@ class TestRavenTurn(BaseAssistantTest):
         )
         self.assertEqual(set(saved), {self.avery})
 
+    def test_raven_turn_stays_in_process_with_the_setting_on(self):
+        from frappe.utils.background_jobs import get_queue, get_redis_conn
+        from rq.worker import Worker
+
+        from frappe_assistant_core.chat.api.chat import relay_dispatch
+
+        # Production: an admin ticks the setting and runs `bench worker --queue faco_relay`, listed
+        # in common_site_config.json's `workers`; the worker registers itself like this on start.
+        frappe.db.set_single_value("FAC Chat Settings", "relay_in_background_job", 1)
+        queues = patch(
+            "frappe.utils.background_jobs.get_queues_timeout",
+            return_value=dict(relay_dispatch.background_jobs.get_queues_timeout(), faco_relay=2100),
+        )
+        queues.start()
+        self.addCleanup(queues.stop)
+        name = f"t-{frappe.generate_hash(length=8)}"
+        worker = Worker([get_queue("faco_relay")], connection=get_redis_conn(), name=name)
+        worker.register_birth()
+        self.addCleanup(worker.register_death)
+        self.addCleanup(relay_dispatch._probe_cache.clear)
+        dm = self.raven_bot.create_direct_message_channel(self.avery)
+        msg = self._post(self.avery, dm, "<p>hello</p>")
+        with (
+            patch(GATE, return_value=SEATED),
+            patch.object(relay_dispatch, "use_job_relay", wraps=relay_dispatch.use_job_relay) as use_job,
+            # A swallowed enqueue failure would fall back to the pool, so the call itself is checked.
+            patch("frappe.enqueue", side_effect=AssertionError) as enqueue,
+        ):
+            self._run(msg, "dm")
+        enqueue.assert_not_called()
+        use_job.assert_not_called()
+        replies = self._bot_replies(dm)
+        self.assertEqual(len(replies), 1)
+        self.assertIn("Hi there", replies[0].text)
+
     def test_a_mention_is_answered_in_a_thread_on_that_message(self):
         msg = self._post(self.avery, self.channel, self._mention("what is open?"))
         with patch(GATE, return_value=SEATED):

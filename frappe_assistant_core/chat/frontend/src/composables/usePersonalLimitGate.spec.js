@@ -7,6 +7,7 @@ const getMyCreditStatus = vi.fn();
 vi.mock("@/api/client", () => ({ api: { users: { getMyCreditStatus: (...a) => getMyCreditStatus(...a) } } }));
 
 import { usePersonalLimitGate } from "./usePersonalLimitGate";
+import { useUserStore } from "@/stores/userStore";
 
 enableAutoUnmount(afterEach);
 
@@ -25,6 +26,8 @@ function mountGate() {
 describe("usePersonalLimitGate", () => {
 	beforeEach(() => {
 		setActivePinia(createPinia());
+		// Production sets "ready" once the access check answers.
+		useUserStore().registrationStatus = "ready";
 		getMyCreditStatus.mockReset();
 	});
 
@@ -32,7 +35,7 @@ describe("usePersonalLimitGate", () => {
 		getMyCreditStatus.mockResolvedValue({ has_individual_limit: true, monthly_credit_limit: 10000, credits_used_this_month: 11234 });
 		const gate = mountGate();
 		await flushPromises();
-		expect(gate().block.value).toEqual({ used: 11234, limit: 10000 });
+		expect(gate().block.value).toEqual({ used: 11234, limit: 10000, stale: false });
 	});
 
 	it("does not hold under the limit, or with no personal limit", async () => {

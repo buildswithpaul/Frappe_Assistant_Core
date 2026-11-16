@@ -27,6 +27,8 @@
   "execution_limits_info",
   "audit_log_section",
   "audit_log_retention_days",
+  "data_migration_section",
+  "max_import_rows",
   "ocr_tab",
   "ocr_section",
   "ocr_backend",
@@ -192,6 +194,19 @@
    "fieldname": "audit_log_retention_days",
    "fieldtype": "Int",
    "label": "Retention Period (Days)"
+  },
+  {
+   "fieldname": "data_migration_section",
+   "fieldtype": "Section Break",
+   "label": "Data Migration"
+  },
+  {
+   "default": "50000",
+   "description": "The most rows one import may have. FACO asks for a larger file to be split. 0 uses the default, 50,000.",
+   "fieldname": "max_import_rows",
+   "fieldtype": "Int",
+   "label": "Max Rows per Import",
+   "non_negative": 1
   },
   {
    "fieldname": "ocr_tab",
@@ -414,7 +429,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-01-21 10:00:00.000000",
+ "modified": "2026-10-16 07:08:48.942981",
  "modified_by": "Administrator",
  "module": "Assistant Core",
  "name": "Assistant Core Settings",

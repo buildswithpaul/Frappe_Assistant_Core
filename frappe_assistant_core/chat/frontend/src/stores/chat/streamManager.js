@@ -14,6 +14,13 @@
 // (matplotlib/pandas cold-start). The AR-side heartbeat fires every ~10s, so
 // 180s tolerates ~18 missed heartbeats before declaring the stream dead.
 const STREAM_ACTIVITY_TIMEOUT_MS = 180000; // 180 seconds - reset on each event (including heartbeats)
+// A relay forwards AR's heartbeat every 10 s, so this much silence means events are not reaching
+// this tab. Ask the server whether the turn still runs: a relay whose worker died leaves its live
+// entry stale after 60 s, and is ended then rather than at the 180 s watchdog.
+export const SILENCE_PROBE_MS = 50000;
+// After a probe finds the turn still live, ask again this soon: a dead relay's entry is stale
+// 60 s after its last write, so a quiet turn is settled within about a minute.
+export const SILENCE_REPROBE_MS = 15000;
 
 // A Stop's cancel_stream holds the send queue until it is answered, and for
 // this long at most: baseCall has no timeout, and a hung cancel must not hold
@@ -38,9 +45,11 @@ export function createStreamManager({
 	isCancelling,
 	isSubmittingInterrupts,
 	reconcile,
+	probeLiveTurn,
 	getSocketProbe,
 }) {
 	let activityTimeoutId = null;
+	let silenceProbeId = null;
 	// One extra window per silence for a dead socket; any activity re-earns it.
 	let socketGraceUsed = false;
 	// True while the visible connection dot was raised by the grace, so only
@@ -140,6 +149,26 @@ export function createStreamManager({
 		}
 
 		activityTimeoutId = setTimeout(onActivityTimeout, STREAM_ACTIVITY_TIMEOUT_MS);
+		armSilenceProbe();
+	}
+
+	function armSilenceProbe(delay = SILENCE_PROBE_MS) {
+		if (silenceProbeId) clearTimeout(silenceProbeId);
+		silenceProbeId = null;
+		if (!probeLiveTurn || !awaitingEvents()) return;
+		silenceProbeId = setTimeout(onSilence, delay);
+	}
+
+	async function onSilence() {
+		silenceProbeId = null;
+		if (!awaitingEvents() || !currentSessionId?.value) return;
+		try {
+			await probeLiveTurn(currentSessionId.value);
+		} catch (err) {
+			logger.warn("Live turn probe failed:", err);
+		}
+		// Still waiting: probe again soon. Any activity re-arms the full window instead.
+		if (awaitingEvents() && !silenceProbeId) armSilenceProbe(SILENCE_REPROBE_MS);
 	}
 
 	async function onActivityTimeout() {
@@ -179,6 +208,10 @@ export function createStreamManager({
 		if (activityTimeoutId) {
 			clearTimeout(activityTimeoutId);
 			activityTimeoutId = null;
+		}
+		if (silenceProbeId) {
+			clearTimeout(silenceProbeId);
+			silenceProbeId = null;
 		}
 	}
 

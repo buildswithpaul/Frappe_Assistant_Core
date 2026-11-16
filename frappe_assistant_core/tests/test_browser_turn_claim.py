@@ -110,14 +110,17 @@ class TestClaimLiveTurn(BaseAssistantTest):
 
     def test_start_turn_releases_the_claim_before_the_new_turn(self):
         from frappe_assistant_core.chat.api.chat import messages
+        from frappe_assistant_core.chat.doctype.fac_chat_message.fac_chat_message import FACChatMessage
 
-        # Stops right after the release: the rest of start_turn talks to AR.
+        # Stops right after the release, at the user row: the rest of start_turn talks to AR.
         with (
             patch.object(messages, "_assert_session_owner", autospec=True),
             patch("frappe_assistant_core.chat.api.settings.can_use_faco", return_value={"can_use": True}),
             patch.object(messages, "clear_cancel", autospec=True),
             patch.object(browser_bridge, "release_session_claim", autospec=True) as release,
-            patch.object(messages, "_is_processing_restricted", side_effect=RuntimeError("stop")),
+            patch.object(messages, "_is_processing_restricted", return_value=False),
+            patch.object(messages, "_relay_in_job", return_value=False),
+            patch.object(FACChatMessage, "create_message", side_effect=RuntimeError("stop")),
         ):
             with self.assertRaises(RuntimeError):
                 messages.start_turn(self.session_id, "hi")

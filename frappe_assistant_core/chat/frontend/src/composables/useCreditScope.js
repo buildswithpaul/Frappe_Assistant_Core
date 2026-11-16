@@ -9,7 +9,7 @@ import { useUserStore } from "@/stores/userStore";
  * way — a cap of 0 means "uncapped" and falls back to the shared pool. A team
  * pool of -1 means unlimited; callers decide how to render that.
  *
- * @returns {import("vue").ComputedRef<{isPersonal: boolean, total: number, used: number}>}
+ * @returns {import("vue").ComputedRef<{isPersonal: boolean, total: number, used: number, stale: boolean}>}
  */
 export function useCreditScope() {
 	const userStore = useUserStore();
@@ -22,6 +22,7 @@ export function useCreditScope() {
 				isPersonal: true,
 				total: limit,
 				used: Number(mine.credits_used_this_month) || 0,
+				stale: Boolean(mine.stale),
 			};
 		}
 
@@ -30,6 +31,7 @@ export function useCreditScope() {
 			isPersonal: false,
 			total: Number(quota?.quota_total) || 0,
 			used: Number(quota?.quota_used) || 0,
+			stale: false,
 		};
 	});
 }

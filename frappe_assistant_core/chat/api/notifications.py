@@ -21,8 +21,10 @@ import json
 import frappe
 from frappe import _
 
+from frappe_assistant_core.chat import ar_breaker
 from frappe_assistant_core.chat.api.auth import _ar_user_id
-from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
+from frappe_assistant_core.chat.api.settings.access import has_seat
+from frappe_assistant_core.chat.fac_cloud_client import SHORT_CALL_TIMEOUT, get_fac_cloud_client
 from frappe_assistant_core.chat.gate import is_chat_enabled
 
 CACHE_TTL_SECONDS = 60
@@ -58,16 +60,25 @@ def get_notifications() -> dict:
         except (json.JSONDecodeError, TypeError):
             pass
 
+    if has_seat(frappe.session.user) is False:
+        return {**_response([], user, degraded=False), "no_seat": True}
+
     notifications = None
-    try:
-        client = get_fac_cloud_client()
-        if client:
-            result = client.get_notifications(user_id=user, timeout=5)
-            fetched = result.get("notifications") if result else None
-            if isinstance(fetched, list):
-                notifications = fetched
-    except Exception as e:
-        frappe.log_error(title="FAC Notifications", message=f"Failed to fetch notifications from AR: {e!s}")
+    if not ar_breaker.is_open():
+        try:
+            client = get_fac_cloud_client(timeout=SHORT_CALL_TIMEOUT)
+            if client:
+                result = ar_breaker.call(
+                    lambda: client.get_notifications(user_id=user, timeout=SHORT_CALL_TIMEOUT)
+                )
+                fetched = result.get("notifications") if result else None
+                if isinstance(fetched, list):
+                    notifications = fetched
+        except Exception as e:
+            if not ar_breaker.is_transport_failure(e):
+                frappe.log_error(
+                    title="FAC Notifications", message=f"Failed to fetch notifications from AR: {e!s}"
+                )
 
     degraded = notifications is None
     if degraded:

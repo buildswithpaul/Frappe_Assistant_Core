@@ -6,13 +6,15 @@
 			class="breakdown-row"
 		>
 			<span class="bd-model">{{ shortenModel(m.model_id) }}</span>
-			<span class="bd-role" :class="m.role">{{ m.role }}</span>
+			<span class="bd-role" :class="roleClass(m.role)">{{ roleLabel(m.role) }}</span>
 			<span class="bd-credits">{{ formatCredits(m.credits) }} cr</span>
 		</div>
 	</div>
 </template>
 
 <script setup>
+import { roleLabel, roleClass } from "./roleLabel";
+
 defineProps({
 	breakdown: { type: Array, default: () => [] },
 });
@@ -79,6 +81,11 @@ function formatCredits(val) {
 .bd-role.helper {
 	background: var(--ql-subtle);
 	color: var(--ql-text-secondary);
+}
+
+.bd-role.crew {
+	background: var(--ql-subtle);
+	color: var(--ql-accent);
 }
 
 .bd-credits {

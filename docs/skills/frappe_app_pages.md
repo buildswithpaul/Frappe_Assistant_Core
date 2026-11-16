@@ -53,6 +53,9 @@ A full screen with its own layout (planner, board, tracker) is a FAC Page: see t
   as an update of each `User` by name (never `Has Role`). Check what exists with `list_documents`,
   `get_doctype_info` and `test_as_user`, not `run_database_query`, which asks on every call. See
   `setup-change-protocol` for the full rules.
+- List how people reach each screen: the Workspace update that links it, as the `fac-page` skill
+  describes. A new doctype or Workspace takes a `module` installed on this site (`list_documents` on
+  `Module Def`), never one assumed from another app.
 - Send a `mockup_html` for each screen, written with the classes in the `mockup-kit` skill. Show the
   layout, not real data.
 - Wait for the approval. Writes the plan lists then run without a card each, except publishing a page,

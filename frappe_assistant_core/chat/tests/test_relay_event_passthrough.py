@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 
 class TestDispatchRelayEvent(unittest.TestCase):
@@ -245,3 +245,38 @@ class TestEveryPayloadNamesItsTurn(unittest.TestCase):
                     missing.append((filename, keys["event"].lineno, name))
 
         self.assertEqual([f"{f}:{line} {name}" for f, line, name in sorted(missing)], [])
+
+
+class TestConfirmLowBalanceReachesTheSdk(unittest.TestCase):
+    """The flag rides the same signature gate as reasoning_effort: an SDK that
+    predates it would raise TypeError on the unknown keyword."""
+
+    def test_confirm_low_balance_reaches_the_sdk_when_supported(self):
+        from assistant_runtime_sdk.client import AssistantRuntimeClient
+
+        from frappe_assistant_core.chat.api.chat import relay
+
+        client = create_autospec(AssistantRuntimeClient, instance=True)
+        kwargs = relay._sdk_composer_kwargs(client.stream_chat, None, None, None, confirm_low_balance=True)
+        self.assertIs(kwargs.get("confirm_low_balance"), True)
+        client.stream_chat("s1", "hi", "u@example.com", **kwargs)
+
+        def stream_chat_before_1_13(
+            session_id, message, user_id, *, web_search=None, thinking_enabled=None
+        ): ...
+
+        with patch.object(relay, "_confirm_low_balance_drop_logged", True):
+            kwargs = relay._sdk_composer_kwargs(
+                stream_chat_before_1_13, None, None, None, confirm_low_balance=True
+            )
+        self.assertNotIn("confirm_low_balance", kwargs)
+        stream_chat_before_1_13("s1", "hi", "u@example.com", **kwargs)
+
+    def test_an_unconfirmed_send_passes_no_flag(self):
+        from assistant_runtime_sdk.client import AssistantRuntimeClient
+
+        from frappe_assistant_core.chat.api.chat import relay
+
+        client = create_autospec(AssistantRuntimeClient, instance=True)
+        kwargs = relay._sdk_composer_kwargs(client.stream_chat, None, None, None)
+        self.assertNotIn("confirm_low_balance", kwargs)

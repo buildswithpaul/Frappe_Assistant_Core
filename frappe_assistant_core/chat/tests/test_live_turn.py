@@ -56,8 +56,11 @@ class TestLiveTurnModule(BaseAssistantTest):
         live = live_turn.bind(self.sid, builder, message_id="m1")
         entry = live_turn.get(self.sid)
         self.assertEqual(entry["turn"], live.turn)
-        self.assertEqual(entry["status"], "streaming")
+        # Until AR answers, the turn keeps the starting bound (live_turn.is_stale).
+        self.assertEqual(entry["status"], "starting")
         self.assertEqual(entry["text"], "Part one. ")
+        live.ar_responded()
+        self.assertEqual(live_turn.get(self.sid)["status"], "streaming")
         self.assertEqual(entry["blocks"][0]["content"], "Part one. ")
 
     def test_stamp_numbers_events_from_one_under_the_turn(self):

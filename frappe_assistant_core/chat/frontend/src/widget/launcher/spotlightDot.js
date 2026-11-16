@@ -43,6 +43,8 @@ export async function refreshSpotlightDot(view, access) {
 		}
 	}
 
+	if (access.status !== "ready") return view.setDot(false);
+
 	const notifications = await call("frappe_assistant_core.chat.api.notifications.get_notifications");
 	const announcement = pickAnnouncement(notifications && notifications.notifications);
 	const shownToday = storage.get(DAILY_KEY(user, SURFACE)) === localDate();

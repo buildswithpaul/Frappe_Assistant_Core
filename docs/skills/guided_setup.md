@@ -8,7 +8,7 @@ Sets up an ERPNext site through a conversation about the business, not the ERP. 
 
 - "Help me set up ERPNext", "we just installed this, what now?", "set up my company properly", "we're opening a new branch / warehouse".
 
-**Not for** the first-run **setup wizard**. That has to be finished in the browser first, because it creates the first company, its chart of accounts and the first fiscal year. **Not for** importing customers, items or opening balances; point the user to ERPNext's **Data Import** and **Opening Invoice Creation Tool** in Desk.
+**Not for** the first-run **setup wizard**. That has to be finished in the browser first, because it creates the first company, its chart of accounts and the first fiscal year. **Not for** importing customers, items or opening balances; that is `get_skill("migrate-data")`.
 
 ## Workflow
 

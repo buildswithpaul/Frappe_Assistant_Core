@@ -1,0 +1,457 @@
+{
+ "actions": [],
+ "autoname": "format:IMP-{YYYY}-{#####}",
+ "creation": "2026-10-07 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "source_section",
+  "file_name",
+  "started_on",
+  "source_file",
+  "original_file",
+  "file_source",
+  "source_url",
+  "sheet",
+  "column_break_source",
+  "status",
+  "user",
+  "chat_session_id",
+  "parent_session",
+  "target_section",
+  "target_doctype",
+  "import_type",
+  "column_break_target",
+  "match_key",
+  "submit_after_import",
+  "file_section",
+  "sheets",
+  "mapping_section",
+  "template_options",
+  "transformation_rules",
+  "excluded_rows",
+  "plan_section",
+  "this_file_heading",
+  "migration_plan",
+  "plan_position",
+  "plan_reason",
+  "column_break_plan",
+  "whole_plan_heading",
+  "plan_status",
+  "plan_failure_rule",
+  "plan_cut_off",
+  "plan_stop_requested",
+  "plan_importing_now",
+  "plan_settings",
+  "validation_section",
+  "validation_summary",
+  "validation_results",
+  "validated_fingerprint",
+  "progress_section",
+  "progress",
+  "steps_section",
+  "steps",
+  "data_imports_section",
+  "data_imports",
+  "created_records_section",
+  "created_records"
+ ],
+ "fields": [
+  {
+   "fieldname": "source_section",
+   "fieldtype": "Section Break",
+   "label": "Source"
+  },
+  {
+   "description": "Name of the file the user attached.",
+   "fieldname": "file_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "File Name",
+   "read_only": 1
+  },
+  {
+   "default": "Now",
+   "description": "When the session was started.",
+   "fieldname": "started_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Started On",
+   "read_only": 1
+  },
+  {
+   "description": "The session's own copy of the sheet: a private CSV, read once when the session started. Every step reads it.",
+   "fieldname": "source_file",
+   "fieldtype": "Link",
+   "label": "Source File",
+   "options": "File",
+   "read_only": 1
+  },
+  {
+   "description": "The file the user gave, on this site. The session doesn't need it: it may be deleted later, for example by chat retention.",
+   "fieldname": "original_file",
+   "fieldtype": "Data",
+   "label": "Original File",
+   "read_only": 1
+  },
+  {
+   "description": "Where the file came from: this site, or a Google Sheet. Chat Attachment is only on older sessions, whose file stayed in the AI chat.",
+   "fieldname": "file_source",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "File Source",
+   "options": "Site File\nChat Attachment\nGoogle Sheet",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.file_source=='Google Sheet'",
+   "description": "The Google Sheets link the file was copied from.",
+   "fieldname": "source_url",
+   "fieldtype": "Data",
+   "label": "Google Sheets Link",
+   "options": "URL",
+   "read_only": 1
+  },
+  {
+   "description": "The sheet used, for an .xlsx or .xls file. Empty for .csv.",
+   "fieldname": "sheet",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Sheet",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_source",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "File Read",
+   "description": "The step this file has reached.",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "File Read\nMapped\nDry Run Failed\nReady to Import\nImporting\nCompleted\nPartially Completed\nFailed\nCancelled\nUndone",
+   "read_only": 1
+  },
+  {
+   "default": "__user",
+   "description": "The owner. Only they and System Managers can see the session.",
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "User",
+   "options": "User",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The conversation this session belongs to.",
+   "fieldname": "chat_session_id",
+   "fieldtype": "Data",
+   "label": "Chat Session",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "Groups the sessions of several files for the migration order.",
+   "fieldname": "parent_session",
+   "fieldtype": "Link",
+   "label": "Parent Session",
+   "options": "FAC Import Session",
+   "read_only": 1
+  },
+  {
+   "fieldname": "target_section",
+   "fieldtype": "Section Break",
+   "label": "Target"
+  },
+  {
+   "description": "What the rows become.",
+   "fieldname": "target_doctype",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Target DocType",
+   "options": "DocType",
+   "read_only": 1
+  },
+  {
+   "default": "Insert New Records",
+   "fieldname": "import_type",
+   "fieldtype": "Select",
+   "label": "Import Type",
+   "options": "Insert New Records\nUpdate Existing Records",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_target",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The field used to find existing records.",
+   "fieldname": "match_key",
+   "fieldtype": "Data",
+   "label": "Match Key",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Submit each imported document, e.g. opening invoices and journal entries.",
+   "fieldname": "submit_after_import",
+   "fieldtype": "Check",
+   "label": "Submit After Import",
+   "read_only": 1
+  },
+  {
+   "fieldname": "file_section",
+   "fieldtype": "Section Break",
+   "label": "File Summary"
+  },
+  {
+   "description": "Each sheet's name, headers and row count. No row of the file is stored.",
+   "fieldname": "sheets",
+   "fieldtype": "JSON",
+   "label": "Sheets",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "mapping_section",
+   "fieldtype": "Section Break",
+   "label": "Mapping and Fixes"
+  },
+  {
+   "description": "Data Import's template_options: column_to_field_map keyed by 0-based column position.",
+   "fieldname": "template_options",
+   "fieldtype": "JSON",
+   "label": "Template Options",
+   "read_only": 1
+  },
+  {
+   "fieldname": "transformation_rules",
+   "fieldtype": "JSON",
+   "label": "Transformation Rules",
+   "read_only": 1
+  },
+  {
+   "description": "Rows the user chose to leave out, each with a reason.",
+   "fieldname": "excluded_rows",
+   "fieldtype": "JSON",
+   "label": "Excluded Rows",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "depends_on": "eval:doc.migration_plan",
+   "fieldname": "plan_section",
+   "fieldtype": "Section Break",
+   "label": "Migration Plan"
+  },
+  {
+   "fieldname": "this_file_heading",
+   "fieldtype": "Heading",
+   "label": "This file in the plan"
+  },
+  {
+   "description": "The first file of this migration. It keeps the plan for all the files.",
+   "fieldname": "migration_plan",
+   "fieldtype": "Link",
+   "label": "Migration Plan (first file)",
+   "options": "FAC Import Session",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "This file's turn in the import order (1 is imported first).",
+   "fieldname": "plan_position",
+   "fieldtype": "Int",
+   "label": "Plan Position",
+   "read_only": 1
+  },
+  {
+   "description": "Why this file is imported at this position.",
+   "fieldname": "plan_reason",
+   "fieldtype": "Small Text",
+   "label": "Plan Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_plan",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.plan_settings",
+   "fieldname": "whole_plan_heading",
+   "fieldtype": "Heading",
+   "label": "Whole migration (all files of this plan)"
+  },
+  {
+   "depends_on": "eval:doc.plan_settings",
+   "description": "Where the whole migration is now.",
+   "fieldname": "plan_status",
+   "fieldtype": "Select",
+   "label": "Plan Status (all files)",
+   "options": "\nPlanning\nReady to Run\nRunning\nCompleted\nPartially Completed\nStopped\nFailed",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.plan_settings",
+   "description": "If rows still fail during the import: leave_out skips those rows, with the reason, and goes on; stop stops the plan before that file.",
+   "fieldname": "plan_failure_rule",
+   "fieldtype": "Select",
+   "label": "Failure Rule (all files)",
+   "options": "\nleave_out\nstop",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.plan_settings",
+   "description": "The last day in the old system. Opening stock, invoices and balances are dated on it.",
+   "fieldname": "plan_cut_off",
+   "fieldtype": "Date",
+   "label": "Cut-off Date (all files)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.plan_settings",
+   "description": "Ticked when the user asks to stop. The plan stops after the file importing now.",
+   "fieldname": "plan_stop_requested",
+   "fieldtype": "Check",
+   "label": "Stop Requested (all files)",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.plan_settings",
+   "description": "The file being imported right now.",
+   "fieldname": "plan_importing_now",
+   "fieldtype": "Link",
+   "label": "Importing Now",
+   "options": "FAC Import Session",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.plan_settings",
+   "description": "The full plan, for support: the records it creates first, its progress and its step log.",
+   "fieldname": "plan_settings",
+   "fieldtype": "JSON",
+   "label": "Plan (all files)",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "validation_section",
+   "fieldtype": "Section Break",
+   "label": "Validation"
+  },
+  {
+   "description": "The latest dry-run result as groups and counts.",
+   "fieldname": "validation_summary",
+   "fieldtype": "JSON",
+   "label": "Validation Summary",
+   "read_only": 1
+  },
+  {
+   "description": "The full result for every row.",
+   "fieldname": "validation_results",
+   "fieldtype": "Attach",
+   "label": "Validation Results",
+   "read_only": 1
+  },
+  {
+   "description": "Hash of the mapping and rules the last dry run used.",
+   "fieldname": "validated_fingerprint",
+   "fieldtype": "Data",
+   "label": "Validated Fingerprint",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "progress_section",
+   "fieldtype": "Section Break",
+   "label": "Progress"
+  },
+  {
+   "description": "The running job's phase, current row, total, job id and update time.",
+   "fieldname": "progress",
+   "fieldtype": "JSON",
+   "label": "Progress",
+   "read_only": 1
+  },
+  {
+   "fieldname": "steps_section",
+   "fieldtype": "Section Break",
+   "label": "Steps"
+  },
+  {
+   "fieldname": "steps",
+   "fieldtype": "Table",
+   "label": "Steps",
+   "options": "FAC Import Session Step",
+   "read_only": 1
+  },
+  {
+   "fieldname": "data_imports_section",
+   "fieldtype": "Section Break",
+   "label": "Data Imports"
+  },
+  {
+   "fieldname": "data_imports",
+   "fieldtype": "Table",
+   "label": "Data Imports",
+   "options": "FAC Import Session Data Import",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "created_records_section",
+   "fieldtype": "Section Break",
+   "label": "Created Records"
+  },
+  {
+   "fieldname": "created_records",
+   "fieldtype": "Table",
+   "label": "Created Records",
+   "options": "FAC Import Session Record",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-23 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Assistant Core",
+ "name": "FAC Import Session",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Desk User",
+   "write": 1
+  }
+ ],
+ "search_fields": "file_name, sheet, target_doctype",
+ "show_title_field_in_link": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "file_name",
+ "track_changes": 1
+}

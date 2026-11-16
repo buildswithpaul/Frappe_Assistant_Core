@@ -7,6 +7,7 @@ import {
 	getCsrfToken,
 	networkError,
 } from "../_core";
+import { __ } from "@/utils/i18n";
 
 export const chat = {
 	send: (
@@ -72,6 +73,10 @@ export const chat = {
 		} catch (cause) {
 			throw networkError(cause);
 		}
+		if (response.status === 413) {
+			// Frappe's request limit, met before FACO's own check: an HTML page, not a message
+			throw buildError(__("The file is larger than this site's upload limit."), { status: 413 });
+		}
 		if (!response.ok) {
 			const body = await response.text();
 			throw friendlyError(response, body);
@@ -119,6 +124,21 @@ export const chat = {
 
 	getLiveTurn: (sessionId) =>
 		getCall("frappe_assistant_core.chat.api.chat.get_live_turn", {
+			session_id: sessionId,
+		}),
+
+	// Runs the latest user message's errored turn again; refused for a turn that completed.
+	retryTurn: (sessionId, userMessage, options = {}) =>
+		baseCall("frappe_assistant_core.chat.api.chat.retry_turn", {
+			session_id: sessionId,
+			user_message: userMessage,
+			client_type: "spa",
+			...options,
+		}),
+
+	// Ends a turn whose relay died; the server refuses one that is still running.
+	markTurnInterrupted: (sessionId) =>
+		baseCall("frappe_assistant_core.chat.api.chat.mark_turn_interrupted", {
 			session_id: sessionId,
 		}),
 

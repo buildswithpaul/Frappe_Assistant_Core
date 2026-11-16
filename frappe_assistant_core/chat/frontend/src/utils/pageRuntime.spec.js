@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { makeFrappeStandIn, runPageScript } from "./pageRuntime";
+import { failedCallText, makeFrappeStandIn, runPageScript } from "./pageRuntime";
 
 let api;
 let root;
@@ -159,7 +159,16 @@ describe("makeFrappeStandIn", () => {
 		const onError = vi.fn();
 		const frappe = makeFrappeStandIn(api, { onError });
 		await frappe.db.insert({ doctype: "ToDo" }).catch(() => {});
-		expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: "denied" }));
+		expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: "denied" }), "frappe.client.insert");
+	});
+
+	it("words a failed call with its method, its HTTP status and the server's message", () => {
+		const error = Object.assign(new Error("Server Script failed"), { status: 500 });
+		expect(failedCallText("team.get_board", error)).toBe("team.get_board failed (HTTP 500): Server Script failed");
+	});
+
+	it("leaves the status out of a call that never reached the server", () => {
+		expect(failedCallText("team.get_board", new Error("Network error"))).toBe("team.get_board failed: Network error");
 	});
 
 	it("leaves a failure to the script's own error callback", async () => {

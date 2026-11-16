@@ -12,16 +12,36 @@ Supports two input modes:
 from __future__ import annotations
 
 import base64
+import io
 import os
+import zipfile
 
 import frappe
 from frappe import _
+from frappe.core.api.file import get_max_file_size
+from frappe.utils import cint
 from werkzeug.utils import secure_filename
 
 from .._rate_limits import (
     rate_limit,
     session_user_or_ip,
 )
+
+# Chat attachments never exceed this, even on a site that allows larger uploads.
+CHAT_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
+
+
+def _chat_upload_limit() -> int:
+    """
+    The largest chat attachment this site accepts. Frappe's File rejects anything over
+    System Settings → Max File Size (25 MB unless an administrator changed it), so
+    checking against that here lets us say how to raise it instead of failing in save.
+    Frappe also refuses any request but its own upload_file over the site config's
+    max_file_size (25 MB unset) before this code runs (#33987), so that is a limit too.
+    """
+    request_limit = cint(frappe.conf.get("max_file_size")) or 25 * 1024 * 1024
+    return min(CHAT_UPLOAD_MAX_BYTES, get_max_file_size(), request_limit)
+
 
 # --- FACO-H11: upload validation allowlists ------------------------------------
 # Explicit extension / MIME whitelist for `upload_message_file`. Any file whose
@@ -38,6 +58,8 @@ ALLOWED_UPLOAD_EXTENSIONS = {
     ".csv",
     ".json",
     ".xml",
+    ".xlsx",
+    ".xls",
 }
 ALLOWED_UPLOAD_MIMETYPES = {
     "application/pdf",
@@ -51,6 +73,8 @@ ALLOWED_UPLOAD_MIMETYPES = {
     "image/jpeg",
     "image/gif",
     "image/webp",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
 }
 
 # Extension -> canonical MIME used when the client-supplied content-type is
@@ -68,14 +92,16 @@ _EXT_TO_MIME = {
     ".jpeg": "image/jpeg",
     ".gif": "image/gif",
     ".webp": "image/webp",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xls": "application/vnd.ms-excel",
 }
 
 
 def _magic_bytes_match(content: bytes, claimed_mime: str) -> bool:
     """
     Lightweight magic-byte verification for binary formats. Text-based formats
-    (json/xml/csv/md/plain) are accepted without inspection since their first
-    bytes are not stable.
+    (json/xml/csv/md/plain) have no stable first bytes, so they are only
+    checked for NUL bytes, which mark binary content.
     """
     head = content[:12]
     if claimed_mime == "application/pdf":
@@ -88,8 +114,37 @@ def _magic_bytes_match(content: bytes, claimed_mime: str) -> bool:
         return head.startswith((b"GIF87a", b"GIF89a"))
     if claimed_mime == "image/webp":
         return head[:4] == b"RIFF" and head[8:12] == b"WEBP"
-    # text/json/xml/csv/md — accept without magic check
-    return True
+    if claimed_mime == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+        # Every OOXML file (and any plain .zip) starts with PK\x03\x04, so also
+        # require the workbook part. Only the central directory is read here.
+        if not head.startswith(b"PK\x03\x04"):
+            return False
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                return "xl/workbook.xml" in zf.namelist()
+        except zipfile.BadZipFile:
+            return False
+    if claimed_mime == "application/vnd.ms-excel":
+        return head.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
+    # text/json/xml/csv/md — no signature, but a NUL in the first 8 KB means
+    # binary. UTF-16 text (e.g. Excel's "Unicode Text" export) is full of NULs,
+    # so after a UTF-16 BOM the first 8 KB must read as UTF-16 text instead (#34404).
+    if content.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return _reads_as_utf16_text(content[:8192])
+    return b"\x00" not in content[:8192]
+
+
+def _reads_as_utf16_text(head: bytes) -> bool:
+    """Whether ``head`` (BOM first) decodes as UTF-16 with no control character but tab and line ends.
+    The sample's cut may split a character in two at its end, so that last half is let go."""
+    even = head[: len(head) - len(head) % 2]
+    for sample in (even, even[:-2]):
+        try:
+            text = sample.decode("utf-16")
+        except UnicodeDecodeError:
+            continue
+        return not any(ord(c) < 32 and c not in "\t\r\n" for c in text)
+    return False
 
 
 def _sanitize_upload_filename(original_filename: str) -> str:
@@ -167,8 +222,17 @@ def upload_message_file(
 
         file_size = len(content)
 
-        max_size = 50 * 1024 * 1024  # 50MB
+        max_size = _chat_upload_limit()
         if file_size > max_size:
+            if max_size < CHAT_UPLOAD_MAX_BYTES:
+                frappe.throw(
+                    _(
+                        "File is larger than this site's {0} MB upload limit. An administrator "
+                        "can raise it (up to 50 MB) in System Settings → Max File Size and the "
+                        "site config's max_file_size."
+                    ).format(f"{max_size / 1048576:g}"),
+                    frappe.ValidationError,
+                )
             frappe.throw(_("File size exceeds 50MB limit"), frappe.ValidationError)
 
         # --- FACO-H11: filename, extension, MIME, and magic-byte validation -----
@@ -195,9 +259,13 @@ def upload_message_file(
         # 3. MIME allowlist. Browsers and mobile clients sometimes send
         #    "application/octet-stream" or an empty string; fall back to the
         #    extension-derived canonical MIME so we can still magic-check it.
+        #    Also fall back when the declared MIME disagrees with the extension:
+        #    Windows browsers label .csv as "application/vnd.ms-excel", and a
+        #    text MIME on a binary extension would otherwise skip step 4.
         declared_mime = (mime_type or "").strip().lower()
-        if declared_mime not in ALLOWED_UPLOAD_MIMETYPES:
-            fallback_mime = _EXT_TO_MIME.get(raw_ext_lower)
+        expected_mime = _EXT_TO_MIME.get(raw_ext_lower)
+        if declared_mime not in ALLOWED_UPLOAD_MIMETYPES or declared_mime != expected_mime:
+            fallback_mime = expected_mime
             if fallback_mime:
                 declared_mime = fallback_mime
             else:
@@ -210,7 +278,7 @@ def upload_message_file(
         #    binary formats. Text formats pass through.
         if not _magic_bytes_match(content, declared_mime):
             frappe.throw(
-                _("File content does not match declared type"),
+                _("File content does not match its extension: {0}").format(raw_ext_lower),
                 frappe.ValidationError,
             )
 

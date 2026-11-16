@@ -3,6 +3,7 @@
  * tool's own arguments ("Create Customer “MIGTEST Trader 01”", "Publish the work-planner page").
  */
 
+import { htmlText } from "@/utils/htmlText";
 import { __ } from "@/utils/i18n";
 import { baseToolName } from "@/utils/toolNames";
 import { goesLiveFields, isValidateOnly } from "./customisation";
@@ -33,10 +34,7 @@ const ACTIONS = {
 };
 
 function shorten(text) {
-	const plain = String(text)
-		.replace(/<[^>]*>/g, " ")
-		.replace(/\s+/g, " ")
-		.trim();
+	const plain = htmlText(text).replace(/\s+/g, " ").trim();
 	return plain.length > MAX_LABEL ? `${plain.slice(0, MAX_LABEL - 1)}…` : plain;
 }
 
@@ -62,10 +60,31 @@ export function approvalHeadline(block) {
 	const tool = baseToolName(block?.tool_name);
 	const input = block?.input && typeof block.input === "object" ? block.input : null;
 	if (!input) return formatToolName(tool);
+	if (tool === "run_migration_plan" && input.plan) {
+		// PR #392, L4: the card's title was the tool's name
+		const files = Number(input.files);
+		const rows = Number(input.rows);
+		return Number.isFinite(files) && Number.isFinite(rows) && input.files != null && input.rows != null
+			? __("Run migration plan {0}: {1} files, {2} rows", [input.plan, files, rows])
+			: __("Run migration plan {0}", [input.plan]);
+	}
 	const fields = flattenInput(input);
 	const doctype = fields.doctype;
 	const name = fields.name ?? fields.docname;
 	if (!doctype) return formatToolName(tool);
+
+	if (tool === "start_import") {
+		// #34415: what is imported, from which file, as which records
+		const rows = Number(fields.rows);
+		const file = fields.file_name;
+		const update = fields.import_type === "Update Existing Records";
+		if (Number.isFinite(rows) && file) {
+			return update
+				? __("Update {0} {1} records from {2}", [rows, doctype, file])
+				: __("Import {0} rows of {1} as new {2} records", [rows, file, doctype]);
+		}
+		return update ? __("Update {0} records", [doctype]) : __("Import {0} records", [doctype]);
+	}
 
 	if (tool === "create_document") {
 		const label = newRecordLabel(fields);

@@ -8,12 +8,14 @@ The `create_document` tool creates new Frappe documents (records). It handles fi
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `doctype` | string | **Yes** | — | Exact DocType name |
+| `doctype` | string | **Yes**, except with `documents` | — | Exact DocType name |
 | `data` | object | One of `data`/`records` | — | Field values as key-value pairs |
-| `records` | array | One of `data`/`records` | — | Several records to create, each a field dict like `data` |
+| `records` | array | One of `data`/`records` | — | Several records of this DocType, each a field dict like `data`. See **Creating many records** |
 | `mode` | string | No | `all_or_nothing` | For `records`: `all_or_nothing` or `continue` |
-| `submit` | boolean | No | `false` | Submit after creation (for submittable DocTypes). Under an active Workflow the document is created as a draft instead |
+| `submit` | boolean | No | `false` | Submit after creation (for submittable DocTypes). Not with `documents`. Under an active Workflow the document is created as a draft instead |
 | `validate_only` | boolean | No | `false` | Validate without saving — use to test data format |
+| `documents` | array | Instead of `doctype` and `data` | — | Records of several DocTypes: a list of `{doctype, data}`, up to 100, all created or none. See **Several records at once** |
+| `import_session` | string | No | — | With `documents`: the import session whose missing masters these are. See **Missing masters of an import** |
 
 ## Response Format
 
@@ -107,7 +109,7 @@ A Table MultiSelect takes an array of its link values, as Desk sends it. Each va
 
 ## Creating many records
 
-Pass `records` instead of `data`. Each record is checked exactly as a single create would be, including child tables, restricted fields and `submit`.
+For many records of **one DocType**, pass `records` instead of `data`. Each record is checked exactly as a single create would be, including child tables, restricted fields and `submit`.
 
 ```json
 {
@@ -123,6 +125,56 @@ Pass `records` instead of `data`. Each record is checked exactly as a single cre
 - At most 100 records per call; split a larger job into several calls.
 - `mode: "all_or_nothing"` (the default) saves nothing if any record fails, and `failed_record` names the record and its error. `mode: "continue"` saves the records that pass and lists each record's outcome in `results`.
 - Customisation DocTypes (Custom Field, Property Setter, Server Script, Client Script, DocType, Workflow, Report, Print Format, Notification and similar) are refused in a batch: write them one at a time so each one is previewed.
+- **`records` is not a way to import a user's file** either: a file goes through the import tools (see below).
+
+## Several records at once
+
+For records of **several DocTypes** (or an import's missing masters), pass `documents` instead of `doctype` and `data`: one call, so the user approves **once** for all of them.
+
+**`documents` is not a way to import a user's file.** A file goes through the import tools: `start_import_session`, `dry_run_import`, then `start_import`; if they fail, stop and tell the user what failed and the error. Never create the file's records here instead, one by one or as a list. The one exception is a session's missing masters, with `import_session` (see **Missing masters of an import**).
+
+```json
+{
+  "documents": [
+    {"doctype": "Customer Group", "data": {"customer_group_name": "Hospitals", "parent_customer_group": "All Customer Groups"}},
+    {"doctype": "Territory", "data": {"territory_name": "Karnataka", "parent_territory": "All Territories"}},
+    {"doctype": "UOM", "data": {"uom_name": "Dozen"}}
+  ]
+}
+```
+
+- **Up to 100 records.** More than that: split them into several calls.
+- **Customisations and schema changes one at a time.** A customisation (Custom Field, Property Setter, Client or Server Script, Custom DocPerm, DocType, Role, Report, Print Format, Notification, Workflow, Workflow State, Workflow Action Master) or a record whose save changes the database schema (Inventory Dimension, Accounting Dimension, Service Level Agreement) is refused in `documents`, before anything is created: `error_type: "one_at_a_time"`, with every such record in `problems`. Create each of them on its own, with `doctype` and `data`, one call each (the user approves each customisation); the other records may still go as a list. Any other record whose save would change the schema fails the list the same way (`error_type: "schema_change_in_list"`), and nothing is created.
+- **In order:** put a parent before the records under it.
+- **All or nothing.** Every record is checked first (permission, restricted fields); then they are created one by one with the same checks as a single record. If one fails, none is kept, and the error names it: "Document 2 (Territory) couldn't be created: … Nothing was created." Fix it, or take it out, and call again. What a save sends out at once can't be taken back, as with one record: a Notification's Slack or SMS message, say.
+- **No keys that start with an underscore.** `_assign`, `_comments`, `_liked_by`, `_user_tags` and the like are Frappe's own: a record (or a child row) with one is refused before anything is created, `error_type: "internal_key"`, with each record and key in `problems`. Only `__newname`, the name of a record named by prompt, may be sent.
+- **Show the user the list as a table before calling.** The approval card then shows one table per DocType with every record and every field it sets.
+- `validate_only` validates each record on its own and creates none. `submit` is for one record at a time: create a list as drafts, then submit each.
+
+Reply: `{"success": true, "created": [{"doctype": "Customer Group", "name": "Hospitals"}, …], "message": "Created 3 records."}`. When nothing was created: `success: false`, the `error`, and `problems` (each with the record's number `document` and why).
+
+## Missing masters of an import
+
+`dry_run_import` lists the masters a migration file needs that don't exist yet and can be created from their name (`masters_plan`): Customer Groups, Territories, UOMs, Brands and the like. Create them with this tool, `documents` and **`import_session`**:
+
+1. **Show the plan as one table**, with every record: DocType, name, parent, rows it fixes. Let the user change a parent; it must be an existing group of the same tree (e.g. a Customer Group with "Is Group" ticked), or a missing one added to the list (below). Show a tree record's full path, e.g. "All Customer Groups > Retail > Online". Ask once: "Create these 4 records?"
+2. **Call once** with each plan entry's `doctype` and `data`, and the session:
+
+   ```json
+   {
+     "import_session": "IMP-2026-00012",
+     "documents": [
+       {"doctype": "Customer Group", "data": {"customer_group_name": "Hospitals", "parent_customer_group": "All Customer Groups"}},
+       {"doctype": "Market Segment", "data": {"market_segment": "Healthcare"}}
+     ]
+   }
+   ```
+
+3. **Show the change log**: the same table with a Result column. Then call `dry_run_import` again without fixes: the rows that needed them now pass.
+
+With `import_session`, each record must be one of that session's missing masters as its **latest** check planned it: the same DocType and name, only the name and the parent. The one addition: a **missing parent** the user wants a record under, with its own parent (an existing group, or another missing one), e.g. `{"customer_group_name": "Retail", "parent_customer_group": "All Customer Groups"}` before Online goes under Retail. It is created first, as a group, whatever order the list has; records under each other are refused. Send every record **as it is created**, since the approval card shows what you send: its parent (the tree's root when the user chose none, as masters_plan gives it), and `"is_group": 1` on a missing parent another record goes under (on any other record it is refused). A record sent otherwise is refused, and the refusal gives the data to send. **Never invent one**; to use another name, map the rows instead. Each record created is listed on the session (**Created Records**). Refused, with nothing created, when the file or its mapping changed since the check (check again first), or a record already exists or can't be created here.
+
+A missing record that can't be created has no `create` fix in the check; its group has `cannot_create` saying why. For example: ERPNext names it itself (Customer, Supplier, Warehouse, Account), it needs more than a name (Item, Price List), it is a system record (Currency, User), it is a Company, or the file imports that DocType itself. Offer **map** to an existing record, or **leave out** the rows.
 
 ## Edge Cases
 
@@ -135,3 +187,8 @@ Pass `records` instead of `data`. Each record is checked exactly as a single cre
 - **Child table rows** — pass as arrays of objects under the child table fieldname. A Table MultiSelect also accepts an array of its link values (see the example above). A plain Table does not, because no single field says what a bare value means; that returns `error_type: "child_table_handling_error"` with the `field`.
 - **Restricted fields in a child row** — each row is checked against its child doctype's restricted fields, as on the parent. When you copy rows from another document, leave out system fields such as `owner`, `creation`, `docstatus` and `idx`.
 - **Child-table doctypes** — `create_document` with a child doctype such as `Sales Invoice Item` is refused with `error_type: "child_table_doctype"` and the `parent_doctypes` it belongs to. A row exists only inside its parent, so add it with `update_document` on the parent document.
+
+## In a migration plan
+
+When the session is in a migration plan (its `migration_plan` is set), don't ask the user here:
+`dry_run_import` with `plan` gathers every question of the plan into one list. Missing masters of a planned session aren't created with `create_document`: answer their question with the `create` fix, and the plan creates them when it runs.

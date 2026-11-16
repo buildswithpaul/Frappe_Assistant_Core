@@ -440,3 +440,56 @@ describe("live-turn gate on the realtime dispatcher", () => {
 		expect(spy).toHaveBeenCalledWith(null);
 	});
 });
+
+describe("a result FACO posted when a background job ended (#34416)", () => {
+	let handler;
+
+	beforeEach(() => {
+		window.frappe = {
+			realtime: {
+				on: vi.fn((name, fn) => {
+					if (name === "faco_message_stream") handler = fn;
+				}),
+				off: vi.fn(),
+				task_subscribe: vi.fn(),
+				task_unsubscribe: vi.fn(),
+			},
+		};
+	});
+
+	afterEach(() => {
+		delete window.frappe;
+	});
+
+	function mounted(sessionId) {
+		const pinia = createPinia();
+		mount(
+			defineComponent({
+				setup() {
+					useStreaming();
+					return () => null;
+				},
+			}),
+			{ global: { plugins: [pinia] } }
+		);
+		const chatStore = useChatStore(pinia);
+		chatStore.currentSessionId = sessionId;
+		return vi.spyOn(chatStore, "reconcileFromServer").mockResolvedValue();
+	}
+
+	it("reads the open conversation again, so the message shows without a reload", () => {
+		const reconcile = mounted("s-post");
+
+		handler({ event: "message_posted", session_id: "s-post" });
+
+		expect(reconcile).toHaveBeenCalledWith("s-post");
+	});
+
+	it("leaves another conversation alone", () => {
+		const reconcile = mounted("s-other");
+
+		handler({ event: "message_posted", session_id: "s-post" });
+
+		expect(reconcile).not.toHaveBeenCalled();
+	});
+});

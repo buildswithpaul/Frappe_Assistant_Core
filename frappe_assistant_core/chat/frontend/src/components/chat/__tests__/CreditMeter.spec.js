@@ -222,4 +222,20 @@ describe("CreditMeter opens My usage", () => {
 		await new Promise((r) => setTimeout(r));
 		expect(router.currentRoute.value.fullPath).toBe("/analytics?view=me");
 	});
+
+	it("a stale credit status is shown with the out-of-date note", async () => {
+		// The backend answers from its last good copy, marked stale, while FAC Cloud is slow.
+		const store = useUserStore();
+		store.myCreditStatus = { ...capped(), stale: true };
+		const wrapper = mountMeter();
+		await nextTick();
+		expect(wrapper.text()).toContain("May be out of date");
+	});
+
+	it("shows no out-of-date note for a fresh figure", async () => {
+		useUserStore().myCreditStatus = capped();
+		const wrapper = mountMeter();
+		await nextTick();
+		expect(wrapper.text()).not.toContain("May be out of date");
+	});
 });

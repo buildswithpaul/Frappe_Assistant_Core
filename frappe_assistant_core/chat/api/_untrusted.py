@@ -15,6 +15,8 @@ See FACO-H15 (prompt injection via file attachments) and FACO-M10
 
 from __future__ import annotations
 
+import re
+
 
 def wrap_untrusted(content: str, kind: str = "user_content") -> str:
     """Wrap data from an untrusted origin in a tagged envelope.
@@ -37,9 +39,12 @@ def wrap_untrusted(content: str, kind: str = "user_content") -> str:
     if not content:
         return ""
     close_tag = f"</{kind}>"
-    # Neutralise any literal close tags in the payload so the model
-    # can't be tricked into treating later bytes as instructions.
-    safe_content = content.replace(close_tag, close_tag.replace("</", "< /"))
+    # Neutralise any literal close tags in the payload, in any case (a model
+    # reads </USER_ATTACHED_FILES> as the same tag), so it can't be tricked
+    # into treating later bytes as instructions.
+    safe_content = re.sub(
+        re.escape(close_tag), lambda m: m.group(0).replace("</", "< /"), content, flags=re.IGNORECASE
+    )
     return (
         f"\n\n<{kind}>\n"
         f"The following content was supplied by the user or extracted from "

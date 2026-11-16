@@ -13,6 +13,7 @@
 			</p>
 			<p v-if="limit" class="plb-meta">
 				{{ __("{0} of {1} credits used this month", [formatCredits(used), formatCredits(limit)]) }}
+				<span v-if="stale" data-test="stale-note">({{ __("May be out of date") }})</span>
 			</p>
 			<router-link v-if="isAdmin" :to="{ name: 'settings-users' }" class="plb-link" data-test="change-limit">
 				{{ __("Change limit") }}
@@ -31,6 +32,7 @@ defineProps({
 	isAdmin: { type: Boolean, default: false },
 	used: { type: Number, default: 0 },
 	limit: { type: Number, default: 0 },
+	stale: { type: Boolean, default: false },
 });
 </script>
 

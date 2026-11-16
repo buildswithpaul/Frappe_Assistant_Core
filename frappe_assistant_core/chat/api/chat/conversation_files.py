@@ -40,6 +40,10 @@ PREAMBLE = (
     "Refer to a file by its File ID when a tool needs it."
 )
 READ_MORE = "Read it with extract_file_content and this File ID."
+BEING_IMPORTED = (
+    "Content: not included, it is being imported in import session {0}. The import tools show its "
+    "columns, sample rows and what the check found."
+)
 
 
 def conversation_files_addendum(session_id: str, user: str) -> str:
@@ -61,6 +65,11 @@ def files_addendum(files: list) -> str:
     budget = MAX_TOTAL_CHARS
     blocks = []
     for f in files:
+        holding = _import_session(f.name)
+        if holding:
+            # Checked before the cache: text cached before the import began stays out too (#34003).
+            blocks.append(_describe(f, BEING_IMPORTED.format(holding)))
+            continue
         text = _file_text(f)
         allowance = min(MAX_FILE_CHARS, budget)
         if len(text) > allowance:
@@ -104,6 +113,12 @@ def _conversation_files(session_id: str, user: str) -> list:
     for f in files:
         first.setdefault(f.file_url, f)
     return list(first.values())
+
+
+def _import_session(file_name: str):
+    from frappe_assistant_core.utils.import_session import holding_session
+
+    return holding_session(file_name)
 
 
 def text_cache_key(file_name: str, file_url: str) -> str:

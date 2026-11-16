@@ -1,0 +1,116 @@
+[
+  {
+    "id": "quickbooks_desktop.customer_list",
+    "system": "QuickBooks Desktop",
+    "source_system": "quickbooks",
+    "export": "Customer list",
+    "how_to_export": "Customers > Customer Center > Excel > Export Customer List.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Customer"], ["Main Phone", "Main Email", "Bill to 1"]],
+      "optional": [["Active Status"], ["Company"], ["First Name"], ["Last Name"], ["Balance", "Balance Total"], ["Customer Type"]]
+    },
+    "skip": {"totals": ["TOTAL"]},
+    "columns": {
+      "Customer": {"from": ["Customer"]},
+      "Company": {"from": ["Company"]},
+      "Email": {"from": ["Main Email"]},
+      "Phone": {"from": ["Main Phone"]},
+      "Disabled": {"from": ["Active Status"], "parse": "map", "default": "0", "values": {"Active": "0", "Inactive": "1"}}
+    },
+    "targets": [
+      {"name": "Customers", "source_key": "Customer", "doctype": "Customer", "mapping": {"Customer": "customer_name", "Email": "email_id", "Disabled": "disabled"},
+       "constants": [{"column": "Customer Type", "field": "customer_type", "value": "Company"}]}
+    ]
+  },
+  {
+    "id": "quickbooks_desktop.vendor_list",
+    "system": "QuickBooks Desktop",
+    "source_system": "quickbooks",
+    "export": "Vendor list",
+    "how_to_export": "Vendors > Vendor Center > Excel > Export Vendor List.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Vendor"], ["Main Phone", "Main Email", "Bill from 1"]],
+      "optional": [["Active Status"], ["Company"], ["First Name"], ["Last Name"], ["Balance", "Balance Total"], ["Vendor Type"]]
+    },
+    "skip": {"totals": ["TOTAL"]},
+    "columns": {
+      "Vendor": {"from": ["Vendor"]},
+      "Company": {"from": ["Company"]},
+      "Email": {"from": ["Main Email"]},
+      "Phone": {"from": ["Main Phone"]},
+      "Disabled": {"from": ["Active Status"], "parse": "map", "default": "0", "values": {"Active": "0", "Inactive": "1"}}
+    },
+    "targets": [
+      {"name": "Suppliers", "source_key": "Vendor", "doctype": "Supplier", "mapping": {"Vendor": "supplier_name", "Email": "email_id", "Disabled": "disabled"},
+       "constants": [{"column": "Supplier Type", "field": "supplier_type", "value": "Company"}]}
+    ]
+  },
+  {
+    "id": "quickbooks_desktop.item_list",
+    "system": "QuickBooks Desktop",
+    "source_system": "quickbooks",
+    "export": "Item list",
+    "how_to_export": "Lists > Item List > Excel > Export all items.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Item"], ["Type"], ["Price"], ["Cost", "On Hand", "Quantity On Hand"]],
+      "optional": [["Description"], ["Account"], ["U/M"], ["Active Status"]]
+    },
+    "skip": {"totals": ["TOTAL"]},
+    "columns": {
+      "Item": {"from": ["Item"], "parse": "last_segment"},
+      "Description": {"from": ["Description"]},
+      "Type": {"from": ["Type"]},
+      "Stock Item": {"from": ["Type"], "parse": "map", "default": "0", "values": {"Inventory Part": "1", "Inventory Assembly": "1"}},
+      "Price": {"from": ["Price"], "parse": "amount"},
+      "Cost": {"from": ["Cost"], "parse": "amount"},
+      "UOM": {"from": ["U/M"], "default": "Nos"}
+    },
+    "targets": [
+      {"name": "Items", "source_key": "Item", "doctype": "Item",
+       "when": {"column": "Type", "not_in": ["Subtotal", "Group", "Discount", "Payment", "Sales Tax Item", "Sales Tax Group", "Other Charge"]},
+       "mapping": {"Item": "item_code", "Description": "description", "Stock Item": "is_stock_item", "Price": "standard_rate",
+                   "Cost": "valuation_rate", "UOM": "stock_uom"},
+       "constants": [{"column": "Item Group", "field": "item_group", "value": "All Item Groups"}]}
+    ]
+  },
+  {
+    "id": "quickbooks_desktop.account_listing",
+    "system": "QuickBooks Desktop",
+    "source_system": "quickbooks",
+    "export": "Account Listing (chart of accounts)",
+    "how_to_export": "Reports > List > Account Listing > Excel > Create New Worksheet.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Account"], ["Type"], ["Accnt. #", "Balance Total"]],
+      "optional": [["Description"], ["Tax Line"]]
+    },
+    "skip": {"totals": ["TOTAL"]},
+    "columns": {
+      "Account": {"from": ["Account"], "parse": ["last_segment", "strip_number"]},
+      "Type": {"from": ["Type"]},
+      "Parent": {"from": ["Account"], "parse": ["parent_segment", "strip_number"], "fallback": "Type"},
+      "Account Type": {"from": ["Type"], "parse": "map", "default": "",
+        "values": {"Bank": "Bank", "Accounts Receivable": "Receivable", "Accounts Payable": "Payable", "Fixed Asset": "Fixed Asset",
+                   "Equity": "Equity", "Income": "Income Account", "Other Income": "Income Account", "Expense": "Expense Account",
+                   "Other Expense": "Expense Account", "Cost of Goods Sold": "Cost of Goods Sold",
+                   "Other Current Asset": "Current Asset", "Other Asset": "",
+                   "Other Current Liability": "Current Liability", "Long Term Liability": "Liability",
+                   "Credit Card": ""}},
+      "Number": {"from": ["Accnt. #"]},
+      "Is Group": {"from": []}
+    },
+    "group_flag": {"column": "Is Group", "name": "Account", "parent": "Parent"},
+    "targets": [
+      {"name": "Accounts", "source_key": "Number", "doctype": "Account", "when": {"column": "Type", "not_in": ["Non-Posting"]},
+       "mapping": {"Account": "account_name", "Parent": "parent_account", "Account Type": "account_type", "Number": "account_number", "Is Group": "is_group"},
+       "inputs": [{"name": "company", "column": "Company", "field": "company", "ask": "Which company do these accounts belong to?"}]}
+    ]
+  }
+]

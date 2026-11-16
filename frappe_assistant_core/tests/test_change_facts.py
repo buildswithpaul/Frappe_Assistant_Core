@@ -56,6 +56,19 @@ class TestChangeFacts(BaseAssistantTest):
             },
         )
 
+    def test_edits_give_the_same_facts_as_the_equivalent_data(self):
+        # Every fact reads non-text fields or the doctype, and edits are refused on non-text fields.
+        # A fact that starts reading a text field must learn about edits, and fails here until it does.
+        note = frappe.get_doc({"doctype": "Note", "title": "facts parity", "content": "a"}).insert()
+        base = {"doctype": "Note", "name": note.name}
+
+        via_data = change_facts("update_document", {**base, "data": {"content": "b"}})
+        via_edits = change_facts(
+            "update_document", {**base, "edits": [{"field": "content", "find": "a", "replace": "b"}]}
+        )
+
+        self.assertEqual(via_edits, via_data)
+
     def test_facts_are_real_bools(self):
         facts = change_facts("create_document", {"doctype": "Journal Entry", "data": {}})
         for key in (

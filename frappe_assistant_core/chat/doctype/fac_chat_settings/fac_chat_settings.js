@@ -44,6 +44,34 @@ frappe.ui.form.on("FAC Chat Settings", {
 			"orange",
 		];
 		frm.dashboard.add_indicator(label, colour);
+
+		frm.trigger("show_server_setup");
+	},
+
+	show_server_setup(frm) {
+		if (!frappe.user.has_role("System Manager")) return;
+
+		frappe.call({
+			method: "frappe_assistant_core.chat.server_setup.get_server_setup",
+			type: "GET",
+			callback: ({ message }) => {
+				const reasons = [];
+				if (message?.status === "warning") {
+					frm.dashboard.add_indicator(__("Web server setup needs attention"), "orange");
+					reasons.push(...message.reasons);
+				}
+				if (message?.relay?.status === "warning") {
+					frm.dashboard.add_indicator(__("Chat relay workers need attention"), "orange");
+					reasons.push(...message.relay.reasons);
+				}
+				if (reasons.length) {
+					frm.dashboard.set_headline_alert(
+						reasons.map((reason) => frappe.utils.escape_html(reason)).join("<br>"),
+						"orange"
+					);
+				}
+			},
+		});
 	},
 
 	start_registration(frm) {

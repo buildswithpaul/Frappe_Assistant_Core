@@ -12,7 +12,12 @@
   "state_sig",
   "format_version",
   "has_pending_interrupt",
-  "updated_at"
+  "updated_at",
+  "pre_turn_message",
+  "pre_turn_blob",
+  "pre_turn_sig",
+  "pre_turn_format_version",
+  "pre_turn_seq"
  ],
  "fields": [
   {
@@ -64,11 +69,47 @@
    "fieldname": "updated_at",
    "fieldtype": "Datetime",
    "label": "Updated At"
+  },
+  {
+   "fieldname": "pre_turn_message",
+   "fieldtype": "Data",
+   "label": "Pre-turn Message",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "The user message whose turn the pre-turn state precedes; Retry restores it only for that message."
+  },
+  {
+   "fieldname": "pre_turn_blob",
+   "fieldtype": "Long Text",
+   "label": "Pre-turn State Blob",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "pre_turn_sig",
+   "fieldtype": "Data",
+   "label": "Pre-turn State Signature",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "pre_turn_format_version",
+   "fieldtype": "Int",
+   "label": "Pre-turn Format Version",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "pre_turn_seq",
+   "fieldtype": "Int",
+   "label": "Pre-turn Turn Sequence",
+   "read_only": 1,
+   "no_copy": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-14 00:00:00.000000",
+ "modified": "2026-11-11 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Chat",
  "name": "FAC Chat Session State",

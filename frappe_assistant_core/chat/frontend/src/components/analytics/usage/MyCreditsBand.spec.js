@@ -39,6 +39,18 @@ describe("MyCreditsBand", () => {
 		expect(text).not.toContain("Shared by your workspace");
 	});
 
+	it("marks a stale personal figure as possibly out of date", () => {
+		// The backend serves its last good copy, marked stale, while FAC Cloud is slow.
+		seed({ mine: { ...personal(1200), stale: true } });
+		const wrapper = mount(MyCreditsBand, withRouter());
+		expect(wrapper.find('[data-test="stale-note"]').text()).toBe("May be out of date");
+	});
+
+	it("shows no out-of-date note for a fresh figure", () => {
+		seed({ mine: personal(1200) });
+		expect(mount(MyCreditsBand, withRouter()).find('[data-test="stale-note"]').exists()).toBe(false);
+	});
+
 	it("falls back to the shared pool when there is no personal limit", () => {
 		seed();
 		const text = mount(MyCreditsBand, withRouter()).text();

@@ -20,6 +20,7 @@ import glob
 import hashlib
 import json
 import os
+import textwrap
 from unittest.mock import patch
 
 import frappe
@@ -33,7 +34,9 @@ from frappe_assistant_core.api.fac_page import (
     get_page,
     is_page_api_method,
     list_pages,
+    my_roles,
     page_format_settings,
+    report_access,
 )
 from frappe_assistant_core.plugins.core.tools.create_document import DocumentCreate
 from frappe_assistant_core.plugins.core.tools.get_document import DocumentGet
@@ -200,7 +203,41 @@ class TestFACPage(BaseAssistantTest):
         self.assertIn('frame.setAttribute("sandbox", "")', page.script)
         self.assertNotIn("{% include", page.script)
 
-    def test_the_host_page_gives_page_scripts_fac_chart(self):
+    def test_the_host_page_inlines_the_gallery_card(self):
+        page = frappe.get_doc("Page", HOST_PAGE)
+        page.load_assets()
+
+        self.assertIn("function fac_page_card", page.script)
+        self.assertIn("function fac_page_index", page.script)
+
+    def test_the_host_page_wires_the_gallery_actions(self):
+        # Rename and delete go through frappe.client, so the controller and permissions decide;
+        # Edit with FACO and Share open the chat with the page beside it.
+        page = frappe.get_doc("Page", HOST_PAGE)
+        page.load_assets()
+
+        for wiring in ("frappe.client.set_value", "frappe.client.delete", "set_primary_action", "&page="):
+            self.assertIn(wiring, page.script)
+        # frappe.confirm renders its message as html, so the title goes in escaped.
+        self.assertIn("frappe.confirm(fac_page_delete_message(p.title)", page.script)
+
+    def test_the_host_page_gives_page_scripts_the_blocks(self):
+        page = frappe.get_doc("Page", HOST_PAGE)
+        page.load_assets()
+
+        # Desk's tools send their calls with fetch, so a refused save opens no dialog over the page.
+        self.assertIn("bundle.deskBlocks(frappe, () => frappe.csrf_token)", page.script)
+
+    def test_the_host_page_offers_present_for_published_pages(self):
+        # Present runs the page's sections full screen; a draft runs nothing, so it gets none.
+        page = frappe.get_doc("Page", HOST_PAGE)
+        page.load_assets()
+
+        for wiring in ('__("Present")', "mountPresentControls", "makePresenter", "onPresentKey"):
+            self.assertIn(wiring, page.script)
+        self.assertIn('if (data.draft === false) page.set_secondary_action(__("Present")', page.script)
+
+    def test_the_host_page_gives_page_scripts_fac_chart_and_report(self):
         # The page script runs with fac in Desk as in the chat panel; the built helper is served
         # from /assets, and bench build makes it (it is not committed).
         page = frappe.get_doc("Page", HOST_PAGE)
@@ -208,7 +245,8 @@ class TestFACPage(BaseAssistantTest):
 
         self.assertIn("/assets/frappe_assistant_core/js/fac_page_charts.js?v=", page.script)
         self.assertIn("const bundle = window.fac_page_charts;", page.script)
-        self.assertIn("with_page_globals(script)", page.script)
+        self.assertIn("bundle.report(frappe, name, filters)", page.script)
+        self.assertIn("with_page_globals(script, fac_page_theme_of(data))", page.script)
 
     def test_the_host_page_gives_page_scripts_a_frappe_whose_format_returns_text(self):
         # Desk's frappe.format returns html; a Shared page's script gets the wrapper that returns
@@ -872,19 +910,99 @@ class TestListPages(BaseAssistantTest):
         # nosemgrep: frappe-setuser — test acts as a non-Administrator inside the test transaction
         frappe.set_user(user)
 
-    def _build_personal(self, user: str, slug: str) -> str:
+    def _build_personal(self, user: str, slug: str, **fields) -> str:
         # Production: FACO's create_document inserts a personal page as the session user.
         self._act_as(user)
         doc = frappe.get_doc(
-            {"doctype": "FAC Page", "title": f"Mine {slug}", "slug": slug, "html": "<p>x</p>"}
+            {"doctype": "FAC Page", "title": f"Mine {slug}", "slug": slug, "html": "<p>x</p>", **fields}
         )
         doc.insert()
         return doc.name
 
-    def _build_shared(self, slug: str, published: int = 1, roles: tuple = ()) -> str:
+    def _build_shared(self, slug: str, published: int = 1, roles: tuple = (), **fields) -> str:
         # Production: a System Manager shares a page and publishes it through an approval card.
         self._act_as("Administrator")
-        return _insert_shared_page(published, roles, slug=slug, title=f"Team {slug}", script="", style="")
+        fields = {"title": f"Team {slug}", "script": "", "style": "", **fields}
+        return _insert_shared_page(published, roles, slug=slug, **fields)
+
+    def _item(self, user: str, name: str) -> dict:
+        self._act_as(user)
+        return next(page for page in list_pages() if page["name"] == name)
+
+    def test_a_page_lists_its_description(self):
+        user = self._desk_user("fac-list-desc")
+        name = self._build_personal(user, self._slug("desc"), description="Overdue invoices")
+        self.assertEqual(self._item(user, name)["description"], "Overdue invoices")
+
+    def test_the_owner_manages_their_personal_page(self):
+        user = self._desk_user("fac-list-own")
+        item = self._item(user, self._build_personal(user, self._slug("own")))
+        self.assertEqual((item["can_manage"], item["can_share"]), (True, False))
+
+    def test_a_system_manager_may_share_their_personal_page(self):
+        item = self._item("Administrator", self._build_personal("Administrator", self._slug("sm-own")))
+        self.assertEqual((item["can_manage"], item["can_share"]), (True, True))
+
+    def test_a_shared_page_is_managed_by_system_managers_only(self):
+        name = self._build_shared(self._slug("team"), roles=("Report Manager",))
+        reader = self._item(self._desk_user("fac-list-reader"), name)
+        self.assertEqual((reader["can_manage"], reader["can_share"]), (False, False))
+        self.assertTrue(self._item("Administrator", name)["can_manage"])
+
+    def test_a_preview_is_the_sanitised_html_without_script(self):
+        html = '<div class="mk-card"><span>A</span><b>B</b><img src="x" onerror="alert(1)"></div>'
+        item = self._item("Administrator", self._build_shared(self._slug("pv"), html=html, script="go()"))
+        self.assertIn("mk-card", item["preview_html"])
+        self.assertNotIn("onerror", item["preview_html"])
+        self.assertNotIn("script", item)
+        self.assertNotIn("html", item)
+
+    def test_a_personal_preview_drops_off_site_urls_as_get_page_does(self):
+        # The preview frame's CSP blocks fetches; the html is cleaned as get_page serves it too.
+        user = self._desk_user("fac-list-url")
+        html = (
+            '<div class="mk-card"><span style="background:url(https://evil.example/x)">A</span><b>B</b></div>'
+        )
+        item = self._item(user, self._build_personal(user, self._slug("url"), html=html))
+        self.assertNotIn("evil.example", item["preview_html"])
+        self.assertIn("mk-card", item["preview_html"])
+
+    def test_a_page_built_by_its_script_has_no_preview(self):
+        user = self._desk_user("fac-list-empty")
+        item = self._item(user, self._build_personal(user, self._slug("empty"), html='<div id="root"></div>'))
+        self.assertEqual((item["preview_html"], item["preview_style"]), (None, None))
+
+    def test_an_empty_skeleton_has_no_preview(self):
+        # fac_page.md's own reference: a card and a table the script fills, so nothing to show.
+        html = '<div class="mk-page"><div class="mk-card"><table class="mk-table" id="tasks"></table></div></div>'
+        item = self._item(
+            "Administrator", self._build_personal("Administrator", self._slug("skel"), html=html)
+        )
+        self.assertIsNone(item["preview_html"])
+
+    def test_a_preview_whose_cleaned_html_outgrows_the_cap_is_dropped(self):
+        from frappe_assistant_core.api.fac_page import MAX_PREVIEW_HTML
+
+        # Cleaning adds markup, so html just under the cap can come out over it.
+        unit = "<p class=a><b>x</b></p>"  # cleaned as <p class="a">, two characters longer
+        html = unit * (MAX_PREVIEW_HTML // len(unit))
+        self.assertLessEqual(len(html), MAX_PREVIEW_HTML)
+        user = self._desk_user("fac-list-grow")
+        item = self._item(user, self._build_personal(user, self._slug("grow"), html=html))
+        self.assertIsNone(item["preview_html"])
+
+    def test_a_page_with_an_oversized_style_has_no_preview(self):
+        from frappe_assistant_core.api.fac_page import MAX_PREVIEW_STYLE
+
+        html = '<div class="mk-card"><span>A</span><b>B</b></div>'
+        style = ".mk-card { color: teal; }\n" * (MAX_PREVIEW_STYLE // 20)
+        item = self._item("Administrator", self._build_shared(self._slug("css"), html=html, style=style))
+        self.assertEqual((item["preview_html"], item["preview_style"]), (None, None))
+
+    def test_an_oversized_page_has_no_preview(self):
+        user = self._desk_user("fac-list-big")
+        item = self._item(user, self._build_personal(user, self._slug("big"), html="<p>x</p>" * 20000))
+        self.assertIsNone(item["preview_html"])
 
     def _slug(self, base: str) -> str:
         return f"{base}-{frappe.generate_hash(length=6).lower()}"
@@ -974,3 +1092,155 @@ class TestListPages(BaseAssistantTest):
         self._act_as("Guest")
         with self.assertRaises(frappe.PermissionError):
             list_pages()
+
+
+class TestReportAccess(BaseAssistantTest):
+    """report_access, which a page asks before running a report, so Desk never opens its
+    "Not permitted" dialog over the page."""
+
+    # A frappe-core report open to System Managers only, so these run without ERPNext.
+    REPORT = "Permitted Documents For User"
+
+    def test_report_access_allows_a_report_the_user_may_run(self):
+        self.assertEqual(report_access([self.REPORT]), {self.REPORT: True})
+
+    def test_report_access_refuses_a_report_outside_the_users_roles(self):
+        # A Desk user without System Manager, the way a BU team member opens a finance page.
+        user = self.make_throwaway_user("report-access", roles=("Report Manager",))
+        # nosemgrep: frappe-setuser — test acts as a non-Administrator inside the test transaction
+        frappe.set_user(user)
+        self.assertEqual(report_access([self.REPORT]), {self.REPORT: False})
+
+    def test_report_access_refuses_a_missing_report(self):
+        self.assertEqual(report_access(["No Such Report"]), {"No Such Report": False})
+
+    def test_report_access_reads_names_sent_as_json(self):
+        # A GET request carries the list as a JSON string.
+        self.assertEqual(report_access(json.dumps([self.REPORT])), {self.REPORT: True})
+
+    def test_report_access_caps_the_names_it_checks(self):
+        with self.assertRaises(frappe.ValidationError):
+            report_access([f"R{i}" for i in range(21)])
+
+    def test_report_access_refuses_guest(self):
+        # nosemgrep: frappe-setuser — an anonymous request runs as Guest
+        frappe.set_user("Guest")
+        with self.assertRaises(frappe.PermissionError):
+            report_access([self.REPORT])
+
+
+class TestFACPageDocTypes(BaseAssistantTest):
+    """A page records the doctypes it reads or writes, so FACO reuses them when it changes the page."""
+
+    def tearDown(self):
+        # nosemgrep: frappe-setuser — restores the session the tests above switched away from
+        frappe.set_user("Administrator")
+        super().tearDown()
+
+    def _personal(self, **fields) -> str:
+        # Production: FACO's create_document inserts a personal page as a Desk user.
+        user = self.make_throwaway_user("fac-doctypes", roles=("Report Manager",))
+        # nosemgrep: frappe-setuser — test acts as a non-Administrator inside the test transaction
+        frappe.set_user(user)
+        doc = frappe.get_doc(
+            {
+                "doctype": "FAC Page",
+                "title": "Review",
+                "slug": f"review-{frappe.generate_hash(length=6).lower()}",
+                "html": "<p>x</p>",
+                **fields,
+            }
+        )
+        doc.insert()
+        return doc.name
+
+    def test_a_page_records_the_doctypes_it_uses(self):
+        name = self._personal(doctypes=[{"doctype_link": "ToDo"}, {"doctype_link": "Note"}])
+        recorded = [row.doctype_link for row in frappe.get_doc("FAC Page", name).doctypes]
+        self.assertEqual(recorded, ["ToDo", "Note"])
+
+    def test_a_page_cannot_record_a_doctype_that_does_not_exist(self):
+        with self.assertRaises(frappe.LinkValidationError):
+            self._personal(doctypes=[{"doctype_link": "No Such DocType"}])
+
+    def test_deleting_a_page_leaves_its_doctypes_and_records(self):
+        name = self._personal(doctypes=[{"doctype_link": "ToDo"}])
+        todo = frappe.get_doc({"doctype": "ToDo", "description": "kept"}).insert()
+        frappe.delete_doc("FAC Page", name)
+        self.assertTrue(frappe.db.exists("DocType", "ToDo"))
+        self.assertTrue(frappe.db.exists("ToDo", todo.name))
+
+
+class TestMyRoles(BaseAssistantTest):
+    """my_roles, which a page asks to show Edit only to a unit's team."""
+
+    def tearDown(self):
+        # nosemgrep: frappe-setuser — restores the session the tests above switched away from
+        frappe.set_user("Administrator")
+        super().tearDown()
+
+    def test_my_roles_lists_only_the_viewers_own_roles(self):
+        user = self.make_throwaway_user("fac-my-roles", roles=("Report Manager",))
+        # nosemgrep: frappe-setuser — test acts as a non-Administrator inside the test transaction
+        frappe.set_user(user)
+        roles = my_roles()
+        self.assertIn("Report Manager", roles)
+        self.assertNotIn("System Manager", roles)
+
+    def test_my_roles_refuses_guest(self):
+        # nosemgrep: frappe-setuser — an anonymous request runs as Guest
+        frappe.set_user("Guest")
+        with self.assertRaises(frappe.PermissionError):
+            my_roles()
+
+
+def _unit_editor_template() -> str:
+    """The Before Save Server Script fac_page.md gives FACO, exactly as written there."""
+    path = os.path.join(
+        os.path.dirname(frappe.get_app_path("frappe_assistant_core")), "docs", "skills", "fac_page.md"
+    )
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    start = text.index("```python", text.index("Before Save Server Script")) + len("```python")
+    return textwrap.dedent(text[start : text.index("```", start)]).strip()
+
+
+class TestUnitEditorTemplate(BaseAssistantTest):
+    """The skill's Server Script runs in Frappe's sandbox and keeps a unit's record to its team."""
+
+    def tearDown(self):
+        # nosemgrep: frappe-setuser — restores the session the tests above switched away from
+        frappe.set_user("Administrator")
+        super().tearDown()
+
+    def _run(self, user: str):
+        from frappe.utils.safe_exec import safe_exec
+
+        # The site has no Business Unit doctype; production reaches this lookup when a unit
+        # update is saved and reads the unit's editor_role.
+        real = frappe.db.get_value
+
+        def unit_role(doctype, *args, **kwargs):
+            return "Unit A Editor" if doctype == "Business Unit" else real(doctype, *args, **kwargs)
+
+        # nosemgrep: frappe-setuser — the script runs as the user saving the record
+        frappe.set_user(user)
+        # Production runs it on a bench whose common_site_config sets server_script_enabled; CI's
+        # bench does not, and safe_exec refuses to run anything there.
+        enabled = patch("frappe.utils.safe_exec.is_safe_exec_enabled", return_value=True)
+        with enabled, patch.object(frappe.db, "get_value", autospec=True, side_effect=unit_role):
+            safe_exec(_unit_editor_template(), _locals={"doc": frappe._dict(business_unit="Unit A")})
+
+    def test_someone_outside_the_unit_is_refused(self):
+        user = self.make_throwaway_user("fac-unit-out", roles=("Report Manager",))
+        with self.assertRaises(frappe.ValidationError) as caught:
+            self._run(user)
+        self.assertIn("Only this business unit's team", str(caught.exception))
+
+    def test_the_units_team_may_save(self):
+        if not frappe.db.exists("Role", "Unit A Editor"):
+            frappe.get_doc({"doctype": "Role", "role_name": "Unit A Editor", "desk_access": 1}).insert()
+        self._run(self.make_throwaway_user("fac-unit-in", roles=("Unit A Editor",)))
+
+    def test_a_system_manager_may_save(self):
+        self._run("Administrator")

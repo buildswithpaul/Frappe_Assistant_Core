@@ -77,6 +77,8 @@ describe("router shim named routes", () => {
 describe("widget panel", () => {
 	beforeEach(() => {
 		setActivePinia(createPinia());
+		// Production sets "ready" once the access check answers.
+		useUserStore().registrationStatus = "ready";
 		resetConfirms();
 		localStorage.clear();
 		getQuotaStatus.mockReset().mockResolvedValue(null);
@@ -458,6 +460,29 @@ describe("widget panel", () => {
 		);
 	});
 
+	it("Continue after the turn credit limit sends with the model and the page a typed message would", async () => {
+		const { setHost } = await import("../host/index.js");
+		const { deskHost } = await import("../host/deskHost.js");
+		setHost({ ...deskHost, sendContext: () => ({ type: "form", doctype: "Customer", name: "C-1" }) });
+		onTestFinished(() => setHost(null));
+		const chatStore = useChatStore();
+		chatStore.sendMessage = vi.fn().mockResolvedValue();
+		// A turn AR stopped at its credit budget (turn_budget_reached) is the bubble offering Continue.
+		chatStore.messages = [{ role: "assistant", content: "Part one", blocks: [], budgetReached: true }];
+		useModelStore().selectedModel = "claude-sonnet-4-6";
+		const w = mount(WidgetPanel, { global: { stubs } });
+		w.findComponent({ name: "ChatInterface" }).vm.$emit("continue-turn");
+		await flushPromises();
+		expect(chatStore.sendMessage).toHaveBeenCalledWith(
+			"Continue",
+			[],
+			JSON.stringify({ type: "form", doctype: "Customer", name: "C-1" }),
+			"claude-sonnet-4-6",
+			null,
+			{ skipQueue: false }
+		);
+	});
+
 	it("opens a continued conversation in the widget, with any pending approval", async () => {
 		const chatStore = useChatStore();
 		chatStore.loadMessages = vi.fn().mockResolvedValue();
@@ -552,6 +577,15 @@ describe("widget panel", () => {
 			await flushPromises();
 			expect(w.find('[data-test="personal-limit-banner"]').text()).toContain("Ask your team admin");
 			expect(w.findAllComponents(RouterLinkStub)).toHaveLength(0);
+		});
+
+		it("marks the banner's figure as possibly out of date when the backend served a stale one", async () => {
+			// The backend serves its last good copy, marked stale, while FAC Cloud is slow.
+			api.users.getMyCreditStatus.mockResolvedValueOnce({ ...atLimit, stale: true });
+			useUserStore().quotaInfo = { credits_exhausted: false, is_admin: false };
+			const w = mount(WidgetPanel, { global: { stubs: withLink } });
+			await flushPromises();
+			expect(w.find('[data-test="personal-limit-banner"]').text()).toContain("May be out of date");
 		});
 
 		it("sends as usual under the limit", async () => {
@@ -703,6 +737,8 @@ describe("panel bootstrap", () => {
 
 	beforeEach(() => {
 		setActivePinia(createPinia());
+		// Production sets "ready" once the access check answers.
+		useUserStore().registrationStatus = "ready";
 		localStorage.clear();
 		window.frappe = { session: { user: "u@x.test" }, get_route: () => [] };
 		bridge.state.sessionId = "faco_1";
@@ -849,6 +885,8 @@ describe("panel bootstrap", () => {
 describe("widget Spotlight placement", () => {
 	beforeEach(() => {
 		setActivePinia(createPinia());
+		// Production sets "ready" once the access check answers.
+		useUserStore().registrationStatus = "ready";
 		window.frappe = { session: { user: "u@x.test" }, get_route: () => [] };
 	});
 

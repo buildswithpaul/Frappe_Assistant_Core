@@ -56,6 +56,9 @@ class TestSelectedModelPreference(FrappeTestCase):
         for email in (self.user, self.other):
             _make_user(email)
         self.addCleanup(frappe.set_user, "Administrator")
+        # The model list is cached site-wide; each test brings its own AR answer.
+        frappe.cache.delete_value(models.MODEL_LIST_KEY)
+        self.addCleanup(frappe.cache.delete_value, models.MODEL_LIST_KEY)
 
     def tearDown(self):
         frappe.set_user("Administrator")

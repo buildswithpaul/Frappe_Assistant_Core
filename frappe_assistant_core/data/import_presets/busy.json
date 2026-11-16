@@ -1,0 +1,83 @@
+[
+  {
+    "id": "busy.accounts",
+    "system": "Busy",
+    "source_system": "busy",
+    "export": "Account list (parties)",
+    "how_to_export": "Administration > Masters > Account > List > Configurable (select Group, Op. Bal., GSTIN, Mobile, Email) > Alt+E > Microsoft Excel.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Name", "Account Name"], ["Group", "Under Group", "Parent Group"]],
+      "optional": [["Op. Bal.", "Opening Balance", "Op. Bal"], ["Dr/Cr"], ["GSTIN", "GST No."], ["Mobile", "Mobile No."],
+                   ["Email", "E-mail"], ["Station"], ["PAN", "PAN No."], ["Type of Dealer"], ["Alias"], ["Print Name"]]
+    },
+    "skip": {"totals": ["Total", "Grand Total"]},
+    "columns": {
+      "Name": {"from": ["Name", "Account Name"]},
+      "Group": {"from": ["Group", "Under Group", "Parent Group"]},
+      "GSTIN": {"from": ["GSTIN", "GST No."]},
+      "Mobile": {"from": ["Mobile", "Mobile No."]},
+      "Email": {"from": ["Email", "E-mail"]},
+      "PAN": {"from": ["PAN", "PAN No."]}
+    },
+    "targets": [
+      {"name": "Customers", "source_key": "Name", "when": {"column": "Group", "in": ["Sundry Debtors"]}, "doctype": "Customer",
+       "mapping": {"Name": "customer_name", "GSTIN": ["gstin", "tax_id"], "Mobile": "mobile_no", "Email": "email_id", "PAN": ["pan"]},
+       "constants": [{"column": "Customer Type", "field": "customer_type", "value": "Company"}]},
+      {"name": "Suppliers", "source_key": "Name", "when": {"column": "Group", "in": ["Sundry Creditors"]}, "doctype": "Supplier",
+       "mapping": {"Name": "supplier_name", "GSTIN": ["gstin", "tax_id"], "Mobile": "mobile_no", "Email": "email_id", "PAN": ["pan"]},
+       "constants": [{"column": "Supplier Type", "field": "supplier_type", "value": "Company"}]}
+    ]
+  },
+  {
+    "id": "busy.items",
+    "system": "Busy",
+    "source_system": "busy",
+    "export": "Item list",
+    "how_to_export": "Administration > Masters > Item > List > Configurable Alphabetical > Select Fields (Group, Main Unit, HSN Code, Tax Category, Sale Price) > Alt+E.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Name", "Item Name"], ["Unit", "Main Unit"], ["Group", "Item Group"]],
+      "optional": [["HSN Code", "HSN"], ["Tax Category"], ["Sale Price"], ["Purc. Price", "Purchase Price"], ["MRP"], ["Alias"]]
+    },
+    "skip": {"totals": ["Total", "Grand Total"]},
+    "columns": {
+      "Item": {"from": ["Name", "Item Name"]},
+      "Group": {"from": ["Group", "Item Group"]},
+      "Unit": {"from": ["Main Unit", "Unit"], "default": "Nos"},
+      "HSN": {"from": ["HSN Code", "HSN"]},
+      "GST Rate": {"from": ["Tax Category"], "parse": "percent"},
+      "Sale Price": {"from": ["Sale Price"], "parse": "amount"}
+    },
+    "targets": [
+      {"name": "Items", "source_key": "Item", "doctype": "Item",
+       "mapping": {"Item": "item_code", "Group": "item_group", "Unit": "stock_uom", "HSN": ["gst_hsn_code"], "Sale Price": "standard_rate"}}
+    ]
+  },
+  {
+    "id": "busy.trial_balance",
+    "system": "Busy",
+    "export": "Closing Trial Balance",
+    "how_to_export": "Display > Trial Balance > Closing Trial - Alphabetical, split Dr/Cr into columns > Alt+E > Microsoft Excel.",
+    "verified": false,
+    "signature": {
+      "required": [["Account Name", "Particulars", "Account"], ["Debit", "Credit", "Balance", "Closing Balance"]],
+      "optional": [["Debit"], ["Credit"]],
+      "title": ["*trial balance as on*", "as on *"]
+    },
+    "skip": {"totals": ["Total", "Grand Total"]},
+    "groups": {"method": "indent", "column": "Account"},
+    "columns": {
+      "Account": {"from": ["Account Name", "Particulars", "Account"]},
+      "Debit": {"from": ["Debit"], "parse": "amount"},
+      "Credit": {"from": ["Credit"], "parse": "amount"},
+      "Balance": {"from": ["Balance", "Closing Balance"], "parse": "amount"}
+    },
+    "targets": [
+      {"name": "Trial balance", "engine": "opening_balances",
+       "columns": {"Account": "account", "Debit": "debit", "Credit": "credit", "Balance": "balance"}}
+    ]
+  }
+]

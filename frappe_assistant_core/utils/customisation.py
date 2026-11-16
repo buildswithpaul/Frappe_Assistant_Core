@@ -45,6 +45,7 @@ from frappe_assistant_core.chat.api.current_code import (
     ROW_CODE_COLUMNS_BY_DOCTYPE,
     TABLE_COLUMNS,
 )
+from frappe_assistant_core.utils.edits import EditError, edit_target_problem, effective_data
 from frappe_assistant_core.utils.field_code import (
     code_on_doctype,
     field_code,
@@ -52,6 +53,7 @@ from frappe_assistant_core.utils.field_code import (
     resulting_rows,
     rows_field_code,
 )
+from frappe_assistant_core.utils.sandbox_check import sandbox_problems
 
 CUSTOMISATION_DOCTYPES = frozenset(
     {
@@ -69,6 +71,18 @@ CUSTOMISATION_DOCTYPES = frozenset(
         "Print Format",
         "Notification",
         "FAC Page",
+    }
+)
+
+# Not customisations, but saving one adds custom fields, so it changes the database schema, which
+# commits the transaction: a list of documents (document_batch) can't hold one. Kept apart from
+# CUSTOMISATION_DOCTYPES, which the SPA and AR mirror. A list also stops any other schema change
+# while it is written; this list only refuses these before anything is written.
+SCHEMA_CHANGING_DOCTYPES = frozenset(
+    {
+        "Inventory Dimension",
+        "Accounting Dimension",
+        "Service Level Agreement",
     }
 )
 
@@ -168,6 +182,39 @@ def server_script_guard(
             "Save the script with disabled set to 1, or achieve the same result with a "
             "Client Script, a Workflow or a Notification."
         ),
+    }
+
+
+def server_script_code_guard(
+    doctype: str,
+    data: Dict[str, Any],
+    current_script: Optional[str] = None,
+    current_disabled: Optional[int] = None,
+) -> Optional[Dict[str, Any]]:
+    """Refuse a Server Script whose code would fail in Frappe's sandbox.
+
+    Checked when the code changes or the script ends up switched on, so a broken script can
+    still be switched off. Returns None when the write is allowed.
+    """
+    if doctype != "Server Script":
+        return None
+
+    disabled = cint(data["disabled"]) if "disabled" in data else cint(current_disabled)
+    if "script" not in data and disabled:
+        return None
+
+    script = data.get("script", current_script)
+    problems = sandbox_problems(script) if isinstance(script, str) else []
+    if not problems:
+        return None
+
+    return {
+        "success": False,
+        "error": _("This script would fail in the Server Script sandbox, so it was not saved:")
+        + "\n"
+        + "\n".join(problems),
+        "error_type": "server_script_sandbox",
+        "guidance": _("Fix each line named above and save again. Nothing was changed."),
     }
 
 
@@ -641,6 +688,9 @@ def _permission_opens_code(doctype: Any, role: Any) -> bool:
     return role not in SYSTEM_ROLES and bool(code_going_live(doctype))
 
 
+_EDITS_DO_NOT_APPLY = "The edits do not apply to the stored record"
+
+
 def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     if tool_name not in _WRITE_TOOLS or not isinstance(tool_input, dict):
         return {"dormant": False, "reason": "Not a customisation write"}
@@ -662,6 +712,15 @@ def _dormancy(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     if not creating and stored is None:
         return {"dormant": False, "reason": "The record does not exist"}
     stored = stored or {}
+
+    edits = tool_input.get("edits")
+    if tool_name == "update_document" and edits:
+        try:
+            if edit_target_problem(doctype, edits, data):
+                return {"dormant": False, "reason": _EDITS_DO_NOT_APPLY}
+            data = effective_data(stored, data, edits)
+        except EditError:
+            return {"dormant": False, "reason": _EDITS_DO_NOT_APPLY}
 
     def before(field: str) -> Any:
         return stored.get(field)

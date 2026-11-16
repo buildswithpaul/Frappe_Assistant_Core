@@ -1,4 +1,6 @@
 import { EXAMPLE_SITE } from "@/utils/__tests__/pageFormatCases";
+import { makeBlocks } from "@/utils/pageBlocks";
+import { report } from "@/utils/pageReport";
 
 // The frame's config, as pageFrameDoc.js writes it from get_page's response.
 beforeAll(async () => {
@@ -21,5 +23,70 @@ describe("the personal page frame's runtime", () => {
 		window.__fac_page.run((root_element, pageFrappe) => (frappe = pageFrappe));
 		expect(frappe.format(79360, { fieldtype: "Currency" })).toBe("₹ 79,360.00");
 		expect(frappe.session.user).toBe("avery@example.com");
+	});
+
+	it("gives the page fac.report, which asks the host which reports the viewer may run", async () => {
+		// The frame loads the bundle that sets window.fac_page_charts before the page runs.
+		window.fac_page_charts = { report };
+		const posted = vi.spyOn(window, "postMessage");
+		let fac;
+		window.__fac_page.run((root_element, pageFrappe, translate, pageFac) => (fac = pageFac));
+		fac.report("Profit and Loss Statement", { company: "C" });
+		await Promise.resolve();
+		const call = posted.mock.calls.map(([message]) => message).find((message) => message.op === "call");
+		expect(call).toMatchObject({
+			method: "frappe_assistant_core.api.fac_page.report_access",
+			args: { reports: ["Profit and Loss Statement"] },
+		});
+		posted.mockRestore();
+	});
+
+	it("gives the page fac.canWrite, which asks the host about the viewer's permission", async () => {
+		window.fac_page_charts = { report, makeBlocks };
+		const posted = vi.spyOn(window, "postMessage");
+		let fac;
+		window.__fac_page.run((root_element, pageFrappe, translate, pageFac) => (fac = pageFac));
+		fac.canWrite("ToDo", "T-1");
+		await Promise.resolve();
+		const call = posted.mock.calls.map(([message]) => message).find((message) => message.op === "call");
+		expect(call).toMatchObject({ method: "frappe.client.has_permission", args: { doctype: "ToDo", docname: "T-1", perm_type: "write" } });
+		posted.mockRestore();
+	});
+
+	it("gives the page fac.hasRole, which asks the host for the viewer's roles", async () => {
+		window.fac_page_charts = { report, makeBlocks };
+		const posted = vi.spyOn(window, "postMessage");
+		let fac;
+		window.__fac_page.run((root_element, pageFrappe, translate, pageFac) => (fac = pageFac));
+		fac.hasRole("Sales User");
+		await Promise.resolve();
+		const call = posted.mock.calls.map(([message]) => message).find((message) => message.op === "call" && message.method.endsWith("my_roles"));
+		expect(call).toBeTruthy();
+		posted.mockRestore();
+	});
+
+	it("presents the page's sections when the host asks, and forwards the keys only meanwhile", async () => {
+		document.querySelector(".fac-page-root").innerHTML =
+			'<section class="mk-section" data-title="Company"></section><section class="mk-section" data-title="Finance"></section>';
+		const posted = vi.spyOn(window, "postMessage");
+		const fromHost = (data) => window.dispatchEvent(new MessageEvent("message", { data: { fac_page: 1, ...data }, source: window }));
+		fromHost({ op: "present", id: 7, command: "start" });
+		const result = posted.mock.calls.map(([m]) => m).find((m) => m.op === "present_result" && m.id === 7);
+		expect(result.state).toMatchObject({ index: 0, count: 2 });
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+		expect(posted.mock.calls.map(([m]) => m)).toContainEqual(expect.objectContaining({ op: "present_key", key: "next" }));
+		fromHost({ op: "present", id: 8, command: "stop" });
+		posted.mockClear();
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+		expect(posted.mock.calls.map(([m]) => m).some((m) => m.op === "present_key")).toBe(false);
+		posted.mockRestore();
+	});
+
+	it("switches the page to the theme the host names, and to light for anything else", () => {
+		const fromHost = (data) => window.dispatchEvent(new MessageEvent("message", { data: { fac_page: 1, ...data }, source: window }));
+		fromHost({ op: "theme", theme: "dark" });
+		expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+		fromHost({ op: "theme", theme: "sepia" });
+		expect(document.documentElement.getAttribute("data-theme")).toBe("light");
 	});
 });

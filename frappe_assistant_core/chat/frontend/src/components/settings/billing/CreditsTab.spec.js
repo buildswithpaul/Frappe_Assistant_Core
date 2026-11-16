@@ -8,12 +8,15 @@ const getMyCreditStatus = vi.fn();
 vi.mock("@/api/client", () => ({ api: { users: { getMyCreditStatus: (...a) => getMyCreditStatus(...a) } } }));
 
 import CreditsTab from "./CreditsTab.vue";
+import { useUserStore } from "@/stores/userStore";
 
 const stubs = { PrepaidCreditsCard: { template: "<div data-test='card' />" }, UsageChart: true };
 
 describe("CreditsTab", () => {
 	beforeEach(() => {
 		setActivePinia(createPinia());
+		// Production sets "ready" once the access check answers.
+		useUserStore().registrationStatus = "ready";
 		push.mockReset();
 		getMyCreditStatus.mockReset();
 	});

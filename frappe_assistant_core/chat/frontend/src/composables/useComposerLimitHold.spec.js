@@ -7,6 +7,7 @@ const getMyCreditStatus = vi.fn();
 vi.mock("@/api/client", () => ({ api: { users: { getMyCreditStatus: (...a) => getMyCreditStatus(...a) } } }));
 
 import { useComposerLimitHold } from "./useComposerLimitHold";
+import { useUserStore } from "@/stores/userStore";
 
 enableAutoUnmount(afterEach);
 
@@ -31,6 +32,8 @@ describe("useComposerLimitHold", () => {
 
 	beforeEach(() => {
 		setActivePinia(createPinia());
+		// Production sets "ready" once the access check answers.
+		useUserStore().registrationStatus = "ready";
 		getMyCreditStatus.mockReset();
 		send = vi.fn();
 		continueTurn = vi.fn();

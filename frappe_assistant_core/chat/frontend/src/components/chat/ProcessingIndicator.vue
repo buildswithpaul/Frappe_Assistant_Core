@@ -18,6 +18,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useChatStore } from "@/stores/chatStore";
+import { __ } from "@/utils/i18n";
 
 const props = defineProps({
 	blocks: {
@@ -27,6 +28,10 @@ const props = defineProps({
 	lastBlockType: {
 		type: String,
 		default: null,
+	},
+	busyRetrying: {
+		type: Boolean,
+		default: false,
 	},
 });
 
@@ -53,6 +58,10 @@ let tipRotationTimer = null;
 
 // Contextual status message based on last block type
 const statusMessage = computed(() => {
+	if (props.busyRetrying) {
+		return __("FAC Cloud is busy, retrying…");
+	}
+
 	if (!props.blocks || props.blocks.length === 0) {
 		return "Processing your request...";
 	}

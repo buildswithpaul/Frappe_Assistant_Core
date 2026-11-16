@@ -10,6 +10,7 @@
 import { __ } from "@/utils/i18n";
 import { snapshotHtml } from "@/utils/pagePrint";
 import { makeFrappeStandIn } from "@/utils/pageRuntime";
+import { makePresenter, presentKey } from "@/utils/pagePresent";
 
 import { capturePage, pageText } from "./capture";
 import { guardLoadingElements, removeLoadingElements, removeWebRtc } from "./hardening";
@@ -59,12 +60,32 @@ const frappe = makeFrappeStandIn(
 	},
 );
 
+// The page tools come from the same bundle, found when a tool is first called, as fac.chart and
+// fac.report find it; without the bundle each tool says so.
+const PAGE_TOOLS = ["canWrite", "hasRole", "updated", "editText", "editList", "periodPicker"];
+let pageTools = null;
+
+function pageTool(name) {
+	return (...args) => {
+		const bundle = window.fac_page_charts;
+		if (!bundle?.makeBlocks) throw new Error(__("Page tools could not be loaded"));
+		pageTools = pageTools || bundle.makeBlocks(frappe);
+		return pageTools[name](...args);
+	};
+}
+
 const fac = {
 	chart(el, option) {
 		const bundle = window.fac_page_charts;
 		if (!bundle) throw new Error(__("Charts could not be loaded"));
 		return bundle.chart(el, option);
 	},
+	report(name, filters) {
+		const bundle = window.fac_page_charts;
+		if (!bundle) throw new Error(__("Reports could not be loaded"));
+		return bundle.report(frappe, name, filters);
+	},
+	...Object.fromEntries(PAGE_TOOLS.map((name) => [name, pageTool(name)])),
 };
 
 const root = () => document.querySelector(".fac-page-root") || document.body;
@@ -80,6 +101,35 @@ async function capture({ id, scale, quality }) {
 	} catch (error) {
 		post({ op: "capture_result", id, text, error: String(error?.message || error) });
 	}
+}
+
+// Present mode, asked for by the host, which draws the controls: this frame switches its own
+// sections and, while presenting, passes on the keys pressed inside it.
+let presenter = null;
+const forwardKey = (event) => {
+	const key = presentKey(event);
+	if (!key) return;
+	event.preventDefault();
+	post({ op: "present_key", key });
+};
+
+function present({ id, command, index }) {
+	presenter = presenter || makePresenter(document);
+	let state = null;
+	if (command === "start") {
+		state = presenter.start();
+		document.addEventListener("keydown", forwardKey);
+	} else if (command === "show") state = presenter.show(index);
+	else if (command === "stop") {
+		presenter.stop();
+		document.removeEventListener("keydown", forwardKey);
+	}
+	post({ op: "present_result", id, state });
+}
+
+// Desk's theme, as the host passes it on when it changes; the kit's tokens follow it.
+function setTheme({ theme }) {
+	document.documentElement.setAttribute("data-theme", theme === "dark" ? "dark" : "light");
 }
 
 function snapshot({ id }) {
@@ -103,6 +153,8 @@ window.addEventListener("message", (event) => {
 		}
 	} else if (data.op === "snapshot") snapshot(data);
 	else if (data.op === "capture") capture(data);
+	else if (data.op === "present") present(data);
+	else if (data.op === "theme") setTheme(data);
 });
 
 window.addEventListener("error", (event) => reportError(event.error || event.message));

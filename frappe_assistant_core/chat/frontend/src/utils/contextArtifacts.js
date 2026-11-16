@@ -25,6 +25,7 @@ const READ_TOOLS = new Set([
 	"list_documents",
 	"run_report",
 	"get_doctype_info",
+	"get_import_schema",
 	"search_link",
 ]);
 

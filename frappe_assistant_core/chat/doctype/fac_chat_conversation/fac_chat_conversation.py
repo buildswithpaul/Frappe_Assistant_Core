@@ -125,6 +125,26 @@ class FACChatConversation(Document):
             )
         _bump_project(existing.project, now)
 
+    @staticmethod
+    def untouch(session_id: str) -> None:
+        """Undo ``touch`` for a message that was deleted before its turn ran.
+
+        The conversation goes with its last message, so a first send the server refused
+        leaves no empty row in Recents.
+        """
+        if not frappe.db.exists("FAC Chat Conversation", session_id):
+            return
+        if not frappe.db.exists("FAC Chat Message", {"session_id": session_id}):
+            frappe.delete_doc("FAC Chat Conversation", session_id, ignore_permissions=True)
+            return
+        CV = DocType("FAC Chat Conversation")
+        (
+            frappe.qb.update(CV)
+            .set(CV.message_count, CV.message_count - 1)
+            .where((CV.name == session_id) & (CV.message_count > 0))
+            .run()
+        )
+
 
 def _restore_messages(session_id: str, user: str) -> None:
     """Un-archive the chat's messages so a restored chat keeps its history through retention."""

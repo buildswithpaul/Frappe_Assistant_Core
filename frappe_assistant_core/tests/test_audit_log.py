@@ -311,6 +311,61 @@ class TestAuditSinkSanitization(BaseAssistantTest):
         self.assertEqual(row["status"], "Error")
 
 
+class TestAuditTarget(BaseAssistantTest):
+    """target_doctype and target_name say what a call wrote, for one record or a list (#34396)."""
+
+    _TOOL = "test_audit_target"
+
+    def _target(self, arguments):
+        from frappe_assistant_core.utils.audit_trail import log_tool_execution
+
+        _delete_test_rows(self._TOOL)
+        log_tool_execution(
+            tool_name=self._TOOL,
+            user=frappe.session.user,
+            arguments=arguments,
+            status="Success",
+            execution_time=0.01,
+            source_app="frappe_assistant_core",
+        )
+        rows = frappe.get_all(
+            "Assistant Audit Log",
+            filters={"tool_name": self._TOOL},
+            fields=["target_doctype", "target_name"],
+        )
+        self.assertEqual(len(rows), 1, "the audit row wasn't written")
+        return rows[0]["target_doctype"], rows[0]["target_name"]
+
+    def test_a_list_call_records_its_doctypes_as_the_target(self):
+        documents = [
+            {"doctype": "ToDo", "data": {}},
+            {"doctype": "Note", "data": {}},
+            {"doctype": "ToDo", "data": {}},
+        ]
+
+        self.assertEqual(self._target({"documents": documents}), ("ToDo, Note", None))
+        # A list of one named record names it.
+        one = [{"doctype": "ToDo", "name": "TODO-1", "data": {}}]
+        self.assertEqual(self._target({"documents": one}), ("ToDo", "TODO-1"))
+
+    def test_a_long_list_of_doctypes_fits_the_target_field(self):
+        documents = [{"doctype": f"Some Long DocType Name {i}", "data": {}} for i in range(40)]
+
+        target_doctype, _name = self._target({"documents": documents})
+
+        self.assertLessEqual(len(target_doctype), 140)
+        self.assertTrue(target_doctype.startswith("Some Long DocType Name 0, "), target_doctype)
+        self.assertIn("more", target_doctype)  # says the list goes on
+
+    def test_a_single_record_call_still_records_its_doctype_and_name(self):
+        self.assertEqual(self._target({"doctype": "ToDo", "name": "TODO-1", "data": {}}), ("ToDo", "TODO-1"))
+        self.assertEqual(self._target({"doctype": "ToDo", "data": {}}), ("ToDo", None))
+
+    def test_a_name_only_call_still_records_its_name(self):
+        # Tools like get_insights_chart pass a name and no doctype or list.
+        self.assertEqual(self._target({"name": "X"}), (None, "X"))
+
+
 class TestSensitiveKeyMatcher(BaseAssistantTest):
     """_is_sensitive_key redacts credentials but preserves token-count metrics.
 

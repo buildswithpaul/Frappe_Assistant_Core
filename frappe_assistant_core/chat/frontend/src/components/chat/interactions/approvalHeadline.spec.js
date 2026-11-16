@@ -31,6 +31,13 @@ describe("approvalHeadline", () => {
 		);
 	});
 
+	it("an edits-only update keeps the Update headline", () => {
+		const edits = [{ field: "script", find: "a", replace: "b" }];
+		expect(approvalHeadline(block("update_document", { doctype: "Server Script", name: "SS-1", edits }))).toBe(
+			"Update Server Script SS-1",
+		);
+	});
+
 	it("names a new record by its doctype and the field a person knows it by", () => {
 		expect(approvalHeadline(block("create_document", { doctype: "Customer", data: { customer_name: "MIGTEST Trader 01" } }))).toBe(
 			"Create Customer “MIGTEST Trader 01”",
@@ -126,5 +133,15 @@ describe("displayValue", () => {
 		expect(displayValue("note", "2026-10-27; then delete")).toBe("2026-10-27; then delete");
 		expect(displayValue("plan_date", "2026-02-31")).toBe("2026-02-31");
 		expect(displayValue("modified", "2026-10-27 25:00")).toBe("2026-10-27 25:00");
+	});
+});
+
+describe("the migration plan's card title (PR #392, L4)", () => {
+	it("names the plan and what it imports, not the tool", () => {
+		const block = { tool_name: "run_migration_plan", input: { plan: "IMP-2026-00405", files: 3, rows: 120 } };
+		expect(approvalHeadline(block)).toBe("Run migration plan IMP-2026-00405: 3 files, 120 rows");
+	});
+	it("names the plan when the figures are missing", () => {
+		expect(approvalHeadline({ tool_name: "run_migration_plan", input: { plan: "IMP-1" } })).toBe("Run migration plan IMP-1");
 	});
 });

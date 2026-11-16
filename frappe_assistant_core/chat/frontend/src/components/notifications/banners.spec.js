@@ -13,6 +13,7 @@ import { useNotificationStore } from "@/stores/notificationStore";
 import OutageBanner from "@/components/notifications/OutageBanner.vue";
 import HighPriorityBanner from "@/components/notifications/HighPriorityBanner.vue";
 import { safeActionUrl } from "@/components/notifications/typeMeta";
+import { useUserStore } from "@/stores/userStore";
 
 const N = (over = {}) => ({
 	id: "n1", title: "Big outage", message: "**bold** details", type: "outage",
@@ -22,6 +23,8 @@ const N = (over = {}) => ({
 
 async function seed(items) {
 	setActivePinia(createPinia());
+	// Production sets "ready" once the access check answers.
+	useUserStore().registrationStatus = "ready";
 	api.notifications.get.mockResolvedValue({ notifications: items, user: "a@x.com" });
 	const store = useNotificationStore();
 	await store.refresh();

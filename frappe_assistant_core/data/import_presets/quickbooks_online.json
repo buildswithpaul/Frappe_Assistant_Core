@@ -1,0 +1,181 @@
+[
+  {
+    "id": "quickbooks_online.account_list",
+    "system": "QuickBooks Online",
+    "source_system": "quickbooks",
+    "export": "Account List (chart of accounts)",
+    "how_to_export": "Reports > Standard reports > Account List > Export > Export to Excel (or CSV).",
+    "verified": true,
+    "signature": {
+      "required": [["Full name", "Account"], ["Type"]],
+      "optional": [["Detail type"], ["Description"], ["Total balance", "Balance"], ["Account #"]],
+      "title": ["*account list*"]
+    },
+    "skip": {"totals": ["TOTAL"], "footer": ["*gmt*"]},
+    "columns": {
+      "Account": {"from": ["Full name", "Account"], "parse": "last_segment"},
+      "Type": {"from": ["Type"]},
+      "Parent": {"from": ["Full name", "Account"], "parse": "parent_segment", "fallback": "Type"},
+      "Account Type": {"from": ["Type"], "parse": "map", "default": "",
+        "values": {"Bank": "Bank", "Accounts receivable (A/R)": "Receivable", "Accounts payable (A/P)": "Payable",
+                   "Fixed Assets": "Fixed Asset", "Equity": "Equity", "Income": "Income Account", "Other Income": "Income Account",
+                   "Expenses": "Expense Account", "Other Expense": "Expense Account", "Cost of Goods Sold": "Cost of Goods Sold"}},
+      "Number": {"from": ["Account #"]},
+      "Description": {"from": ["Description"]},
+      "Is Group": {"from": []}
+    },
+    "group_flag": {"column": "Is Group", "name": "Account", "parent": "Parent"},
+    "targets": [
+      {"name": "Accounts", "source_key": "Number", "doctype": "Account",
+       "mapping": {"Account": "account_name", "Parent": "parent_account", "Account Type": "account_type", "Number": "account_number", "Is Group": "is_group"},
+       "inputs": [{"name": "company", "column": "Company", "field": "company", "ask": "Which company do these accounts belong to?"}]}
+    ]
+  },
+  {
+    "id": "quickbooks_online.trial_balance",
+    "system": "QuickBooks",
+    "export": "Trial Balance (Online or Desktop)",
+    "how_to_export": "Online: Reports > Trial Balance > set the date > Export to Excel. Desktop: Reports > Accountant & Taxes > Trial Balance > Excel > Create New Worksheet. One period only: Debit and Credit for a single date.",
+    "verified": false,
+    "signature": {
+      "required": [["Debit"], ["Credit"]],
+      "optional": [["Full name", "Account"]],
+      "title": ["as of *"]
+    },
+    "skip": {"totals": ["TOTAL"], "footer": ["*gmt*", "*basis*"]},
+    "columns": {
+      "Account": {"from": ["Full name", "Account"], "from_index": [0, 1, 2, 3], "parse": ["last_segment", "strip_number"]},
+      "Debit": {"from": ["Debit"], "parse": "amount"},
+      "Credit": {"from": ["Credit"], "parse": "amount"}
+    },
+    "targets": [
+      {"name": "Trial balance", "engine": "opening_balances", "columns": {"Account": "account", "Debit": "debit", "Credit": "credit"}}
+    ]
+  },
+  {
+    "id": "quickbooks_online.ar_aging_summary",
+    "system": "QuickBooks Online",
+    "export": "A/R Aging Summary (open customer balances)",
+    "how_to_export": "Reports > A/R Aging Summary > set the date > Export to Excel.",
+    "verified": true,
+    "signature": {
+      "required": [["Customer"], ["Current"], ["Total"]],
+      "optional": [["1 - 30"], ["91 and over"]],
+      "title": ["*a/r aging summary*"]
+    },
+    "skip": {"totals": ["TOTAL", "Total for *"], "footer": ["*gmt*"]},
+    "groups": {"method": "empty_amounts", "column": "Customer", "carry_to": "Parent"},
+    "columns": {
+      "Customer": {"from": ["Customer"]},
+      "Parent": {"from": []},
+      "Party": {"from": [], "join": ["Parent", "Customer"]},
+      "Total": {"from": ["Total"], "parse": "amount"}
+    },
+    "targets": [
+      {"name": "Open invoices", "engine": "opening_invoices", "invoice_type": "Sales", "when": {"column": "Total", "nonzero": true},
+       "columns": {"Party": "party", "Total": "outstanding_amount"}}
+    ]
+  },
+  {
+    "id": "quickbooks_online.ap_aging_summary",
+    "system": "QuickBooks Online",
+    "export": "A/P Aging Summary (open vendor balances)",
+    "how_to_export": "Reports > A/P Aging Summary > set the date > Export to Excel.",
+    "verified": true,
+    "signature": {
+      "required": [["Vendor"], ["Current"], ["Total"]],
+      "optional": [["1 - 30"], ["91 and over"]],
+      "title": ["*a/p aging summary*"]
+    },
+    "skip": {"totals": ["TOTAL", "Total for *"], "footer": ["*gmt*"]},
+    "groups": {"method": "empty_amounts", "column": "Vendor", "carry_to": "Parent"},
+    "columns": {
+      "Vendor": {"from": ["Vendor"]},
+      "Parent": {"from": []},
+      "Party": {"from": [], "join": ["Parent", "Vendor"]},
+      "Total": {"from": ["Total"], "parse": "amount"}
+    },
+    "targets": [
+      {"name": "Open bills", "engine": "opening_invoices", "invoice_type": "Purchase", "when": {"column": "Total", "nonzero": true},
+       "columns": {"Party": "party", "Total": "outstanding_amount"}}
+    ]
+  },
+  {
+    "id": "quickbooks_online.customer_contact_list",
+    "system": "QuickBooks Online",
+    "source_system": "quickbooks",
+    "export": "Customer Contact List",
+    "how_to_export": "Reports > Customer Contact List > Export to Excel.",
+    "verified": false,
+    "signature": {
+      "required": [["Customer"], ["Phone Numbers", "Email"]],
+      "optional": [["Full Name", "Customer Full Name"], ["Bill Address", "Billing Address"], ["Ship Address", "Shipping Address"], ["Company Name"]],
+      "title": ["*customer contact list*"]
+    },
+    "skip": {"footer": ["*gmt*", "* am *", "* pm *"]},
+    "columns": {
+      "Customer": {"from": ["Customer"]},
+      "Email": {"from": ["Email"]},
+      "Phone Numbers": {"from": ["Phone Numbers"]},
+      "Full Name": {"from": ["Full Name", "Customer Full Name"]},
+      "Billing Address": {"from": ["Bill Address", "Billing Address"]}
+    },
+    "targets": [
+      {"name": "Customers", "source_key": "Customer", "doctype": "Customer", "mapping": {"Customer": "customer_name", "Email": "email_id"},
+       "constants": [{"column": "Customer Type", "field": "customer_type", "value": "Company"}]}
+    ]
+  },
+  {
+    "id": "quickbooks_online.vendor_contact_list",
+    "system": "QuickBooks Online",
+    "source_system": "quickbooks",
+    "export": "Vendor Contact List",
+    "how_to_export": "Reports > Vendor Contact List > Export to Excel.",
+    "verified": false,
+    "signature": {
+      "required": [["Vendor"], ["Phone Numbers", "Email"]],
+      "optional": [["Full Name"], ["Address"], ["Account #"], ["Company Name"]],
+      "title": ["*vendor contact list*"]
+    },
+    "skip": {"footer": ["*gmt*", "* am *", "* pm *"]},
+    "columns": {
+      "Vendor": {"from": ["Vendor"]},
+      "Email": {"from": ["Email"]},
+      "Phone Numbers": {"from": ["Phone Numbers"]},
+      "Full Name": {"from": ["Full Name"]},
+      "Address": {"from": ["Address"]}
+    },
+    "targets": [
+      {"name": "Suppliers", "source_key": "Vendor", "doctype": "Supplier", "mapping": {"Vendor": "supplier_name", "Email": "email_id"},
+       "constants": [{"column": "Supplier Type", "field": "supplier_type", "value": "Company"}]}
+    ]
+  },
+  {
+    "id": "quickbooks_online.products_services",
+    "system": "QuickBooks Online",
+    "source_system": "quickbooks",
+    "export": "Products and Services list",
+    "how_to_export": "Sales > Products & services > Run report (or the export icon) > Export to Excel.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Product/Service", "Product/Service Name"], ["Type"], ["Price", "Sales Price", "Sales Price / Rate", "Rate"]],
+      "optional": [["Cost", "Purchase Cost"], ["Qty on hand", "Quantity On Hand"], ["SKU"], ["Description", "Sales Description"], ["Income Account"]]
+    },
+    "skip": {"totals": ["TOTAL"], "footer": ["*gmt*"]},
+    "columns": {
+      "Item": {"from": ["Product/Service", "Product/Service Name"], "parse": "last_segment"},
+      "Description": {"from": ["Description", "Sales Description"]},
+      "Stock Item": {"from": ["Type"], "parse": "map", "default": "0", "values": {"Inventory": "1"}},
+      "Price": {"from": ["Price", "Sales Price", "Sales Price / Rate", "Rate"], "parse": "amount"},
+      "Cost": {"from": ["Cost", "Purchase Cost"], "parse": "amount"},
+      "SKU": {"from": ["SKU"]}
+    },
+    "targets": [
+      {"name": "Items", "source_key": "Item", "doctype": "Item",
+       "mapping": {"Item": "item_code", "Description": "description", "Stock Item": "is_stock_item", "Price": "standard_rate", "Cost": "valuation_rate"},
+       "constants": [{"column": "UOM", "field": "stock_uom", "value": "Nos"},
+                     {"column": "Item Group", "field": "item_group", "value": "All Item Groups"}]}
+    ]
+  }
+]

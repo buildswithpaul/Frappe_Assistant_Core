@@ -139,11 +139,11 @@ const batchSize = (input, ...keys) => {
 // effects are not undone by the rollback, so a dry run is still worth a look.
 const DRY_RUN_CONSEQUENCES = {
 	create_document: (input) =>
-		batchSize(input, "records") > 1
+		batchSize(input, "records", "documents") > 1
 			? __("Checks these records against your rules without saving them. Rules that run before save still run.")
 			: __("Checks this record against your rules without saving it. Rules that run before save still run."),
 	update_document: (input) =>
-		batchSize(input, "names", "records") > 1
+		batchSize(input, "names", "records", "documents") > 1
 			? __("Checks these changes against your rules without saving them. Rules that run before save still run.")
 			: __("Checks this change against your rules without saving it. Rules that run before save still run."),
 };

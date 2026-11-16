@@ -25,6 +25,7 @@ import frappe
 from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.utils.untrusted_output import fence_document
 
 
 class DocumentGet(BaseTool):
@@ -102,6 +103,8 @@ class DocumentGet(BaseTool):
 
             # Filter sensitive fields based on user role
             filtered_doc = filter_sensitive_fields(doc_dict, doctype, user_role)
+            # what a user's file said, kept on the record, reaches the model fenced (#34003)
+            filtered_doc = fence_document(doctype, filtered_doc)
 
             result = {
                 "success": True,

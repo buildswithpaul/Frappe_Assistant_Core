@@ -34,7 +34,7 @@ describe("useComposerAttachments", () => {
 
 		expect(event.preventDefault).toHaveBeenCalled();
 		expect(composer.attachedFiles.value).toEqual([file]);
-		expect(emit).toHaveBeenCalledWith("file-upload", [file]);
+		expect(emit).toHaveBeenCalledWith("file-upload", [file], expect.any(Function));
 	});
 
 	it("ignores text-only pastes so normal typing/pasting is untouched", () => {
@@ -82,7 +82,7 @@ describe("useComposerAttachments", () => {
 
 		expect(event.preventDefault).toHaveBeenCalled();
 		expect(composer.attachedFiles.value).toEqual([file]);
-		expect(emit).toHaveBeenCalledWith("file-upload", [file]);
+		expect(emit).toHaveBeenCalledWith("file-upload", [file], expect.any(Function));
 	});
 
 	it("rejects pasted files the server would refuse and tells the user", () => {
@@ -111,7 +111,7 @@ describe("useComposerAttachments", () => {
 		composer.handlePaste(event);
 
 		expect(composer.attachedFiles.value).toEqual([png]);
-		expect(emit).toHaveBeenCalledWith("file-upload", [png]);
+		expect(emit).toHaveBeenCalledWith("file-upload", [png], expect.any(Function));
 		expect(showError).toHaveBeenCalledWith(expect.stringContaining("clip.mov"));
 	});
 
@@ -124,15 +124,31 @@ describe("useComposerAttachments", () => {
 		composer.handleFileSelect(event);
 
 		expect(composer.attachedFiles.value).toEqual([file]);
-		expect(emit).toHaveBeenCalledWith("file-upload", [file]);
+		expect(emit).toHaveBeenCalledWith("file-upload", [file], expect.any(Function));
 		expect(event.target.value).toBe("");
+	});
+
+	it("drops only the chip of a file whose upload failed", () => {
+		const emit = vi.fn();
+		const composer = useComposerAttachments(emit);
+
+		const good = makeFile("customers.csv", "text/csv");
+		const bad = makeFile("payroll.xlsx");
+		composer.handleFileSelect({ target: { files: [good, bad], value: "" } });
+
+		const onFailed = emit.mock.calls[0][2];
+		onFailed(bad);
+
+		expect(composer.attachedFiles.value).toHaveLength(1);
+		expect(composer.attachedFiles.value[0]).toBe(good);
 	});
 
 	it("exposes an accept attribute that matches the shared allowlist", () => {
 		expect(UPLOAD_ACCEPT_ATTR).toContain(".png");
 		expect(UPLOAD_ACCEPT_ATTR).toContain(".pdf");
-		// Server rejects Office formats — the picker must not advertise them.
-		expect(UPLOAD_ACCEPT_ATTR).not.toContain(".xlsx");
+		// Spreadsheet exports are accepted, but the server still rejects Word —
+		// the picker must not advertise it.
+		expect(UPLOAD_ACCEPT_ATTR.split(",")).toEqual(expect.arrayContaining([".xlsx", ".xls"]));
 		expect(UPLOAD_ACCEPT_ATTR).not.toContain(".docx");
 	});
 });

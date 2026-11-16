@@ -9,8 +9,8 @@ const SOURCE = readFileSync(
 	resolve(import.meta.dirname, "../../../../../assistant_core/page/fac_pages/fac_page_draft.js"),
 	"utf-8",
 );
-const { fac_page_draft_srcdoc, fac_page_draft_frame } = new Function(
-	`${SOURCE}\nreturn { fac_page_draft_srcdoc, fac_page_draft_frame };`,
+const { fac_page_draft_srcdoc, fac_page_draft_frame, fac_page_shown_theme } = new Function(
+	`${SOURCE}\nreturn { fac_page_draft_srcdoc, fac_page_draft_frame, fac_page_shown_theme };`,
 )();
 
-describeDraftBuilder("Desk copy", { srcdoc: fac_page_draft_srcdoc, frame: fac_page_draft_frame });
+describeDraftBuilder("Desk copy", { srcdoc: fac_page_draft_srcdoc, frame: fac_page_draft_frame, shownTheme: fac_page_shown_theme });

@@ -158,12 +158,25 @@ export function createBlockHandlers({
 		}
 	}
 
-	// Only task_model_changed has a client-side line today; other codes reach the receipt.
+	// task_model_changed and turn_budget_reached have a client-side line; other codes reach the receipt.
 	function handleRoutingNotice(data) {
-		if (data?.code !== "task_model_changed") return;
+		if (data?.code !== "task_model_changed" && data?.code !== "turn_budget_reached") return;
+		const lastMsg = findActiveMessage(messages.value);
+		if (!lastMsg || lastMsg.role !== "assistant") return;
+		if (data.code === "turn_budget_reached") {
+			lastMsg.budgetReached = true;
+			lastMsg.budgetStopReason = data.stop_reason || null;
+		} else {
+			lastMsg.taskModelChange = { reason: data.reason || null, from: data.from, to: data.to };
+		}
+	}
+
+	// AR refused the stream because it is busy and FAC is waiting to retry it. The flag
+	// lives on the bubble so the processing indicator can say so; stream_start clears it.
+	function handleStreamStatus(data) {
 		const lastMsg = findActiveMessage(messages.value);
 		if (lastMsg && lastMsg.role === "assistant") {
-			lastMsg.taskModelChange = { reason: data.reason || null, from: data.from, to: data.to };
+			lastMsg.busyRetrying = data?.status === "busy_retrying";
 		}
 	}
 
@@ -578,6 +591,7 @@ export function createBlockHandlers({
 		handleChangesMadeEvent,
 		handleModelSelected,
 		handleRoutingNotice,
+		handleStreamStatus,
 		handleThinkingEvent,
 		completeThinkingBlock,
 		handleToolCallStart,

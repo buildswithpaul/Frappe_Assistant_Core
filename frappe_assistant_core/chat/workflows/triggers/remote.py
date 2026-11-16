@@ -200,6 +200,9 @@ def _classify_exception(exc: Exception) -> tuple[str, str]:
     message = str(exc)[:500]
 
     if isinstance(exc, ARRateLimitError):
+        # AR's 503 "busy" is transient: the sweeper retries it, unlike a quota or rate-limit skip.
+        if getattr(exc, "error_code", None) == "AR_BUSY":
+            return STATUS_ENQUEUE_FAILED, message
         return STATUS_QUOTA_SKIPPED, message
     if isinstance(exc, ARAuthenticationError | ARConfigurationError):
         return STATUS_AR_ERROR, message

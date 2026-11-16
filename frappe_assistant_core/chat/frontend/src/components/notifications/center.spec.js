@@ -10,6 +10,7 @@ import { api } from "@/api/client";
 import { useNotificationStore } from "@/stores/notificationStore";
 import NotificationBell from "@/components/notifications/NotificationBell.vue";
 import NotificationCenter from "@/components/notifications/NotificationCenter.vue";
+import { useUserStore } from "@/stores/userStore";
 
 const N = (over = {}) => ({
 	id: "n1", title: "t", message: "m", type: "feature", priority: "normal",
@@ -19,6 +20,8 @@ const N = (over = {}) => ({
 
 async function seed(items) {
 	setActivePinia(createPinia());
+	// Production sets "ready" once the access check answers.
+	useUserStore().registrationStatus = "ready";
 	localStorage.clear();
 	api.notifications.get.mockResolvedValue({ notifications: items, user: "a@x.com" });
 	const store = useNotificationStore();

@@ -85,6 +85,15 @@ describe("pickAnnouncement", () => {
 	});
 });
 
+describe("quotaContent with a stale personal figure", () => {
+	it("says the figure may be out of date", () => {
+		const status = { credits_exhausted: true, plan: "Team Basic", billing_cycle_start: "2026-10-15" };
+		const stale = quotaContent(status, { used: 10, limit: 10, stale: true });
+		expect(stale.body).toContain("May be out of date");
+		expect(quotaContent(status, { used: 10, limit: 10, stale: false }).body).not.toContain("May be out of date");
+	});
+});
+
 describe("quotaContent percentage", () => {
 	it("floors the title the same way as the band and the meter", () => {
 		expect(quotaContent({ quota_used: 8760, quota_total: 10000, percentage_used: 87.6 }).title).toContain("87%");

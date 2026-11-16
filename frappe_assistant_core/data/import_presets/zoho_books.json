@@ -1,0 +1,212 @@
+[
+  {
+    "id": "zoho_books.customers",
+    "system": "Zoho Books",
+    "source_system": "zoho",
+    "export": "Customers (contacts export)",
+    "how_to_export": "Sales > Customers > ⋯ > Export Customers (CSV or XLSX).",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Display Name"], ["EmailID", "Contact ID", "Customer ID", "GST Treatment", "Billing Address"]],
+      "optional": [["Customer Sub Type"], ["Customer ID"], ["Credit Limit"], ["Company Name"], ["Status"]]
+    },
+    "columns": {
+      "Display Name": {"from": ["Display Name"]},
+      "Customer ID": {"from": ["Customer ID", "Contact ID"]},
+      "Company Name": {"from": ["Company Name"]},
+      "Email": {"from": ["EmailID", "Email"]},
+      "Phone": {"from": ["Phone"]},
+      "Mobile": {"from": ["MobilePhone", "Mobile Phone"], "fallback": "Phone"},
+      "GSTIN": {"from": ["GST Identification Number (GSTIN)", "GSTIN"]},
+      "GST Treatment": {"from": ["GST Treatment"], "parse": "map",
+        "values": {"business_gst": "Registered Regular", "business_registered_regular": "Registered Regular",
+                   "business_registered_composition": "Registered Composition", "business_none": "Unregistered",
+                   "business_unregistered": "Unregistered", "consumer": "Unregistered", "overseas": "Overseas",
+                   "business_sez": "SEZ", "deemed_export": "Deemed Export"}},
+      "PAN": {"from": ["PAN Number", "PAN"]},
+      "Currency": {"from": ["Currency Code"]},
+      "Disabled": {"from": ["Status"], "parse": "map", "default": "0", "values": {"Active": "0", "Inactive": "1"}}
+    },
+    "targets": [
+      {"name": "Customers", "source_key": "Customer ID", "doctype": "Customer",
+       "mapping": {"Display Name": "customer_name", "Email": "email_id", "Mobile": "mobile_no", "GSTIN": ["gstin", "tax_id"],
+                   "GST Treatment": ["gst_category"], "PAN": ["pan"], "Currency": "default_currency", "Disabled": "disabled"},
+       "constants": [{"column": "Customer Type", "field": "customer_type", "value": "Company"}]}
+    ]
+  },
+  {
+    "id": "zoho_books.vendors",
+    "system": "Zoho Books",
+    "source_system": "zoho",
+    "export": "Vendors (contacts export)",
+    "how_to_export": "Purchases > Vendors > ⋯ > Export Vendors (CSV or XLSX).",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Display Name"], ["EmailID", "Contact ID", "Vendor ID", "GST Treatment", "Billing Address"]],
+      "optional": [["Vendor ID"], ["Bank Account Number", "Beneficiary Name"], ["TDS Name", "TDS Percentage"], ["Company Name"], ["Status"]]
+    },
+    "columns": {
+      "Display Name": {"from": ["Display Name"]},
+      "Vendor ID": {"from": ["Vendor ID", "Contact ID"]},
+      "Company Name": {"from": ["Company Name"]},
+      "Email": {"from": ["EmailID", "Email"]},
+      "Phone": {"from": ["Phone"]},
+      "Mobile": {"from": ["MobilePhone", "Mobile Phone"], "fallback": "Phone"},
+      "GSTIN": {"from": ["GST Identification Number (GSTIN)", "GSTIN"]},
+      "GST Treatment": {"from": ["GST Treatment"], "parse": "map",
+        "values": {"business_gst": "Registered Regular", "business_registered_regular": "Registered Regular",
+                   "business_registered_composition": "Registered Composition", "business_none": "Unregistered",
+                   "business_unregistered": "Unregistered", "consumer": "Unregistered", "overseas": "Overseas",
+                   "business_sez": "SEZ", "deemed_export": "Deemed Export"}},
+      "PAN": {"from": ["PAN Number", "PAN"]},
+      "Currency": {"from": ["Currency Code"]},
+      "Disabled": {"from": ["Status"], "parse": "map", "default": "0", "values": {"Active": "0", "Inactive": "1"}}
+    },
+    "targets": [
+      {"name": "Suppliers", "source_key": "Vendor ID", "doctype": "Supplier",
+       "mapping": {"Display Name": "supplier_name", "Email": "email_id", "Mobile": "mobile_no", "GSTIN": ["gstin", "tax_id"],
+                   "GST Treatment": ["gst_category"], "PAN": ["pan"], "Currency": "default_currency", "Disabled": "disabled"},
+       "constants": [{"column": "Supplier Type", "field": "supplier_type", "value": "Company"}]}
+    ]
+  },
+  {
+    "id": "zoho_books.items",
+    "system": "Zoho Books",
+    "source_system": "zoho",
+    "export": "Items",
+    "how_to_export": "Items > ⋯ > Export Items (CSV or XLSX).",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Item Name"], ["SKU", "Usage unit", "Item ID", "HSN/SAC"]],
+      "optional": [["Rate"], ["Product Type"], ["Purchase Rate"], ["Intra State Tax Name"], ["Item Type"], ["Opening Stock"]]
+    },
+    "columns": {
+      "Item": {"from": ["Item Name"]},
+      "Item ID": {"from": ["Item ID"]},
+      "SKU": {"from": ["SKU"]},
+      "Description": {"from": ["Description"]},
+      "HSN": {"from": ["HSN/SAC"]},
+      "Unit": {"from": ["Usage unit", "Unit Name", "Unit"], "default": "Nos"},
+      "Rate": {"from": ["Rate", "Selling Price"], "parse": "amount"},
+      "Stock Item": {"from": ["Product Type"], "parse": "map", "default": "1", "values": {"goods": "1", "service": "0"}},
+      "Disabled": {"from": ["Status"], "parse": "map", "default": "0", "values": {"Active": "0", "Inactive": "1"}}
+    },
+    "targets": [
+      {"name": "Items", "source_key": "Item ID", "doctype": "Item",
+       "mapping": {"Item": "item_code", "Description": "description", "HSN": ["gst_hsn_code"], "Unit": "stock_uom", "Rate": "standard_rate",
+                   "Stock Item": "is_stock_item", "Disabled": "disabled"},
+       "constants": [{"column": "Item Group", "field": "item_group", "value": "All Item Groups"}]}
+    ]
+  },
+  {
+    "id": "zoho_books.chart_of_accounts",
+    "system": "Zoho Books",
+    "source_system": "zoho",
+    "export": "Chart of Accounts",
+    "how_to_export": "Accountant > Chart of Accounts > ⋯ > Export Chart of Accounts.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Account Name"], ["Account Type"]],
+      "optional": [["Account Code"], ["Account ID"], ["Parent Account"], ["Account Status"], ["Description"], ["Currency"]]
+    },
+    "columns": {
+      "Account": {"from": ["Account Name"]},
+      "Account ID": {"from": ["Account ID"]},
+      "Code": {"from": ["Account Code"]},
+      "Type": {"from": ["Account Type"]},
+      "Account Type": {"from": ["Account Type"], "parse": "map", "default": "",
+        "values": {"Bank": "Bank", "Cash": "Cash", "Accounts Receivable": "Receivable", "Accounts Payable": "Payable",
+                   "Fixed Asset": "Fixed Asset", "Stock": "Stock", "Equity": "Equity", "Income": "Income Account",
+                   "Other Income": "Income Account", "Expense": "Expense Account", "Other Expense": "Expense Account",
+                   "Cost Of Goods Sold": "Cost of Goods Sold",
+                   "Other Current Asset": "Current Asset", "Other Asset": "",
+                   "Other Current Liability": "Current Liability", "Long Term Liability": "Liability",
+                   "Credit Card": "", "Deferred Tax Asset": ""}},
+      "Parent": {"from": ["Parent Account"], "fallback": "Type"},
+      "Disabled": {"from": ["Account Status"], "parse": "map", "default": "0", "values": {"Active": "0", "Inactive": "1"}},
+      "Is Group": {"from": []}
+    },
+    "group_flag": {"column": "Is Group", "name": "Account", "parent": "Parent"},
+    "targets": [
+      {"name": "Accounts", "source_key": "Account ID", "doctype": "Account",
+       "mapping": {"Account": "account_name", "Code": "account_number", "Account Type": "account_type", "Parent": "parent_account", "Disabled": "disabled", "Is Group": "is_group"},
+       "inputs": [{"name": "company", "column": "Company", "field": "company", "ask": "Which company do these accounts belong to?"}]}
+    ]
+  },
+  {
+    "id": "zoho_books.trial_balance",
+    "system": "Zoho Books",
+    "export": "Trial Balance",
+    "how_to_export": "Reports > Accountant > Trial Balance > set the date > Export As XLSX.",
+    "verified": false,
+    "signature": {
+      "required": [["Net Debit"], ["Net Credit"]],
+      "optional": [["Account"], ["Account Code"]],
+      "title": ["*trial balance*"]
+    },
+    "skip": {"totals": ["Total", "Total for *"]},
+    "groups": {"method": "empty_amounts", "column": "Account"},
+    "columns": {
+      "Account": {"from": ["Account"], "from_index": 0},
+      "Net Debit": {"from": ["Net Debit"], "parse": "amount"},
+      "Net Credit": {"from": ["Net Credit"], "parse": "amount"}
+    },
+    "targets": [
+      {"name": "Trial balance", "engine": "opening_balances", "columns": {"Account": "account", "Net Debit": "debit", "Net Credit": "credit"}}
+    ]
+  },
+  {
+    "id": "zoho_books.invoices",
+    "system": "Zoho Books",
+    "export": "Invoices (open balances)",
+    "how_to_export": "Sales > Invoices > filter Unpaid or Overdue > ⋯ > Export Invoices.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Invoice Number"], ["Invoice Date"], ["Balance"], ["Customer Name"]],
+      "optional": [["Due Date"], ["Invoice Status"], ["Customer ID"], ["Invoice ID"]]
+    },
+    "distinct_by": ["Invoice Number"],
+    "columns": {
+      "Invoice Number": {"from": ["Invoice Number"]},
+      "Invoice Date": {"from": ["Invoice Date"], "parse": "date", "formats": ["yyyy-MM-dd", "dd/MM/yyyy", "dd-MM-yyyy"]},
+      "Due Date": {"from": ["Due Date"], "parse": "date", "formats": ["yyyy-MM-dd", "dd/MM/yyyy", "dd-MM-yyyy"]},
+      "Customer Name": {"from": ["Customer Name"]},
+      "Balance": {"from": ["Balance"], "parse": "amount"}
+    },
+    "targets": [
+      {"name": "Open invoices", "engine": "opening_invoices", "invoice_type": "Sales", "when": {"column": "Balance", "nonzero": true},
+       "columns": {"Customer Name": "party", "Invoice Number": "invoice_number", "Invoice Date": "posting_date", "Due Date": "due_date",
+                   "Balance": "outstanding_amount"}}
+    ]
+  },
+  {
+    "id": "zoho_books.bills",
+    "system": "Zoho Books",
+    "export": "Bills (open balances)",
+    "how_to_export": "Purchases > Bills > filter Open or Overdue > ⋯ > Export Bills.",
+    "verified": false,
+    "signature": {
+      "min_optional": 1,
+      "required": [["Bill Number"], ["Bill Date"], ["Balance"], ["Vendor Name"]],
+      "optional": [["Due Date"], ["Bill Status"], ["Bill ID"]]
+    },
+    "distinct_by": ["Bill Number"],
+    "columns": {
+      "Bill Number": {"from": ["Bill Number"]},
+      "Bill Date": {"from": ["Bill Date"], "parse": "date", "formats": ["yyyy-MM-dd", "dd/MM/yyyy", "dd-MM-yyyy"]},
+      "Due Date": {"from": ["Due Date"], "parse": "date", "formats": ["yyyy-MM-dd", "dd/MM/yyyy", "dd-MM-yyyy"]},
+      "Vendor Name": {"from": ["Vendor Name"]},
+      "Balance": {"from": ["Balance"], "parse": "amount"}
+    },
+    "targets": [
+      {"name": "Open bills", "engine": "opening_invoices", "invoice_type": "Purchase", "when": {"column": "Balance", "nonzero": true},
+       "columns": {"Vendor Name": "party", "Bill Number": "invoice_number", "Bill Date": "posting_date", "Due Date": "due_date",
+                   "Balance": "outstanding_amount"}}
+    ]
+  }
+]

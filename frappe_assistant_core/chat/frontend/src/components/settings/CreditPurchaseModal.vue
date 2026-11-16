@@ -29,6 +29,7 @@
 						v-if="limitBlock"
 						:used="limitBlock.used"
 						:limit="limitBlock.limit"
+						:stale="limitBlock.stale"
 						@open-users="openUsers"
 					/>
 

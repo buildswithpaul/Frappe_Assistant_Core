@@ -3,7 +3,7 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { baseCall, getCall } from "@/api/_core";
 import { createPageFrame, queryArgs } from "@/utils/pageFrameHost";
@@ -14,13 +14,15 @@ const props = defineProps({
 	page: { type: Object, required: true },
 	user: { type: String, default: "" },
 	kitCss: { type: String, default: "" },
+	// Desk's theme: the frame starts in it and is told when it changes, without reloading.
+	theme: { type: String, default: "light" },
 	// The FAC Page record name, which "Allow for this page" is scoped to.
 	pageName: { type: String, default: "" },
 	// Asks the user to allow a call; resolves "once", "page" or false.
 	askUser: { type: Function, required: true },
 });
 
-const emit = defineEmits(["unsupported", "error", "ready"]);
+const emit = defineEmits(["unsupported", "error", "ready", "present-key"]);
 
 const container = ref(null);
 let frame = null;
@@ -32,6 +34,7 @@ onMounted(() => {
 	frame = createPageFrame({
 		page: props.page,
 		kitCss: props.kitCss,
+		theme: props.theme,
 		user: props.user,
 		version: BUILD_ID,
 		pageName: props.pageName,
@@ -44,15 +47,22 @@ onMounted(() => {
 		onError: (message) => emit("error", new Error(message)),
 		onUnsupported: (name) => emit("unsupported", name),
 		onReady: () => emit("ready"),
+		onPresentKey: (key) => emit("present-key", key),
 	});
 	container.value.append(frame.element);
 });
+
+watch(
+	() => props.theme,
+	(theme) => frame?.setTheme(theme),
+);
 
 onBeforeUnmount(() => frame?.dispose());
 
 defineExpose({
 	capture: (options) => frame.capture(options),
 	snapshot: () => frame.snapshot(),
+	present: (command, index) => frame.present(command, index),
 	errors: () => frame?.errors || [],
 });
 </script>

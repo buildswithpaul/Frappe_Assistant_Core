@@ -51,6 +51,7 @@ def build_tool_dict(tool_instance) -> Dict[str, Any]:
         "inputSchema": tool_instance.inputSchema,
         "annotations": getattr(tool_instance, "annotations", None),
         "safeExecuteEnvelope": True,
+        "untrustedFields": tuple(getattr(tool_instance, "untrusted_fields", ()) or ()),
         "fn": tool_wrapper,
     }
 
