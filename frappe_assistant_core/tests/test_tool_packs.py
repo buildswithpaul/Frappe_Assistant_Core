@@ -22,19 +22,6 @@ from unittest.mock import patch
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 from frappe_assistant_core.utils.plugin_manager import PluginManager, get_plugin_manager
 
-BASE_TOOLS = (
-    "list_documents",
-    "get_document",
-    "create_document",
-    "update_document",
-    "search_documents",
-    "generate_report",
-    "report_list",
-    "extract_file_content",
-    "attach_chat_file",
-    "get_doctype_info",
-)
-
 
 class TestToolPacks(BaseAssistantTest):
     def setUp(self):
@@ -68,17 +55,9 @@ class TestToolPacks(BaseAssistantTest):
         pack = next(p for p in self.manager.get_tool_packs() if p.id == "migration")
         self.assertEqual(len(pack.tools), 14)
         self.assertEqual(pack.file_types, ("csv", "xlsx", "xls", "xml"))
-        self.assertEqual(self.manager.pack_of("start_import"), "migration")
-
-    def test_base_keeps_plain_question_tools(self):
-        for tool in BASE_TOOLS:
-            self.assertIsNone(self.manager.pack_of(tool), tool)
-
-    def test_hidden_tools_are_in_no_pack(self):
-        for tool in ("customisation_impact", "check_build_plan"):
-            self.assertIsNone(self.manager.pack_of(tool), tool)
+        self.assertIn("start_import", pack.tools)
 
     def test_disabled_plugin_has_no_packs(self):
+        # Which tools then carry a pack in tools/list: test_tool_pack_listing.
         self.enabled.return_value = {"core"}
         self.assertEqual([pack.id for pack in self.manager.get_tool_packs()], ["builder"])
-        self.assertIsNone(self.manager.pack_of("start_import"))
