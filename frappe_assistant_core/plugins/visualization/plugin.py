@@ -67,7 +67,7 @@ class VisualizationPlugin(BasePlugin):
             ToolPack(
                 id="dashboards",
                 title="Dashboards",
-                description="Create Frappe dashboards and charts and list the user's dashboards",
+                description="Creating or changing a Frappe dashboard or chart, or listing the user's dashboards",
                 tools=("create_dashboard", "create_dashboard_chart", "list_user_dashboards"),
             )
         ]

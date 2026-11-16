@@ -58,7 +58,7 @@ class MigrationPlugin(BasePlugin):
             ToolPack(
                 id="migration",
                 title="Data migration",
-                description="Bring a client's data in from their old system: sessions, plans, opening entries",
+                description="Importing or migrating data from files or another system (CSV, Excel, Tally): customers, suppliers, items, opening stock or balances",
                 tools=tuple(self.get_tools()),
                 file_types=("csv", "xlsx", "xls", "xml"),
                 skills=(
