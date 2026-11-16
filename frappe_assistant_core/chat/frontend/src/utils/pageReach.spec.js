@@ -164,6 +164,13 @@ describe("createPageReach", () => {
 		expect(shown.methods).toEqual(["frappe.client.get_list"]);
 	});
 
+	it.each([[[null]], [[7]], [[true]]])("counts a filter list it can't read (%j) as a call it can't check, and still answers", async (filters) => {
+		const reach = createPageReach(WITHHELD);
+		const answer = [{ name: "B" }];
+		await expect(reach.watch("frappe.client.get_list", { doctype: "Bank Account", filters }, Promise.resolve(answer))).resolves.toBe(answer);
+		expect(reach.shown()).toEqual({ fields: [], methods: ["frappe.client.get_list"] });
+	});
+
 	it("hands the call's own answer and failure back unchanged", async () => {
 		const reach = createPageReach(WITHHELD);
 		const answer = { iban: "DE89" };

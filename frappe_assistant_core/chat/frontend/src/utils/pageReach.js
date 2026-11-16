@@ -34,7 +34,8 @@ function parsedArg(value) {
  * `field`), filters on (`filters`, `or_filters`) or sorts and groups by (`order_by`, `group_by`).
  * A filter or a sort narrows which records show, so it gives a field away one query at a time.
  * `anywhere` marks a field of a doctype only the server knows (a child table's, or a filter's
- * named doctype), to check against every doctype's hidden fields.
+ * named doctype), to check against every doctype's hidden fields. `unreadable` marks a filter of
+ * a shape Frappe doesn't take, which can't be told apart from one that names a hidden field.
  */
 function referencedFields(args) {
 	const found = [];
@@ -60,6 +61,7 @@ function referencedFields(args) {
 				else if (filter && typeof filter === "object" && !Array.isArray(filter)) {
 					Object.keys(filter).forEach((field) => found.push({ reference: field, anywhere: true }));
 				}
+				else if (!Array.isArray(filter)) found.push({ reference: "", unreadable: true });
 				else if (filter.length >= 4) found.push({ reference: String(filter[1]), anywhere: true });
 				else found.push({ reference: String(filter[0]), anywhere: false });
 			}
@@ -153,9 +155,9 @@ export function createPageReach(withheld) {
 		// A field named counts whatever the answer's shape: as_dict=0 answers with bare values, so
 		// every field asked for that way can't be checked by its key.
 		const asList = [0, false, "0", "false"].includes(args?.as_dict);
-		for (const { reference, anywhere } of referencedFields(args)) {
+		for (const { reference, anywhere, unreadable } of referencedFields(args)) {
 			const field = plainField(reference);
-			if (field === null || (field === "*" && asList)) methods.add(method);
+			if (unreadable || field === null || (field === "*" && asList)) methods.add(method);
 			else noteField(anywhere || reference.includes(".") ? hiddenAnywhere : hidden, field);
 		}
 		if (!findFields(answer, hidden)) methods.add(method);
@@ -165,7 +167,13 @@ export function createPageReach(withheld) {
 		/** Hands back `request` unchanged, noting what its answer shows. */
 		watch(method, args, request) {
 			return request.then((answer) => {
-				note(method, args, answer);
+				// A call that can't be checked counts as one that may show anything; the page still
+				// gets its answer.
+				try {
+					note(method, args, answer);
+				} catch {
+					methods.add(method);
+				}
 				return answer;
 			});
 		},
