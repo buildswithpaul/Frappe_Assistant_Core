@@ -59,9 +59,6 @@ const areaLabel = computed(() => (AREA_LABELS[props.area] || AREA_LABELS.busines
 .hs-title { font-weight: 600; }
 .hs-sub { font-size: 12.5px; color: var(--ql-text-muted); }
 .hs-arrow { color: var(--ql-text-muted); transition: color 0.15s ease, transform 0.15s ease; }
-.hs-row:hover .hs-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.hs-title { font-weight: 600; }
-.hs-sub { font-size: 12.5px; color: var(--ql-text-muted); }
-.hs-arrow { color: var(--ql-accent); transform: translateX(2px); }
+.hs-row:hover .hs-arrow { color: var(--ql-accent); transform: translateX(2px); }
 .hs-row:focus-visible { outline: 2px solid var(--ql-accent); outline-offset: -2px; }
 </style>

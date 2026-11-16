@@ -357,6 +357,7 @@ def _get_default_prompts(context):
 
 
 SUGGESTIONS_CAP = 12
+STARTER_SOURCES = ("role", "default")
 MIGRATION_PLUGIN = "migration"
 
 
@@ -372,13 +373,10 @@ def can_bring_data_in() -> bool:
     try:
         if MIGRATION_PLUGIN not in get_plugin_manager().get_enabled_plugins():
             return False
+        return "System Manager" in frappe.get_roles() or bool(frappe.has_permission("Data Import", "create"))
     except Exception:
-        frappe.log_error(title="Bring-your-data plugin check failed", message=frappe.get_traceback())
+        frappe.log_error(title="Bring-your-data check failed", message=frappe.get_traceback())
         return False
-    return "System Manager" in frappe.get_roles() or bool(frappe.has_permission("Data Import", "create"))
-
-
-STARTER_SOURCES = ("role", "default")
 
 
 def _cap_prompts(prompts_list: list[dict], cap: int) -> list[dict]:
