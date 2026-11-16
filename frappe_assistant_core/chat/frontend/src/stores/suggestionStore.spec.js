@@ -33,4 +33,14 @@ describe("suggestionStore.loadSuggestions", () => {
 		expect(store.allSuggestions.map((s) => s.name)).toEqual(["customer ask"]);
 		expect(api.suggestions.get).toHaveBeenCalledTimes(2);
 	});
+
+	it("takes the bring-your-data flag from the payload and clears it with the store", async () => {
+		const store = useSuggestionStore();
+		api.suggestions.get.mockResolvedValueOnce({ suggestions: [], bring_data_in: true });
+		await store.loadSuggestions(GENERAL, { force: true });
+		expect(store.bringDataIn).toBe(true);
+		api.suggestions.get.mockResolvedValueOnce({ suggestions: [] });
+		await store.loadSuggestions(GENERAL, { force: true });
+		expect(store.bringDataIn).toBe(false);
+	});
 });

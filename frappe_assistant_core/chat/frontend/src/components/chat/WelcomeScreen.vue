@@ -60,6 +60,7 @@ import { usePacksStore } from "@/stores/packsStore";
 import { useChatStore } from "@/stores/chatStore";
 import { greetingLineForHour, displayNameFromUser } from "@/components/chat/welcomeGreeting";
 import { selectWelcomeTiles } from "@/components/chat/welcome/welcomeRelevance";
+import { withBringData } from "@/components/chat/welcome/bringDataStarter";
 import { useHomeSignals } from "@/composables/useHomeSignals";
 import { __ } from "@/utils/i18n";
 import HomeHeader from "@/components/chat/welcome/HomeHeader.vue";
@@ -93,6 +94,7 @@ const tiles = computed(() =>
 	selectWelcomeTiles({
 		suggestions: allSuggestions.value,
 		resumePreviews: resumeSessions.value.map((s) => s.preview || ""),
+		bringData: suggestionStore.bringDataIn,
 	})
 );
 
@@ -101,7 +103,8 @@ const tiles = computed(() =>
 // Page asks and blank rows are not starters.
 const firstRunTiles = computed(() => {
 	const starters = allSuggestions.value.filter((s) => s.source !== "page" && s.description);
-	return starters.length ? starters : tiles.value;
+	// The fallback tiles already carry the starter.
+	return starters.length ? withBringData(starters, suggestionStore.bringDataIn) : tiles.value;
 });
 
 // Needs-you signals: post-paint, fail-silent; dismiss belongs to this instance.
