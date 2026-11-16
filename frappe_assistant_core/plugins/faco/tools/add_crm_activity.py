@@ -11,9 +11,10 @@ PRIORITIES = ("Low", "Medium", "High")
 
 def _phone(doc) -> str:
     """The record's mobile or phone number, from a field the user may read (#390)."""
-    from frappe_assistant_core.utils.permissions import readable_value
+    from frappe_assistant_core.utils.permissions import field_reader
 
-    return readable_value(doc, "mobile_no") or readable_value(doc, "phone") or ""
+    can_read = field_reader(doc.meta)
+    return next((doc.get(f) for f in ("mobile_no", "phone") if can_read(f) and doc.get(f)), "")
 
 
 def _own_phone() -> str:
