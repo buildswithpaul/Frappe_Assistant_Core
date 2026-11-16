@@ -5,10 +5,11 @@
 """FAC Chat: the per-user "Load tools as needed" preference."""
 
 import frappe
+from frappe import _
 from frappe.utils import sbool
 
 from ..doctype.fac_chat_user_preferences.fac_chat_user_preferences import FACChatUserPreferences
-from ..tool_loading import TOOL_LOADING_FIELD, load_tools_as_needed
+from ..tool_loading import PREFERENCES_DOCTYPE, TOOL_LOADING_FIELD, load_tools_as_needed
 
 
 @frappe.whitelist(methods=["GET"])
@@ -20,7 +21,10 @@ def get_tool_loading() -> dict:
 @frappe.whitelist(methods=["POST"])
 def set_tool_loading(load_as_needed: bool) -> dict:
     """Save the session user's choice; ``False`` gives FACO every tool on every message."""
+    # Before migrate adds the column, save() would drop the value without a word.
+    if not frappe.db.has_column(PREFERENCES_DOCTYPE, TOOL_LOADING_FIELD):
+        frappe.throw(_("This setting needs a site update. Ask your administrator to run bench migrate."))
     prefs = FACChatUserPreferences.get_or_create_preferences()
     prefs.set(TOOL_LOADING_FIELD, 1 if sbool(load_as_needed) else 0)
     prefs.save(ignore_permissions=True)
-    return {"load_tools_as_needed": bool(prefs.get(TOOL_LOADING_FIELD))}
+    return {"load_tools_as_needed": load_tools_as_needed(frappe.session.user)}
