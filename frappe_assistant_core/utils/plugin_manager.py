@@ -184,15 +184,16 @@ class PluginPersistence:
         Falls back to legacy JSON field if DocType doesn't exist yet.
         """
         try:
-            # Check if the new DocType table exists
-            if frappe.db.table_exists("tabFAC Plugin Configuration"):
+            # table_exists adds the "tab" prefix itself
+            if frappe.db.table_exists(PluginConfig.PLUGIN_CONFIG_DOCTYPE):
                 # Use the new DocType-based approach (atomic, no JSON parsing)
                 enabled = frappe.get_all(
                     PluginConfig.PLUGIN_CONFIG_DOCTYPE,
                     filters={"enabled": 1},
                     pluck="plugin_name",
                 )
-                return set(enabled)
+                # The core plugin cannot be switched off, so it is on whatever the rows say
+                return set(enabled) | {"core"}
             else:
                 # Fallback to legacy JSON field during migration
                 return self._load_from_legacy_json()

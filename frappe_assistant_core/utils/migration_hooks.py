@@ -835,7 +835,7 @@ def _sync_plugin_configurations():
     """
     try:
         # Check if FAC Plugin Configuration table exists
-        if not frappe.db.table_exists("tabFAC Plugin Configuration"):
+        if not frappe.db.table_exists("FAC Plugin Configuration"):
             frappe.logger("migration_hooks").info(
                 "FAC Plugin Configuration table not yet created, skipping plugin sync"
             )
