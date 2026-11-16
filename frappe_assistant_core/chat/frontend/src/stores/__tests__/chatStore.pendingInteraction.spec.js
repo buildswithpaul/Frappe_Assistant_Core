@@ -84,6 +84,45 @@ describe("pendingInteractionBlock", () => {
 		expect(store.pendingInteractionBlock.regime).toBe("approval");
 	});
 
+	// A click records the decision at once but keeps status "pending" until the resume call
+	// returns (recordInteractionDecision). Text typed in that window must queue behind the
+	// resume, not cancel the run just approved or answer a card that is already sent (#34548).
+	it("queues text typed after an approval click, before the resume returns", () => {
+		store.messages = [
+			{
+				role: "assistant",
+				blocks: [interaction({ interactionType: "approval", decision: { response: "approve" } })],
+			},
+		];
+		expect(store.pendingInteractionBlock).toBeNull();
+		expect(resolveComposerRoute({ isStreaming: true, pendingInteraction: store.pendingInteractionBlock })).toBe(
+			"queue"
+		);
+	});
+
+	it("queues text typed after a question click, before the resume returns", () => {
+		store.messages = [
+			{ role: "assistant", blocks: [interaction({ decision: { response: "Yes" } })] },
+		];
+		expect(resolveComposerRoute({ isStreaming: true, pendingInteraction: store.pendingInteractionBlock })).toBe(
+			"queue"
+		);
+	});
+
+	it("routes typed text to the question still open when the approval beside it is decided", () => {
+		store.messages = [
+			{
+				role: "assistant",
+				blocks: [
+					interaction({ id: "a1", interactionType: "approval", decision: { response: "approve" } }),
+					interaction({ id: "q1", interactionType: "text_input" }),
+				],
+			},
+		];
+		expect(store.pendingInteractionBlock.regime).toBe("question");
+		expect(store.pendingInteractionBlock.block.id).toBe("q1");
+	});
+
 	it("answerPendingQuestion sends the composer text as the card's resume payload", async () => {
 		// Assert at the WIRE seam, not on a store-method spy: Pinia setup
 		// stores call their own functions by local reference, so
