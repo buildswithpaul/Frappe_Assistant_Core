@@ -58,3 +58,13 @@ class TestToolLoadingEndpoint(BaseAssistantTest):
         self.assertFalse(get_tool_loading()["load_tools_as_needed"])
         self.assertEqual(tool_loading.tool_loading_mode(frappe.session.user), "all")
         self.assertTrue(set_tool_loading(load_as_needed="1")["load_tools_as_needed"])
+
+
+class TestToolLoadingBeforeMigrate(BaseAssistantTest):
+    """Saving before the column exists must say so, not report a choice it never stored."""
+
+    def test_saving_before_migrate_is_refused(self):
+        # Between deploying the code and running migrate the column does not exist yet.
+        with patch.object(frappe.db, "has_column", return_value=False):
+            with self.assertRaises(frappe.ValidationError):
+                set_tool_loading(load_as_needed="0")
