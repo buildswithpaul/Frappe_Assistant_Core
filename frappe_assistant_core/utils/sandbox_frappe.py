@@ -166,22 +166,49 @@ def get_list(doctype, *args, **kwargs):
 
 
 def _refuse_hidden_query_fields(doctype, kwargs) -> None:
-    """Refuse a filter, sort or grouping on a field the user may not read (#390).
+    """Refuse a filter, sort, grouping or ``fields`` expression on anything but a field the user may read (#390).
 
-    frappe.get_list drops such a field from ``fields``, but Frappe 15 runs a filter on it, so
-    repeated counts or lookups narrow down its value. Frappe 16 refuses it; so does this, on both.
+    frappe.get_list drops such a bare field from ``fields``, but Frappe 15 runs a filter on it, so
+    repeated counts or lookups narrow down its value, and keeps an expression over it such as
+    ``max(salary)*1``. Frappe 16 refuses the filter; this refuses all of them, on both.
+    A name that isn't exactly a field (``SALARY``, ``ifnull(salary, 0)``) is refused as well.
     """
     from frappe_assistant_core.utils.permissions import hidden_query_fields
 
+    parent_doctype = kwargs.get("parent_doctype")
     hidden = []
     for filters in (kwargs.get("filters"), kwargs.get("or_filters")):
-        hidden += hidden_query_fields(doctype, filters=filters)
-    hidden += hidden_query_fields(doctype, order_by=kwargs.get("order_by"), group_by=kwargs.get("group_by"))
+        hidden += hidden_query_fields(doctype, filters=filters, parent_doctype=parent_doctype)
+    hidden += hidden_query_fields(
+        doctype,
+        order_by=kwargs.get("order_by"),
+        group_by=kwargs.get("group_by"),
+        parent_doctype=parent_doctype,
+        aliases=_field_aliases(kwargs.get("fields")),
+        fields=kwargs.get("fields"),
+    )
     if hidden:
         raise frappe.PermissionError(
-            f"Not permitted to filter, sort or group {doctype} by {', '.join(dict.fromkeys(hidden))}: "
-            "your role cannot read that field."
+            frappe._(
+                "Not permitted to select, filter, sort or group {0} by {1}: it is not a field your role can read."
+            ).format(frappe._(doctype), ", ".join(dict.fromkeys(hidden)))
         )
+
+
+_ALIAS_IN_FIELD = re.compile(r"\bas\s+`?(\w+)`?", re.IGNORECASE)
+
+
+def _field_aliases(fields) -> set:
+    """Names ``fields`` gives its expressions: ``count(name) as total`` or ``{"COUNT": ..., "as": "total"}``."""
+    if isinstance(fields, (str, dict)):
+        fields = [fields]
+    aliases = set()
+    for field in fields or ():
+        if isinstance(field, dict) and isinstance(field.get("as"), str):
+            aliases.add(field["as"])
+        elif isinstance(field, str):
+            aliases.update(_ALIAS_IN_FIELD.findall(field))
+    return aliases
 
 
 def get_all(doctype, *args, **kwargs):

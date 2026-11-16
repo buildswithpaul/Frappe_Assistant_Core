@@ -88,4 +88,4 @@ Two tools work together to create Frappe dashboards:
 2. **Charts must exist first** — `create_dashboard` links to existing chart names.
 3. **Match chart type to data** — line for trends, bar for comparisons, pie for proportions.
 4. **Filter for submitted docs** — use `{"docstatus": 1}` to exclude drafts/cancelled.
-5. **Only fields the user may read** — a chart on, or a filter on, a field above the user's permission level is refused with `error_type: "field_not_readable"`. Don't retry with that field; tell the user they can't chart it.
+5. **Only fields the user may read** — a chart on, or a filter on, a field above the user's permission level, or on a name that isn't exactly a field of the DocType (another case, an expression), is refused with `error_type: "field_not_readable"`. Don't retry with that field; tell the user they can't chart it.
