@@ -95,6 +95,14 @@ describe("createDispatcher", () => {
 		expect(seenAtPrompt).toEqual(["received", "awaiting_user"]);
 	});
 
+	it("asks only for the calls needsConfirm names, given each call's params", async () => {
+		const t = setup({ needsConfirm: (toolName, params) => toolName === "take_screenshot" && params.risky === true });
+		await t.dispatcher.handle(shot("q1", { params: { risky: false } }));
+		await t.dispatcher.handle(shot("q2", { params: { risky: true } }));
+		expect(t.handlers.take_screenshot).toHaveBeenCalledTimes(2);
+		expect(t.sequence().filter((s) => s === "awaiting_user")).toHaveLength(1);
+	});
+
 	it("skips awaiting_user for a tool that needs no confirmation", async () => {
 		const t = setup();
 		await t.dispatcher.handle({ call_id: "n1", tool_name: "get_page_context", params: {} });
