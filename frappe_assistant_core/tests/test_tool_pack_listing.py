@@ -138,3 +138,29 @@ class TestToolPackListing(BaseAssistantTest):
         self.assertEqual([t["name"] for t in result["tools"]], ["start_import", "list_documents"])
         self.assertNotIn("_meta", result)
         self.assertEqual(result["tools"][0]["_meta"], {"fac/pack": "migration"})
+
+    def test_tool_loading_defaults_to_dynamic(self):
+        # Nothing is stored for the user: the production state until they use the toggle.
+        meta = self._list("start_import", ar_session="s1")["_meta"]
+        self.assertEqual(meta["fac/tool_loading"], "dynamic")
+
+    def test_user_choice_all_reaches_listing(self):
+        # set_tool_loading(False) writes 0 on a migrated site; the column is added by migrate, so
+        # the stored value is patched here and the real column round trip is covered in
+        # test_tool_loading.py where it exists.
+        with patch.object(frappe.db, "has_column", return_value=True), patch.object(
+            frappe.db, "get_value", return_value=0
+        ):
+            meta = self._list("start_import", ar_session="s1")["_meta"]
+        self.assertEqual(meta["fac/tool_loading"], "all")
+
+    def test_no_tool_loading_meta_for_non_ar_callers(self):
+        self.assertNotIn("_meta", self._list("start_import"))
+
+    def test_unreadable_preference_sends_no_choice_but_keeps_the_catalogue(self):
+        with patch(
+            "frappe_assistant_core.chat.tool_loading.tool_loading_mode", side_effect=RuntimeError("db down")
+        ):
+            meta = self._list("start_import", ar_session="s1")["_meta"]
+        self.assertNotIn("fac/tool_loading", meta)
+        self.assertEqual([p["id"] for p in meta["fac/packs"]], ["migration"])
