@@ -487,7 +487,9 @@ def update_tool_role_access(
         return {"success": True, "message": _("Tool '{0}' role access updated").format(tool_name)}
 
     except frappe.ValidationError as e:
-        # The configuration's own checks (a role or user needed, a user that can't be listed)
+        # The configuration's own checks (a role or user needed, a user that can't be listed).
+        # frappe.throw also queued the message as a dialog; the card shows it once, as its alert.
+        frappe.clear_messages()
         return {"success": False, "message": str(e)}
     except Exception as e:
         frappe.log_error(f"Failed to update tool role access for '{tool_name}': {str(e)}")

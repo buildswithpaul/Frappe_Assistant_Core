@@ -183,8 +183,11 @@ class ToolUserAccessCase(BaseAssistantTest):
         self.assertEqual([u.user for u in doc.user_access], [self.listed])
 
     def test_the_card_says_why_a_user_is_refused(self):
+        frappe.clear_messages()
         result = update_tool_role_access(TOOL, RESTRICTED, users=["Guest"])
         self.assertEqual((result["success"], result["message"]), (False, "Guest can't be listed on a tool"))
+        # Said once, as the card's alert: no dialog of the same message queued for the browser
+        self.assertEqual(frappe.local.message_log, [])
 
     # -- before bench migrate adds the users table ----------------------------------------------
 
