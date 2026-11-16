@@ -90,11 +90,6 @@ RETURNABLE_FIELDTYPES = {"Data", "Small Text", "Select", "Link", "Read Only"}
 # Cap on fields joined into one OR query, to keep the SQL sane on wide DocTypes.
 MAX_SEARCH_FIELDS = 5
 
-# Caps on the LIKE search that stands in for the index on a DocType with a hidden indexed field:
-# words matched (each one adds a condition per field), and rows taken per DocType.
-MAX_READABLE_SEARCH_WORDS = 3
-MAX_READABLE_SEARCH_ROWS = 20
-
 
 def like_pattern(word: str) -> Optional[str]:
     """`%word%` for a LIKE filter, where a `%` or `_` the user typed can't match every row; or None.
@@ -321,56 +316,37 @@ class SearchTools:
         The same fields the index holds (in_global_search, on the record and its rows), less the
         unreadable ones, matched with LIKE through frappe.get_list, so row permissions apply too.
         Frappe splits a global-search query into words on "&"; spaces split it here as well.
-        LIKE '%word%' can't use an index, so the words and rows are capped, a `%` or `_` the user
-        typed can't match every row (like_pattern), and each child table is searched in its own
-        capped query rather than joined, so rows don't multiply across tables.
         """
         from frappe.utils import strip_html_tags
 
-        words = [word for word in re.split(r"[&\s]+", query or "") if word][:MAX_READABLE_SEARCH_WORDS]
-        patterns = [pattern for pattern in map(like_pattern, words) if pattern]
-        if not patterns:
+        words = [word for word in re.split(r"[&\s]+", query or "") if word]
+        if not words:
             return []
 
-        cap = min(limit, MAX_READABLE_SEARCH_ROWS)
         meta = frappe.get_meta(doctype)
         can_read = field_reader(meta, user_role)
         fields = [df for df in meta.get_global_search_fields() if can_read(df.fieldname)]
+        or_filters = [[doctype, df.fieldname, "like", f"%{word}%"] for df in fields for word in words]
+        for table_field in meta.get_table_fields():
+            child = frappe.get_meta(table_field.options)
+            child_can_read = field_reader(child, user_role, parenttype=doctype)
+            or_filters.extend(
+                [child.name, df.fieldname, "like", f"%{word}%"]
+                for df in child.get_global_search_fields()
+                if child_can_read(df.fieldname)
+                for word in words
+            )
+        if not or_filters:
+            return []
+
         shown = [df for df in fields if df.fieldname != "name"]
         try:
-            names = []
-            or_filters = [[doctype, df.fieldname, "like", pattern] for df in fields for pattern in patterns]
-            if or_filters:
-                names += frappe.get_list(
-                    doctype, or_filters=or_filters, pluck="name", limit=cap, ignore_permissions=False
-                )
-            for table_field in meta.get_table_fields():
-                child = frappe.get_meta(table_field.options)
-                child_can_read = field_reader(child, user_role, parenttype=doctype)
-                child_filters = [
-                    [child.name, df.fieldname, "like", pattern]
-                    for df in child.get_global_search_fields()
-                    if child_can_read(df.fieldname)
-                    for pattern in patterns
-                ]
-                if child_filters:
-                    names += frappe.get_list(
-                        child.name,
-                        filters={"parenttype": doctype, "parentfield": table_field.fieldname},
-                        or_filters=child_filters,
-                        pluck="parent",
-                        parent_doctype=doctype,
-                        limit=cap,
-                        ignore_permissions=False,
-                    )
-            if not names:
-                return []
-            # The record's own permissions, User Permissions included, decide what is returned.
             rows = frappe.get_list(
                 doctype,
-                filters={"name": ["in", list(dict.fromkeys(names))]},
+                or_filters=or_filters,
                 fields=["name"] + [df.fieldname for df in shown],
-                limit=cap,
+                limit=limit,
+                distinct=True,
                 ignore_permissions=False,
             )
         except Exception:
