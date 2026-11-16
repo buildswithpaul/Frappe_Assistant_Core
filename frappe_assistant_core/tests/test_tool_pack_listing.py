@@ -26,7 +26,8 @@ class TestToolPackListing(BaseAssistantTest):
         # Production reads the enabled set from FAC Plugin Configuration rows; enabling a plugin
         # commits, so the enabled set is patched here instead.
         patcher = patch.object(PluginManager, "get_enabled_plugins", autospec=True)
-        patcher.start().return_value = set(manager._discovered_plugins)
+        self.enabled = patcher.start()
+        self.enabled.return_value = set(manager._discovered_plugins)
         self.addCleanup(patcher.stop)
         self.server = MCPServer("test")
         self.addCleanup(self._clear_ar_session)
@@ -87,6 +88,35 @@ class TestToolPackListing(BaseAssistantTest):
     def test_catalogue_omits_pack_with_no_listed_tools(self):
         result = self._list("list_documents", ar_session="s1")
         self.assertEqual(result["_meta"]["fac/packs"], [])
+
+    def _packs_listed(self, *names: str) -> dict:
+        """``{tool: pack id or None}`` as tools/list tells AR."""
+        tools = self._list(*names, ar_session="s1")["tools"]
+        return {t["name"]: (t.get("_meta") or {}).get("fac/pack") for t in tools}
+
+    def test_plain_question_tools_are_base(self):
+        base = (
+            "list_documents",
+            "get_document",
+            "create_document",
+            "update_document",
+            "search_documents",
+            "generate_report",
+            "report_list",
+            "extract_file_content",
+            "attach_chat_file",
+            "get_doctype_info",
+        )
+        self.assertEqual(self._packs_listed(*base), dict.fromkeys(base))
+
+    def test_hidden_tools_are_in_no_pack(self):
+        listed = self._packs_listed("customisation_impact", "check_build_plan")
+        self.assertEqual(listed, {"customisation_impact": None, "check_build_plan": None})
+
+    def test_a_disabled_plugins_tools_carry_no_pack(self):
+        self.enabled.return_value = {"core"}
+        listed = self._packs_listed("start_import", "test_as_user")
+        self.assertEqual(listed, {"start_import": None, "test_as_user": "builder"})
 
     def test_unreadable_packs_still_list_every_tool(self):
         with patch.object(
