@@ -248,6 +248,50 @@ def _conversation_addendum(session_id: str, restricted: bool, project: str | Non
     return "".join(p for p in parts if p) or None
 
 
+def _turn_addendum(
+    session_id: str,
+    restricted: bool,
+    project: str | None = None,
+    *,
+    caller: str | None = None,
+    signals: str | None = None,
+    page: str | None = None,
+) -> str | None:
+    """The whole system-prompt addendum of one turn, in the one order every path sends it.
+
+    AR caches the system prompt with the addendum in its prefix, so a resume, continue or
+    retry that sends its turn's addendum differently misses the whole cache.
+    """
+    parts = [caller, _conversation_addendum(session_id, restricted, project), signals, page]
+    return "".join(p for p in parts if p) or None
+
+
+def _stored_turn_addendum(session_id: str, restricted: bool, project: str | None, user_row) -> str | None:
+    """The addendum a stored turn sent, rebuilt from its user row.
+
+    The caller's own addendum is not stored, so it is not re-sent. Without a row (a user
+    under processing restriction) only the conversation's part can be rebuilt.
+    """
+    if not user_row:
+        return _turn_addendum(session_id, restricted, project)
+    return _turn_addendum(
+        session_id,
+        restricted,
+        project,
+        signals=user_row.get("client_signals"),
+        page=_stored_page_addendum(user_row),
+    )
+
+
+def _resumed_turn_addendum(
+    session_id: str, restricted: bool, project: str | None, message_id: str | None
+) -> str | None:
+    """The addendum the paused or truncated turn ``message_id`` sent, for its resume or continue."""
+    # A restricted user's turn persisted no row; an older row would be another turn's.
+    row = None if restricted else _turn_user_row(session_id, message_id)
+    return _stored_turn_addendum(session_id, restricted, project, row)
+
+
 def _with_project_context(context: dict | None, session_id: str, project: str | None) -> dict | None:
     """The relay context for this turn, carrying the conversation's project when it has one."""
     resolved = _conversation_project(session_id, project)
@@ -391,6 +435,7 @@ def start_turn(
     # the message stores it in a shape FAC Chat Message accepts.
     page_addendum = render_page_context(context)
     context = storable_context(context)
+    signal_addendum = _render_client_signals(client_signals)
     file_urls = list(dict.fromkeys(file_urls or []))
     attachments = attachments or []
 
@@ -431,6 +476,8 @@ def start_turn(
             content=message,
             context=context if include_context and context else None,
             project=project,
+            # Stored so a resume, continue or retry re-sends the sentence this turn sent.
+            client_signals=signal_addendum,
         )
         # Attach files to the message — only meaningful when we persisted one.
         if file_urls:
@@ -445,16 +492,14 @@ def start_turn(
     # the stored user message in conversation history.
     full_prompt = message
 
-    conversation_addendum = _conversation_addendum(session_id, restricted, project)
-    if conversation_addendum:
-        system_prompt_addendum = (system_prompt_addendum or "") + conversation_addendum
-
-    signal_addendum = _render_client_signals(client_signals)
-    if signal_addendum:
-        system_prompt_addendum = (system_prompt_addendum or "") + signal_addendum
-
-    if page_addendum:
-        system_prompt_addendum = (system_prompt_addendum or "") + page_addendum
+    system_prompt_addendum = _turn_addendum(
+        session_id,
+        restricted,
+        project,
+        caller=system_prompt_addendum,
+        signals=signal_addendum,
+        page=page_addendum,
+    )
 
     # Zero-retention: load the client-held session blob to round-trip to AR.
     # Skipped for restricted users — we never load or store their state.
@@ -702,11 +747,11 @@ def retry_turn(
     """Run the latest user message's turn again, from the state before it, in place of its partial.
 
     A turn that completed (text or blocks) is never re-run, so it is never billed twice, and only
-    one Retry per conversation runs at a time. The message's text, stored context and the widget
-    page line are re-sent with the user's saved model. Image attachments and the browser's client
-    signals are not stored, so they are not re-sent; files attached by URL still reach the prompt
-    through the conversation addendum. Tools the failed attempt ran run again. Credits for the
-    lost partial are not refunded.
+    one Retry per conversation runs at a time. The message's text, stored context, the widget
+    page line and the browser-signals sentence are re-sent with the user's saved model. Image
+    attachments are not stored, so they are not re-sent; files attached by URL still reach the
+    prompt through the conversation addendum. Tools the failed attempt ran run again. Credits for
+    the lost partial are not refunded.
 
     Args:
             session_id: Conversation session ID
@@ -784,9 +829,7 @@ def _retry_locked(session_id: str, user_row, **launch) -> dict:
     if not restored:
         frappe.throw(_("This turn can no longer be retried"))
 
-    # Client signals are not stored, so a retry has none; the page line is rebuilt from the
-    # stored page, as start_turn wrote it.
-    addendum = (_conversation_addendum(session_id, False) or "") + _stored_page_addendum(user_row)
+    addendum = _stored_turn_addendum(session_id, False, None, user_row)
     _open_turn(session_id, launch["client_turn_id"])
     try:
         _launch_turn(
@@ -797,7 +840,7 @@ def _retry_locked(session_id: str, user_row, **launch) -> dict:
             user_row.name,
             session_state,
             False,
-            system_prompt_addendum=addendum or None,
+            system_prompt_addendum=addendum,
             job=job,
             **launch,
         )
@@ -844,23 +887,48 @@ def _stored_page_addendum(row) -> str:
     return render_page_context({"type": "app_page", "path": row.context_url})
 
 
-def _latest_user_row(session_id: str) -> frappe._dict | None:
+_USER_ROW_FIELDS = (
+    "name",
+    "content",
+    "creation",
+    "context_type",
+    "context_doctype",
+    "context_name",
+    "context_url",
+)
+
+
+def _latest_user_row(session_id: str, before=None) -> frappe._dict | None:
+    """The session's latest user row, or its latest one created before ``before``."""
+    filters = {"session_id": session_id, "role": "user"}
+    if before:
+        filters["creation"] = ["<", before]
+    fields = list(_USER_ROW_FIELDS)
+    # Read only once migrate has added the column; until then no row has signals to re-send.
+    if frappe.db.has_column("FAC Chat Message", "client_signals"):
+        fields.append("client_signals")
     rows = frappe.get_all(
-        "FAC Chat Message",
-        filters={"session_id": session_id, "role": "user"},
-        fields=[
-            "name",
-            "content",
-            "creation",
-            "context_type",
-            "context_doctype",
-            "context_name",
-            "context_url",
-        ],
-        order_by="creation desc",
-        limit=1,
+        "FAC Chat Message", filters=filters, fields=fields, order_by="creation desc", limit=1
     )
     return rows[0] if rows else None
+
+
+def _turn_user_row(session_id: str, message_id: str | None) -> frappe._dict | None:
+    """The user row of the turn ``message_id`` answers: the latest one before its assistant row.
+
+    With no persisted assistant row (a resume while the paused turn still streams, or no id)
+    the turn is the open one, so its row is the latest.
+    """
+    answered = (
+        frappe.db.get_value(
+            "FAC Chat Message",
+            {"session_id": session_id, "role": "assistant", "message_id": message_id},
+            "creation",
+        )
+        if message_id
+        else None
+    )
+    return _latest_user_row(session_id, before=answered)
 
 
 def _stored_context(row) -> dict | None:
@@ -1012,7 +1080,7 @@ def resume_interrupt(
             # The turn the user approved was sent with these; the resume is the
             # same turn continuing, so it has to carry them too.
             model_id=model_id,
-            system_prompt_addendum=_conversation_addendum(session_id, restricted, project),
+            system_prompt_addendum=_resumed_turn_addendum(session_id, restricted, project, message_id),
             context=_with_project_context(None, session_id, project),
             web_search=_flag(web_search) if web_search is not None else None,
             thinking_enabled=_flag(thinking_enabled) if thinking_enabled is not None else None,
@@ -1122,7 +1190,7 @@ def continue_response(
             session_state=session_state,
             restricted=restricted,
             continue_from_message_id=message_id,
-            system_prompt_addendum=_conversation_addendum(session_id, restricted, project),
+            system_prompt_addendum=_resumed_turn_addendum(session_id, restricted, project, message_id),
             # A continuation is the same turn finishing; it must run under the
             # same toggles, not fall back to AR's absence defaults.
             web_search=_flag(web_search) if web_search is not None else None,

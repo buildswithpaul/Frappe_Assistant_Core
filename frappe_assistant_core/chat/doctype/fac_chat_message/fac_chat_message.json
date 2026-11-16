@@ -16,6 +16,7 @@
   "context_doctype",
   "context_name",
   "context_url",
+  "client_signals",
   "section_break_llm",
   "model",
   "credits_used",
@@ -99,6 +100,13 @@
    "label": "Context URL"
   },
   {
+   "description": "The browser-signals sentence this turn sent AR, re-sent on its resume, continue and retry",
+   "fieldname": "client_signals",
+   "fieldtype": "Small Text",
+   "label": "Client Signals",
+   "read_only": 1
+  },
+  {
    "collapsible": 1,
    "fieldname": "section_break_llm",
    "fieldtype": "Section Break",
@@ -179,7 +187,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-13 00:00:00.000000",
+ "modified": "2026-11-16 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Chat",
  "name": "FAC Chat Message",
