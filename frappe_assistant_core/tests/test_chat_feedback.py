@@ -32,8 +32,19 @@ def _client_double():
 
 
 class TestChatFeedback(BaseAssistantTest):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # Once per class: the rollback is class-wide, so per-test users pile up in one transaction
+        # and trip Frappe's "Throttled" limit (more than 60 users created within an hour).
+        cls.me = cls.make_throwaway_user(cls, "fbme")
+        cls.other = cls.make_throwaway_user(cls, "fbother")
+
     def setUp(self):
         super().setUp()
+        # Each test's messages and pulse dates roll back here, since the two users are shared.
+        frappe.db.savepoint("fb_test")
+        self.addCleanup(frappe.db.rollback, save_point="fb_test")
         self.client = _client_double()
         patcher = patch.object(support, "get_fac_cloud_client", return_value=self.client)
         patcher.start()
@@ -45,8 +56,6 @@ class TestChatFeedback(BaseAssistantTest):
         ):
             target.start()
             self.addCleanup(target.stop)
-        self.me = self.make_throwaway_user("fbme")
-        self.other = self.make_throwaway_user("fbother")
         as_me = patch.dict(frappe.session, {"user": self.me})
         as_me.start()
         self.addCleanup(as_me.stop)
