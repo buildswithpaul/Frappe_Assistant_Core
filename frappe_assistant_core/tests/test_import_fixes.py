@@ -1070,6 +1070,38 @@ class TestOneValueForEveryRow(BaseAssistantTest):
         self.assertTrue(fixed["success"], fixed)
         self.assertEqual((fixed["result"]["ready"], fixed["result"]["failed"]), (2, 0))
 
+    def test_customers_refused_for_a_group_type_customer_group_get_one_group_filled_in(self):
+        # Selling Settings' default Customer Group is the group "All Customer Groups" on a site set up that
+        # way (seen on a live test, 2026-11-17), so new customers with no group column are refused with
+        # "Cannot select a Group type Customer Group": one group for all of them is the fix, not leaving them out.
+        frappe.db.set_single_value("Selling Settings", "customer_group", "All Customer Groups")
+        leaf = frappe.get_doc(
+            {"doctype": "Customer Group", "customer_group_name": f"Funders {self.tag}", "is_group": 0}
+        ).insert()
+        content = f"Customer Name\nAcme Trust {self.tag}\nBeta Foundation {self.tag}\n"
+        file_doc = frappe.get_doc(
+            {"doctype": "File", "file_name": "customers.csv", "content": content, "is_private": 1}
+        ).insert()
+        session = self._run("start_import_session", {"file_url": file_doc.file_url})["result"]["session_id"]
+        self.assertTrue(
+            self._run(
+                "set_column_mapping",
+                {"session": session, "doctype": "Customer", "mapping": {"Customer Name": "customer_name"}},
+            )["success"]
+        )
+
+        checked = self._run("dry_run_import", {"session": session})["result"]
+        group = next(g for g in checked["groups"] if "Group type Customer Group" in (g.get("message") or ""))
+        fill = [f for f in group["fixes"] if f["action"] == "fill"]
+        self.assertEqual([f["field"] for f in fill], ["customer_group"], group)
+
+        fixed = self._run(
+            "dry_run_import",
+            {"session": session, "fixes": [{"group": group["id"], "action": "fill", "value": leaf.name}]},
+        )
+        self.assertTrue(fixed["success"], fixed)
+        self.assertEqual((fixed["result"]["ready"], fixed["result"]["failed"]), (2, 0), fixed["result"])
+
     def test_an_app_message_naming_no_field_of_the_doctype_offers_no_fill(self):
         session = self._session()
         group = {
