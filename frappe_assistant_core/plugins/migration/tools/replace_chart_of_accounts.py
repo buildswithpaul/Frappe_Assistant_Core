@@ -72,7 +72,7 @@ class ReplaceChartOfAccounts(BaseTool):
                 },
                 "source_system": {"type": "string", "description": "The system the chart comes from."},
             },
-            "required": ["session", "company", "accounts_removed", "accounts_created"],
+            "required": ["session", "company"],  # a call without the figures is answered with them
         }
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
