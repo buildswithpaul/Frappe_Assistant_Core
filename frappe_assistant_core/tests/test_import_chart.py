@@ -320,6 +320,20 @@ class TestReadChart(ChartCase):
         self.assertEqual(modes["offered"], ["map", "add"])
         self.assertEqual(modes["default"], "map")
         self.assertIn("general ledger entries", modes["replace_refused"])
+        self.assertNotIn("replace_figures", modes)
+
+    def test_the_check_gives_the_replace_figures_for_one_approval_card(self):
+        # Live, 2026-11-17: the first replace call left the figures out to learn them, and the user
+        # approved a card without them, then a second card with them.
+        session = self._chart()
+
+        modes = self._check(session, company=self.company)["modes"]
+
+        expected = import_chart.replace_figures(
+            self.company, import_chart.read_chart(frappe.get_doc("FAC Import Session", session))
+        )
+        self.assertEqual(modes["replace_figures"], expected)
+        self.assertEqual(expected["accounts_created"], 13)
 
     def test_the_company_must_exist(self):
         refused = self._run(

@@ -227,6 +227,10 @@ def check_chart(name: str, company: str, arguments: Dict[str, Any]) -> Dict[str,
         if company:
             out["company"] = company
             out["modes"] = import_chart.modes(company)
+            if "replace" in out["modes"]["offered"]:
+                # What replace_chart_of_accounts' approval card shows: sent with the first call, the
+                # user approves once, with the figures (live, a call without them was a second card)
+                out["modes"]["replace_figures"] = import_chart.replace_figures(company, nodes)
             proposal = import_chart.map_proposal(nodes, classes, company)
             out["map"] = {
                 "matched": len(proposal["matched"]),
