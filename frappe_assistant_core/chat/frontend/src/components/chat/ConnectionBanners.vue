@@ -50,7 +50,7 @@
 			<router-link :to="CREDITS_ROUTE" class="banner-cta">Buy credits</router-link>
 		</span>
 		<button
-			v-if="canReport && isReportable(errorCode)"
+			v-if="support.canOpen && isReportable(errorCode)"
 			type="button"
 			class="report-btn"
 			data-test="report-error"
@@ -95,6 +95,7 @@ import { PLANS_ROUTE, CREDITS_ROUTE } from "@/components/spotlight/spotlightRule
 import PersonalLimitBanner from "./PersonalLimitBanner.vue";
 import { __ } from "@/utils/i18n";
 import { isReportable } from "@/utils/reportableError";
+import { useSupportStore } from "@/stores/supportStore";
 import { useReportFailure } from "@/composables/useReportFailure";
 
 const props = defineProps({
@@ -105,12 +106,11 @@ const props = defineProps({
 	reconnecting: { type: Boolean, default: false },
 	errorCode: { type: String, default: null },
 	isAdmin: { type: Boolean, default: false },
-	// False where no Help & Feedback modal is mounted (the Desk widget).
-	canReport: { type: Boolean, default: true },
 });
 
 defineEmits(["retry", "dismiss-error", "reconnect"]);
 
+const support = useSupportStore();
 const reportFailure = useReportFailure();
 
 // Captured at click: the banner may auto-dismiss before the form is filled in.

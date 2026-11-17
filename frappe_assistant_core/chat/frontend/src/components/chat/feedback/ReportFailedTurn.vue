@@ -2,7 +2,7 @@
 	<div class="truncation-notice retry-notice">
 		<span>{{ __("This answer did not finish.") }}</span>
 		<button
-			v-if="lastError && isReportable(lastError.code)"
+			v-if="support.canOpen && lastError && isReportable(lastError.code)"
 			type="button"
 			class="report-link"
 			data-test="report-failed-turn"
@@ -17,6 +17,7 @@
 <script setup>
 import { __ } from "@/utils/i18n";
 import { isReportable } from "@/utils/reportableError";
+import { useSupportStore } from "@/stores/supportStore";
 import { useReportFailure } from "@/composables/useReportFailure";
 
 defineProps({
@@ -25,6 +26,7 @@ defineProps({
 });
 defineEmits(["retry"]);
 
+const support = useSupportStore();
 const report = useReportFailure();
 </script>
 

@@ -43,6 +43,14 @@ describe("chatStore.handleStreamError", () => {
 		expect(new Date(last.lastError.at).toISOString()).toBe(last.lastError.at);
 	});
 
+	it("stores the failure on the latest answer when none is streaming", () => {
+		const store = useChatStore();
+		// production: a failure can land after the bubble was finalised (e.g. a resume that errors).
+		store.messages.push({ role: "assistant", isStreaming: false, content: "partial", blocks: [] });
+		store.handleStreamError("Model failed", "MODEL_FAILED", {});
+		expect(store.messages[store.messages.length - 1].lastError.code).toBe("MODEL_FAILED");
+	});
+
 	it("keeps and finalizes the partial message when blocks were streamed", () => {
 		const store = useChatStore();
 		store.messages.push({
