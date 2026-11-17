@@ -430,16 +430,12 @@ class TestImportChart(ChartCase):
 
     def test_replace_is_refused_while_a_mode_of_payment_points_at_an_account(self):
         # A row on any account but the default cash one is the user's setup: where it goes is their call.
+        # ERPNext 16 takes only a Bank, Cash or Receivable ledger on a mode of payment: the debtors one.
         self._clear_references()
         account = frappe.db.get_value(
-            "Account",
-            {
-                "company": self.company,
-                "is_group": 0,
-                "root_type": "Asset",
-                "name": ["!=", frappe.db.get_value("Company", self.company, "default_cash_account")],
-            },
+            "Account", {"company": self.company, "is_group": 0, "account_type": "Receivable"}
         )
+        self.assertNotEqual(account, frappe.db.get_value("Company", self.company, "default_cash_account"))
         frappe.get_doc(
             {
                 "doctype": "Mode of Payment",
