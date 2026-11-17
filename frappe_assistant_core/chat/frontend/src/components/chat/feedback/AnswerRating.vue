@@ -5,7 +5,7 @@
 			class="action-btn"
 			:class="{ 'is-active': reaction === 'Up' }"
 			data-test="thumb-up"
-			:title="__('Good answer')"
+			:title="disclosure"
 			:aria-label="__('Good answer')"
 			:aria-pressed="reaction === 'Up'"
 			@click="onUp"
@@ -22,7 +22,7 @@
 			data-test="thumb-down"
 			:aria-expanded="open"
 			:aria-controls="popoverId"
-			:title="__('Bad answer')"
+			:title="disclosure"
 			:aria-label="__('Bad answer')"
 			:aria-pressed="reaction === 'Down'"
 			@click="onDown"
@@ -53,6 +53,7 @@
 				class="reasons-comment"
 				data-test="comment"
 				rows="2"
+				maxlength="2000"
 				:placeholder="__('Anything else? (optional)')"
 			/>
 			<div class="reasons-note">
@@ -80,6 +81,11 @@ const REASONS = [
 	{ key: "credits", label: __("Used too many credits") },
 	{ key: "other", label: __("Other") },
 ];
+
+// On the thumbs themselves: a rating is shared before the popover ever opens.
+const disclosure = __(
+	"We link your rating to this answer's usage record (model, time, credits), not to what you wrote."
+);
 
 const store = useAnswerRatingStore();
 const popoverId = `reasons-${props.messageId}`;
@@ -120,13 +126,15 @@ function onUp() {
 	else store.rate(props.messageId, "Up");
 }
 
+// The 👎 itself is the signal: it is recorded on click; reasons are an optional extra.
 function onDown() {
 	if (reaction.value === "Down") {
 		open.value = false;
 		store.withdraw(props.messageId);
 		return;
 	}
-	open.value = !open.value;
+	store.rate(props.messageId, "Down");
+	open.value = true;
 }
 
 function toggle(key) {
@@ -136,7 +144,9 @@ function toggle(key) {
 }
 
 function send() {
-	store.rate(props.messageId, "Down", selected.value, comment.value.trim() || null);
+	const text = comment.value.trim() || null;
+	// The 👎 is already recorded; only re-rate when there is something to add.
+	if (selected.value.length || text) store.rate(props.messageId, "Down", selected.value, text);
 	close();
 	selected.value = [];
 	comment.value = "";

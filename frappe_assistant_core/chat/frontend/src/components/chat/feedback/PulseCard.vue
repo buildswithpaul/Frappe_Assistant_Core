@@ -35,6 +35,7 @@
 					class="pulse-comment"
 					data-test="pulse-comment"
 					rows="2"
+					maxlength="2000"
 					:placeholder="__('Anything we should fix or build? (optional)')"
 				/>
 				<label class="pulse-contact">

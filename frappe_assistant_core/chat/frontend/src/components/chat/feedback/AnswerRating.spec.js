@@ -71,22 +71,78 @@ describe("AnswerRating", () => {
 		expect(w.find("[data-test=thumb-up]").classes()).not.toContain("is-active");
 	});
 
-	it("thumbs down opens the popover and Send posts the chosen keys", async () => {
+	it("thumbs down records Down at once and opens the popover", async () => {
 		const w = mount(AnswerRating, { props: { messageId: "m1" } });
 		expect(w.find("[data-test=reasons]").exists()).toBe(false);
 		await w.find("[data-test=thumb-down]").trigger("click");
+		expect(api.feedback.rateAnswer).toHaveBeenCalledWith({
+			messageId: "m1",
+			reaction: "Down",
+			reasons: [],
+			comment: null,
+		});
+		expect(w.find("[data-test=thumb-down]").classes()).toContain("is-active");
 		expect(w.text()).toContain("What went wrong?");
+	});
+
+	it("Send re-rates the Down with the chosen keys and comment", async () => {
+		const w = mount(AnswerRating, { props: { messageId: "m1" } });
+		await w.find("[data-test=thumb-down]").trigger("click");
 		await w.find("[data-reason=slow]").trigger("click");
 		await w.find("[data-reason=credits]").trigger("click");
 		await w.find("[data-test=comment]").setValue("meh");
 		await w.find("[data-test=send]").trigger("click");
-		expect(api.feedback.rateAnswer).toHaveBeenCalledWith({
+		await vi.waitFor(() => expect(api.feedback.rateAnswer).toHaveBeenCalledTimes(2));
+		expect(api.feedback.rateAnswer).toHaveBeenLastCalledWith({
 			messageId: "m1",
 			reaction: "Down",
 			reasons: ["slow", "credits"],
 			comment: "meh",
 		});
 		expect(w.find("[data-test=reasons]").exists()).toBe(false);
+		expect(w.find("[data-test=thumb-down]").classes()).toContain("is-active");
+	});
+
+	it("Send with nothing chosen adds no second call", async () => {
+		const w = mount(AnswerRating, { props: { messageId: "m1" } });
+		await w.find("[data-test=thumb-down]").trigger("click");
+		await w.find("[data-test=send]").trigger("click");
+		expect(api.feedback.rateAnswer).toHaveBeenCalledTimes(1);
+		expect(w.find("[data-test=reasons]").exists()).toBe(false);
+	});
+
+	it("closing the popover without Send keeps the Down", async () => {
+		const w = mount(AnswerRating, { props: { messageId: "m1" } });
+		await w.find("[data-test=thumb-down]").trigger("click");
+		await w.find("[data-test=reasons]").trigger("keydown", { key: "Escape" });
+		expect(w.find("[data-test=reasons]").exists()).toBe(false);
+		await vi.waitFor(() => expect(api.feedback.rateAnswer).toHaveBeenCalledTimes(1));
+		expect(api.feedback.withdrawAnswerRating).not.toHaveBeenCalled();
+		expect(w.find("[data-test=thumb-down]").classes()).toContain("is-active");
+	});
+
+	it("clicking the filled thumb down withdraws and closes the popover", async () => {
+		const w = mount(AnswerRating, { props: { messageId: "m1" } });
+		await w.find("[data-test=thumb-down]").trigger("click");
+		await w.find("[data-test=thumb-down]").trigger("click");
+		await vi.waitFor(() => expect(api.feedback.withdrawAnswerRating).toHaveBeenCalledWith("m1"));
+		expect(w.find("[data-test=reasons]").exists()).toBe(false);
+		expect(w.find("[data-test=thumb-down]").classes()).not.toContain("is-active");
+	});
+
+	it("tells the user what a rating is linked to, on both thumbs", () => {
+		const w = mount(AnswerRating, { props: { messageId: "m1" } });
+		for (const thumb of ["thumb-up", "thumb-down"]) {
+			expect(w.find(`[data-test=${thumb}]`).attributes("title")).toContain(
+				"usage record (model, time, credits), not to what you wrote"
+			);
+		}
+	});
+
+	it("caps the comment at 2000 characters", async () => {
+		const w = mount(AnswerRating, { props: { messageId: "m1" } });
+		await w.find("[data-test=thumb-down]").trigger("click");
+		expect(w.find("[data-test=comment]").attributes("maxlength")).toBe("2000");
 	});
 
 	it("a failed rate reverts the thumb", async () => {
