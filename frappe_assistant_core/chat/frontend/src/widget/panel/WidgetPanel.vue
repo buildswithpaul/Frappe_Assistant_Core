@@ -62,6 +62,7 @@
 			:is-admin="userStore.isAdmin"
 			:needs-reconnect="userStore.needsReconnect"
 			:reconnecting="reconnecting"
+			:can-report="false"
 			@retry="retryConnection"
 			@dismiss-error="chatStore.clearError()"
 			@reconnect="reconnectServer"

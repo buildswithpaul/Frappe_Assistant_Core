@@ -49,6 +49,15 @@
 			<router-link :to="PLANS_ROUTE" class="banner-cta">See plans</router-link>
 			<router-link :to="CREDITS_ROUTE" class="banner-cta">Buy credits</router-link>
 		</span>
+		<button
+			v-if="canReport && isReportable(errorCode)"
+			type="button"
+			class="report-btn"
+			data-test="report-error"
+			@click="onReport"
+		>
+			{{ __("Report this") }}
+		</button>
 		<button @click="$emit('dismiss-error')" class="dismiss-btn" aria-label="Dismiss error">
 			<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path
@@ -84,6 +93,9 @@
 import { computed } from "vue";
 import { PLANS_ROUTE, CREDITS_ROUTE } from "@/components/spotlight/spotlightRules";
 import PersonalLimitBanner from "./PersonalLimitBanner.vue";
+import { __ } from "@/utils/i18n";
+import { isReportable } from "@/utils/reportableError";
+import { useReportFailure } from "@/composables/useReportFailure";
 
 const props = defineProps({
 	connectionVisible: { type: Boolean, default: false },
@@ -93,9 +105,18 @@ const props = defineProps({
 	reconnecting: { type: Boolean, default: false },
 	errorCode: { type: String, default: null },
 	isAdmin: { type: Boolean, default: false },
+	// False where no Help & Feedback modal is mounted (the Desk widget).
+	canReport: { type: Boolean, default: true },
 });
 
 defineEmits(["retry", "dismiss-error", "reconnect"]);
+
+const reportFailure = useReportFailure();
+
+// Captured at click: the banner may auto-dismiss before the form is filled in.
+function onReport() {
+	reportFailure({ code: props.errorCode, message: props.error, at: new Date().toISOString() });
+}
 
 const isQuota = computed(() => props.errorCode === "quota_exhausted");
 const isUserLimit = computed(() => props.errorCode === "user_limit_reached");
@@ -218,6 +239,24 @@ const memberQuotaText =
 
 .error-banner .banner-cta:hover {
 	opacity: 1;
+}
+
+.report-btn {
+	margin-left: auto;
+	padding: 0.25rem 0.5rem;
+	border-radius: 0.25rem;
+	opacity: 0.85;
+	font-size: 0.75rem;
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+.report-btn:hover {
+	opacity: 1;
+}
+
+.report-btn + .dismiss-btn {
+	margin-left: 0.25rem;
 }
 
 .banner-ctas + .dismiss-btn {

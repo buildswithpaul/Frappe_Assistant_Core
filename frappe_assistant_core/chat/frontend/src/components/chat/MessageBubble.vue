@@ -78,10 +78,7 @@
 			</div>
 
 			<!-- Retry: the latest turn ended in an error or an interruption -->
-			<div v-if="canRetry" class="truncation-notice retry-notice">
-				<span>{{ __("This answer did not finish.") }}</span>
-				<button class="continue-btn retry-btn" @click="$emit('retry')">{{ __("Retry") }}</button>
-			</div>
+			<ReportFailedTurn v-if="canRetry" :last-error="message.lastError" @retry="$emit('retry')" />
 
 			<TurnCreditNotices
 				:message="message"
@@ -123,6 +120,7 @@ import { useUserStore } from "@/stores/userStore";
 import MessageBlockRenderer from "./MessageBlockRenderer.vue";
 import MessageFooter from "./MessageFooter.vue";
 import AnswerRating from "./feedback/AnswerRating.vue";
+import ReportFailedTurn from "./feedback/ReportFailedTurn.vue";
 import TurnCreditNotices from "./TurnCreditNotices.vue";
 import FacoRobot from "@/components/common/FacoRobot.vue";
 import { ensureHljs } from "@/utils/markdown.js";
