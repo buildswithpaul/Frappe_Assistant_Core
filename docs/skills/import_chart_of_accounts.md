@@ -34,7 +34,12 @@ finds its accounts by the client's names and numbers.
      of each (`replace_chart_of_accounts` without the figures gives them). Pass `accounts_removed` and
      `accounts_created` exactly. It is refused, with the list, while a tax template, item tax template,
      mode of payment or GST Settings points at the company's accounts: the user removes those, or picks add.
+     A mode of payment on the company's default cash account is not refused: ERPNext sets one up for every
+     new company, and the replace moves it to the new chart's cash ledger (`cash_mode_of_payment_account`).
      Afterwards set the default accounts listed in `defaults_left_empty` (Company settings).
+   - A chart made for ERPNext's own Chart of Accounts Importer may repeat a name under another number (a
+     sub-account named like its parent): that is two accounts, not a problem. Its Parent Account Number
+     column links each account to its parent; there is nothing to map for it.
 5. The client's account names and numbers are kept as old IDs under `source_system`, so the opening trial
    balance later resolves its accounts by them without asking.
 
