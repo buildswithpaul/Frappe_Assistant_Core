@@ -104,7 +104,10 @@ one file at a time:
 
 If a file needs records from a later file (for example, Customers whose group is in the Customer
 Group file), import the other file first. Use step 5 only for a few missing masters the file
-doesn't bring itself.
+doesn't bring itself. A file that names its customers or suppliers only in its own rows (projects
+with a customer column, say), with no file of them: check the whole file and ask once, as
+`get_skill("dry-run-import-usage")` says under **Many rows need customers or suppliers that aren't in
+ERPNext yet**. Never leave the user with only map or leave out for them.
 
 ## When an import tool fails
 
