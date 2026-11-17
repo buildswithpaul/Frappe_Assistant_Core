@@ -170,7 +170,7 @@ Each fix:
 
 | Key | Description |
 |-----|-------------|
-| `group` | The group's id, e.g. `G3fa2c1`. A group keeps its id from check to check; once its rows pass, the id is gone. |
+| `group` | The group's id, e.g. `G3fa2c1`. A group keeps its id from check to check; once its rows pass, the id is gone. After a mapping change, send the fixes straight away: a file checked in the request is checked first in the same call, and the fixes apply to the groups it finds. |
 | `action` | `map`, `fill` or `leave_out` |
 | `to` | For `map`: the existing value to use |
 | `value` | For `fill`: the value every row gets |
