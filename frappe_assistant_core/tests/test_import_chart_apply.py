@@ -561,8 +561,11 @@ class TestImportChart(ChartCase):
         # A user sets a warehouse's account in the form; ERPNext refuses to delete an account any record links
         # to, so the replace names it before deleting anything, whatever the doctype, not a listed few.
         session = self._chart()
-        account = frappe.get_all(
-            "Account", filters={"company": self.company, "is_group": 0}, pluck="name", limit=1
+        account = frappe.get_all(  # ERPNext 16 takes only a Stock ledger for a warehouse
+            "Account",
+            filters={"company": self.company, "is_group": 0, "account_type": "Stock"},
+            pluck="name",
+            limit=1,
         )[0]
         warehouse = frappe.get_doc(
             {
