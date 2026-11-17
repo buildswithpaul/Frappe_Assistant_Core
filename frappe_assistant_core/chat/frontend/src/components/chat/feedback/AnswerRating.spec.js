@@ -1,4 +1,5 @@
 import { mount } from "@vue/test-utils";
+import { nextTick } from "vue";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { setActivePinia, createPinia } from "pinia";
 
@@ -95,5 +96,40 @@ describe("AnswerRating", () => {
 		await vi.waitFor(() =>
 			expect(w.find("[data-test=thumb-up]").classes()).not.toContain("is-active")
 		);
+	});
+
+	describe("popover", () => {
+		const openPopover = async () => {
+			const w = mount(AnswerRating, { props: { messageId: "m1" }, attachTo: document.body });
+			await w.find("[data-test=thumb-down]").trigger("click");
+			await nextTick();
+			return w;
+		};
+
+		it("moves focus in on open and back to the thumb on Escape", async () => {
+			const w = await openPopover();
+			expect(w.find("[data-test=thumb-down]").attributes("aria-expanded")).toBe("true");
+			expect(w.find("[data-test=reasons]").element).toBe(document.activeElement);
+			await w.find("[data-test=reasons]").trigger("keydown", { key: "Escape" });
+			expect(w.find("[data-test=reasons]").exists()).toBe(false);
+			expect(w.find("[data-test=thumb-down]").element).toBe(document.activeElement);
+			w.unmount();
+		});
+
+		it("closes on an outside click", async () => {
+			const w = await openPopover();
+			document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+			await nextTick();
+			expect(w.find("[data-test=reasons]").exists()).toBe(false);
+			w.unmount();
+		});
+
+		it("stays open on a click inside", async () => {
+			const w = await openPopover();
+			w.find("[data-test=comment]").element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+			await nextTick();
+			expect(w.find("[data-test=reasons]").exists()).toBe(true);
+			w.unmount();
+		});
 	});
 });
