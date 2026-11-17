@@ -232,10 +232,24 @@ def _fill_field(session, group: Dict[str, Any]):
             df = fields[0] if len(fields) == 1 else None
         elif not found:
             df = _field_named_in(meta, message)
+    elif group.get("cause") == dry_run.CAUSE_REJECTED:
+        df = _group_type_field(meta, cstr(group.get("message")))
     # One value for every record can't be what names or titles each, nor one no two records share
     if not df or df.unique or df.fieldname in (dry_run._name_field(session.target_doctype), meta.title_field):
         return None
     return df
+
+
+def _group_type_field(meta, message: str):
+    """The one link field ERPNext's "Cannot select a Group type <DocType>" is about, or None. A Customer
+    with no Customer Group column gets Selling Settings' default, which is the group "All Customer
+    Groups" on many sites, and ERPNext refuses it: one non-group value for every row is the fix."""
+    found = re.search(r"Cannot select a Group type (.+?)\.", message)
+    if not found:
+        return None
+    target = found.group(1).strip()
+    fields = [df for df in meta.fields if df.fieldtype == "Link" and target in (df.options, _(df.options))]
+    return fields[0] if len(fields) == 1 else None
 
 
 def _field_named_in(meta, message: str):
