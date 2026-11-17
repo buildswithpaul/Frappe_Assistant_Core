@@ -549,8 +549,16 @@ class TestImportMasters(BaseAssistantTest):
 
     # -- which masters can be created ---------------------------------------------------------
 
+    def _customers_named_by(self, rule):
+        """Selling Settings' Customer Naming By, as its form sets it (the controller reads the
+        global default), put back in the cache once the test's rollback has put it back."""
+        frappe.db.set_single_value("Selling Settings", "cust_master_name", rule)
+        frappe.defaults.set_global_default("cust_master_name", rule)
+        self.addCleanup(frappe.clear_cache)  # what frappe.defaults clears for a global default
+
     def test_only_masters_named_by_their_name_alone_can_be_created(self):
         can = import_fixes.cannot_create
+        self._customers_named_by("Naming Series")
 
         for doctype in ("Customer Group", "Territory", "Market Segment", "UOM", "Brand"):
             self.assertEqual(can(doctype), "", doctype)
@@ -560,6 +568,50 @@ class TestImportMasters(BaseAssistantTest):
         self.assertIn("isn't a master", can("Sales Invoice"))
         self.assertIn("system record", can("Currency"))
         self.assertIn("chart of accounts", can("Company"))
+
+    def test_a_missing_customer_named_by_its_name_is_planned_and_created_in_the_one_approval(self):
+        # Live, 2026-11-17: a file of projects named 262 customers that weren't in ERPNext. Customer
+        # Naming By was Customer Name, so a customer created gets the name the rows use, but the
+        # check said "ERPNext names it itself" and they were imported as a second file.
+        self._customers_named_by("Customer Name")
+        group = frappe.get_doc(
+            {
+                "doctype": "Customer Group",
+                "customer_group_name": f"Projects {self.tag}",
+                "parent_customer_group": "All Customer Groups",
+            }
+        ).insert()
+        frappe.db.set_single_value("Selling Settings", "customer_group", group.name)
+        company = frappe.get_all("Company", pluck="name", limit=1)[0]
+        name = f"Acme Foundation {self.tag}"
+        file_doc = frappe.get_doc(
+            {
+                "doctype": "File",
+                "file_name": "projects.csv",
+                "content": f"Project,Customer,Company\nKolar {self.tag},{name},{company}\n".encode(),
+                "is_private": 1,
+            }
+        ).insert()
+        session = self._run("start_import_session", {"file_url": file_doc.file_url})["result"]["session_id"]
+        mapped = self._run(
+            "set_column_mapping",
+            {
+                "session": session,
+                "doctype": "Project",
+                "mapping": {"Project": "project_name", "Customer": "customer", "Company": "company"},
+            },
+        )
+        self.assertTrue(mapped["success"], mapped)
+        checked = self._run("dry_run_import", {"session": session})
+        self.assertTrue(checked["success"], checked)
+
+        planned = self._planned(checked["result"], "Customer")
+        self.assertEqual(planned["data"]["customer_name"], name)
+        self.assertEqual(planned["data"]["customer_group"], group.name)
+        created = self._create(session, [{"doctype": "Customer", "data": planned["data"]}])
+
+        self.assertTrue(created["success"], created)
+        self.assertEqual(frappe.db.get_value("Customer", name, "customer_group"), group.name)
 
     def test_a_master_needing_a_table_row_or_named_after_another_record_is_not_offered(self):
         can = import_fixes.cannot_create

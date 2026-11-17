@@ -1008,9 +1008,7 @@ def cannot_create(doctype: str, session=None) -> str:
     """
     if session and doctype == session.target_doctype:
         return _("the file imports {0} records itself, so add it to the file").format(_(doctype))
-    from frappe_assistant_core.utils import import_opening_invoices as opening_invoices
-
-    if opening_invoices.is_party(session, doctype):
+    if is_party(session, doctype):
         if doctype in (frappe.conf.get("fac_import_never_create_doctypes") or []):
             return _("this site doesn't allow creating it during an import")
         # A party may be named by a series: the rows find it by its customer or supplier name.
@@ -1042,6 +1040,20 @@ def cannot_create(doctype: str, session=None) -> str:
     if not _may_use_create_document():
         return _("creating records with FACO is turned off for you")
     return ""
+
+
+def is_party(session, doctype: str) -> bool:
+    """A Customer or Supplier masters_plan proposes with its type, group and territory: an
+    opening-invoices file's party, found by its name whatever ERPNext names it, or one any file
+    links to when Selling or Buying Settings name a new one by its customer or supplier name, so
+    the record created has the name the rows use. Live, 2026-11-17: 262 customers a projects file
+    named were refused as "ERPNext names it itself", and imported as a second file."""
+    from frappe_assistant_core.utils import import_opening_invoices as opening_invoices
+
+    if opening_invoices.is_party(session, doctype):
+        return True
+    name_field = opening_invoices.PARTY_NAME_FIELDS.get(doctype)
+    return bool(name_field) and dry_run._name_field(doctype) == name_field
 
 
 def _may_use_create_document() -> bool:
@@ -1111,7 +1123,7 @@ def masters_plan(session, groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if group.get("cause") != dry_run.CAUSE_MISSING_LINK or not doctype or cannot_create(doctype, session):
             continue
         choose = {}
-        if opening_invoices.is_party(session, doctype):
+        if is_party(session, doctype):
             parent, data = None, opening_invoices.party_data(doctype, group["value"])
             choose = opening_invoices.party_choices(doctype, data)
         else:
@@ -1249,7 +1261,7 @@ def _planned_master(session, plan, entry, listed=frozenset(), named=frozenset())
         )
     from frappe_assistant_core.utils import import_opening_invoices as opening_invoices
 
-    if opening_invoices.is_party(session, doctype):
+    if is_party(session, doctype):
         data = {k: cstr(v).strip() for k, v in (entry.get("data") or {}).items() if cstr(v).strip()}
         problem = opening_invoices.party_problem(doctype, data)
         if problem:
@@ -1383,7 +1395,11 @@ def kept_its_name(entry: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, An
     if not _name_field(frappe.get_meta(doctype)) and doctype in opening_invoices.PARTY_NAME_FIELDS:
         # A party is found by its customer or supplier name, whatever name ERPNext gave it.
         found = opening_invoices.find_party(doctype, _planned_name(entry))
-        if result.get("success") and not (found and found.name == result.get("name")):
+        by_name = dry_run._name_field(doctype) == opening_invoices.PARTY_NAME_FIELDS[doctype]
+        if result.get("success") and (
+            not (found and found.name == result.get("name"))
+            or (by_name and result.get("name") != _planned_name(entry))  # rows link by the name
+        ):
             return {
                 "success": False,
                 "error": _("ERPNext named it '{0}', and the rows wouldn't find it by '{1}'").format(
