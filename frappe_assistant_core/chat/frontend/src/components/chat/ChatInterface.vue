@@ -30,6 +30,8 @@
 			/>
 		</template>
 
+		<PulseCard v-if="pulse.visible" />
+
 		<!-- Document Preview: opens when user clicks a citation pill's "Open
          document" link or a source card's Open button. DocumentPreviewPanel
          auto-fetches via documents.getContentUrl when given just document_id.
@@ -40,10 +42,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import MessageBubble from "./MessageBubble.vue";
 import DocumentPreviewPanel from "@/components/knowledge/DocumentPreviewPanel.vue";
+import PulseCard from "./feedback/PulseCard.vue";
 import { api } from "@/api/client";
+import { usePulseStore } from "@/stores/pulseStore";
 import { retryTarget } from "@/stores/chat/retryTurn";
 
 const props = defineProps({
@@ -73,6 +77,16 @@ defineEmits([
 	"send-anyway",
 	"continue-turn",
 ]);
+
+const pulse = usePulseStore();
+
+// A turn finished when the stream stops; the store decides whether to ask.
+watch(
+	() => props.isStreaming,
+	(streaming, wasStreaming) => {
+		if (wasStreaming && !streaming) pulse.maybeShow();
+	}
+);
 
 const retry = computed(() => retryTarget(props.messages));
 
