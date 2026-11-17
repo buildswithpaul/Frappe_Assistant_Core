@@ -72,8 +72,8 @@ Steps 3 to 5 repeat until nothing fails: explain each group in its own words, of
 into Acme Traders"), every record goes to that company: don't ask again, and never let a column of
 the file override it. A file's own company column (often called Legal entity or Entity) usually
 holds the old system's code for it, such as "ACME": map that column to Company in step 2, then, in
-the first check's fixes, `map` its value to the company the user named, without asking. With no
-such column, `fill` Company with it.
+the first check's fixes, send a map fix from its value to the company the user named, without
+asking. With no such column, send a fill fix for Company with it.
 
 **Opening balances use their own setup tool in step 2** instead of `set_column_mapping`. They also
 have their own import tool in step 6 instead of `start_import`:
