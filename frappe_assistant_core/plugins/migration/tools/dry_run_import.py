@@ -306,11 +306,22 @@ class DryRunImport(BaseTool):
                 dry_run.link_site_file(session, new_file, sheet_url or None)
                 if before and not _same_content(before, session.source_file):
                     notice = import_fixes.forget_left_out(session)
-            if fixes and session.status not in import_failures.AFTER_CHECK:
+            unchecked = fixes and (
+                session.status not in import_failures.AFTER_CHECK or not import_fixes.checked_as_is(session)
+            )
+            if unchecked and dry_run.check_cost(session) <= dry_run.BACKGROUND_ROWS:
+                # Live, 2026-11-17: fixes sent after a mapping change were refused until the file was
+                # checked again, a round trip each time. A file checked in the request is checked
+                # here first; the fixes apply to the groups it finds, whose ids stay the same for
+                # the same cause and value, and one sent for a group that is gone is refused.
+                dry_run.check_can_run(session)
+                import_fixes.check(session.name)
+                session.reload()
+            elif fixes and session.status not in import_failures.AFTER_CHECK:
                 raise dry_run.DryRunProblem(
                     _("Check the file first, without fixes; fixes apply to the groups it finds.")
                 )
-            if fixes and not import_fixes.checked_as_is(session):
+            elif fixes and not import_fixes.checked_as_is(session):
                 if import_fixes.fixed_unchecked(session):
                     # The file and mapping are as checked; the fixes sent before are saved (#34607)
                     raise dry_run.DryRunProblem(
