@@ -32,8 +32,9 @@ finds its accounts by the client's names and numbers.
      parents first. One the company has already is kept.
    - **replace**: tell the user it **deletes** the company's accounts and creates the client's, and how many
      of each (`replace_chart_of_accounts` without the figures gives them). Pass `accounts_removed` and
-     `accounts_created` exactly. It is refused, with the list, while a tax template, item tax template,
-     mode of payment or GST Settings points at the company's accounts: the user removes those, or picks add.
+     `accounts_created` exactly. It is refused, with the list, while any record outside the chart points
+     at the company's accounts (a tax template, a mode of payment, a warehouse, a customer's account, GST
+     Settings): the user removes those, or picks add.
      A mode of payment on the company's default cash account is not refused: ERPNext sets one up for every
      new company, and the replace moves it to the new chart's cash ledger (`cash_mode_of_payment_account`).
      Afterwards set the default accounts listed in `defaults_left_empty` (Company settings).
