@@ -18,4 +18,17 @@ export const feedback = {
 		getCall("frappe_assistant_core.chat.api.support.answer_ratings", {
 			session_id: sessionId,
 		}),
+
+	pulseState: () => getCall("frappe_assistant_core.chat.api.support.pulse_state"),
+
+	markPulseShown: () => baseCall("frappe_assistant_core.chat.api.support.mark_pulse_shown", {}),
+
+	dismissPulse: () => baseCall("frappe_assistant_core.chat.api.support.dismiss_pulse", {}),
+
+	submitPulse: ({ rating, comment = null, contactOk = false }) =>
+		baseCall("frappe_assistant_core.chat.api.support.submit_pulse", {
+			rating,
+			comment: comment || null,
+			contact_ok: contactOk,
+		}),
 };
