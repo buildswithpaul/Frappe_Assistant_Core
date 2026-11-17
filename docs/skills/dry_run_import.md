@@ -103,7 +103,7 @@ A large file is checked in the background: one of more than 3,000 rows of plain 
 
 ## Fixing the groups
 
-Explain each group with its `explanation`, offer only its `fixes`, then call `dry_run_import` again with the user's choices. Pass all their decisions in one call: they're applied together, then the file is checked once.
+Ask every entry of `decisions` at once, in one message: one question per decision (a field and a cause, e.g. "Status: Finished, In process, Created aren't choices"), each value with its `suggested` answer first (`suggested_for_all` when one answer fits every value; `create` for planned masters, made with `planned_masters`). Then call `dry_run_import` again with every answer as `fixes` (each value's `group`), in one call: they're applied together, then the file is checked once. Use a group's `explanation` and `fixes` for detail.
 
 | `action` | For | What it does |
 |----------|-----|--------------|
@@ -367,7 +367,7 @@ messages and the like) arrive inside those tags too.
 ## How much the reply lists
 
 - `groups` lists at most 30 kinds of failure (`groups_total` counts them all; `groups_not_shown` says
-  how many more). Fix the ones listed and check again; the next ones then show. `masters_plan` lists at
+  how many more), but `decisions` covers every group, so ask about all of them at once. `masters_plan` lists at
   most 50 records (`masters_plan_total` when there are more).
 
 ## A whole migration plan

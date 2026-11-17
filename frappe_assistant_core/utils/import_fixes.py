@@ -63,6 +63,7 @@ FULL_SCAN = 2000  # rank every record when a DocType has at most this many
 WORD_MATCHES = 200  # else only records sharing a word with the value, this many per word
 GROUPS_SHOWN = 30  # the dry run's reply lists this many groups; the results file keeps them all
 MASTERS_SHOWN = 50  # and this many missing masters to create
+DECISION_VALUES = 20  # a decision lists this many of its values, each with its suggested answer
 PLANNED_SHOWN = 10  # planned masters named in an error about one that was not planned
 
 #: Masters simple enough to create that are still never created during an import. Sites add
@@ -398,6 +399,26 @@ UOM_WORDS = {
 }
 WORDS = {"Currency": CURRENCY_WORDS, "UOM": UOM_WORDS}
 
+#: Another system's word for a choice, and the choice it most likely means: suggested only when the
+#: field has that choice, never applied without the user (live: Finished, In process, Created).
+OPTION_WORDS = {
+    "finished": "Completed",
+    "done": "Completed",
+    "closed": "Completed",
+    "complete": "Completed",
+    "in process": "Open",
+    "in progress": "Open",
+    "ongoing": "Open",
+    "active": "Open",
+    "created": "Open",
+    "new": "Open",
+    "hold": "On hold",
+    "on hold": "On hold",
+    "paused": "On hold",
+    "canceled": "Cancelled",
+    "dropped": "Cancelled",
+}
+
 
 def word_for(doctype: str, value: str) -> Optional[str]:
     """The record a file's word for it means (Rs: INR, Mtr: Meter), when it is switched on."""
@@ -664,7 +685,13 @@ def advise(session, group: Dict[str, Any]) -> Dict[str, Any]:
             rows, value, label, ", ".join(options)
         )
         closest = rank(value, options) or options[:CLOSEST_LIMIT]
-        return {"explanation": explanation, "fixes": [{"action": MAP, "closest": closest}, leave_out]}
+        fix = {"action": MAP, "closest": closest}
+        meant = OPTION_WORDS.get(cstr(value).strip().casefold())
+        if meant in options:
+            fix["likely"] = meant
+            if meant not in closest:
+                fix["closest"] = [meant, *closest][:CLOSEST_LIMIT]
+        return {"explanation": explanation, "fixes": [fix, leave_out]}
 
     from frappe_assistant_core.utils import import_opening_stock as opening_stock
 
@@ -1626,6 +1653,60 @@ def ready_message(summary: Dict[str, Any]) -> str:
     return text
 
 
+def decisions(session, groups: List[Dict[str, Any]], masters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Every failure of the check as the questions to ask, all at once: one per field and cause,
+    each with its values (up to DECISION_VALUES), the rows of each, and a suggested answer. The
+    groups shown are the first GROUPS_SHOWN only; live, 2026-11-17, a status value among 276 groups
+    came up four rounds after the others. Fixes reach every group, shown or not."""
+    planned = {(m["doctype"], m["name"]) for m in masters}
+    out: Dict[Tuple[Any, Any, Any], Dict[str, Any]] = {}
+    for group in groups:
+        key = (group.get("cause"), group.get("parent"), group.get("field"))
+        decision = out.setdefault(
+            key,
+            {
+                "cause": group.get("cause"),
+                "field": group.get("field"),
+                "label": group.get("label") or group.get("field"),
+                **({"parent": group["parent"]} if group.get("parent") else {}),
+                "rows": 0,
+                "values_total": 0,
+                "values": [],
+            },
+        )
+        decision["rows"] += group.get("count") or 0
+        decision["values_total"] += 1
+        if len(decision["values"]) >= DECISION_VALUES:
+            continue
+        entry = {"group": group["id"], "value": group.get("value"), "rows": group.get("count") or 0}
+        suggested = _suggested(session, group, planned)
+        if suggested:
+            entry["suggested"] = suggested
+        decision["values"].append(entry)
+    for decision in out.values():
+        answers = {cstr((v.get("suggested") or {}).get("action")) for v in decision["values"]}
+        if decision["values_total"] == len(decision["values"]) and len(answers) == 1 and "" not in answers:
+            decision["suggested_for_all"] = decision["values"][0]["suggested"]["action"]
+        elif answers == {CREATE} and decision["values_total"] > len(decision["values"]):
+            decision["suggested_for_all"] = CREATE  # every planned master: planned_masters
+    return list(out.values())
+
+
+def _suggested(session, group: Dict[str, Any], planned) -> Optional[Dict[str, Any]]:
+    """The answer to suggest for one group: create a planned master, map to the likely name or
+    choice, leave out the later rows of a repeated name; None when only the user can say."""
+    target = _with_target(session, group)
+    if (target.get("link_doctype"), group.get("value")) in planned:
+        return {"action": CREATE}
+    if group.get("cause") == dry_run.CAUSE_DUPLICATE_IN_FILE:
+        return {"action": LEAVE_OUT, "reason": _("Repeated name")}
+    fixes = {fix.get("action"): fix for fix in advise(session, group).get("fixes") or []}
+    likely = (fixes.get(MAP) or {}).get("likely")
+    if likely:
+        return {"action": MAP, "to": likely}
+    return None
+
+
 def report(session, summary: Dict[str, Any]) -> Dict[str, Any]:
     """The dry run's reply to the model: the headline, then each group with its examples,
     a plain explanation and the fixes that fit, and the ready message once nothing fails."""
@@ -1660,6 +1741,8 @@ def report(session, summary: Dict[str, Any]) -> Dict[str, Any]:
     }
     if hidden:
         out["groups_not_shown"] = hidden
+    if summary["groups"]:
+        out["decisions"] = decisions(session, summary["groups"], masters)
     if len(masters) > MASTERS_SHOWN:
         out["masters_plan_total"] = len(masters)
     if summary.get("excluded"):
