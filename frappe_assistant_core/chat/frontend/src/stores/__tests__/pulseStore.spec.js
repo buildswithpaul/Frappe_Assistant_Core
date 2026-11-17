@@ -29,7 +29,7 @@ describe("pulseStore", () => {
 		// production: the capabilities endpoint passes through AR's feedback_v2 block.
 		useUserStore().capabilities = { feedback_v2: true };
 		store = usePulseStore();
-		// production: ChatInterface attaches on mount, which is what triggers maybeShow.
+		// production: a mounted ChatInterface is a host; its isStreaming watch calls maybeShow.
 		store.attach();
 	});
 
@@ -146,6 +146,32 @@ describe("pulseStore", () => {
 		expect(api.feedback.dismissPulse).not.toHaveBeenCalled();
 		await store.maybeShow();
 		expect(store.visible).toBe(false);
+	});
+
+	it("a host-less maybeShow keeps the page session and the cached answer", async () => {
+		store.detach();
+		await store.maybeShow();
+		expect(store.visible).toBe(false);
+		store.attach();
+		await store.maybeShow();
+		expect(store.visible).toBe(true);
+		expect(api.feedback.pulseState).toHaveBeenCalledTimes(1);
+	});
+
+	it("the last host leaving before the card rendered resets it; one remaining host keeps it", async () => {
+		store.attach();
+		await store.maybeShow();
+		store.detach();
+		expect(store.visible).toBe(true);
+		store.detach();
+		expect(store.visible).toBe(false);
+	});
+
+	it("a host leaving after the card was marked leaves it visible", async () => {
+		await store.maybeShow();
+		await store.markShown();
+		store.detach();
+		expect(store.visible).toBe(true);
 	});
 
 	it("dismiss clears the thanks timer", async () => {
