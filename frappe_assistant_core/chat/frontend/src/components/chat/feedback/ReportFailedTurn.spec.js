@@ -13,7 +13,11 @@ const failed = (lastError) => ({
 });
 
 describe("Report this on the retry line", () => {
-	beforeEach(() => setActivePinia(createPinia()));
+	beforeEach(() => {
+		setActivePinia(createPinia());
+		// production: ChatView mounts SupportModal, which registers itself as a host.
+		useSupportStore().registerHost();
+	});
 
 	const mountBubble = (message) => mount(MessageBubble, { props: { message, canRetry: true } });
 
@@ -26,6 +30,13 @@ describe("Report this on the retry line", () => {
 		expect(support.isOpen).toBe(true);
 		expect(support.mode).toBe("issue");
 		expect(support.prefill).toBe("Error: Model failed\nCode: MODEL_FAILED\nTime: 2026-11-17T10:00:00.000Z\n\n");
+	});
+
+	it("is absent where no support modal is mounted", () => {
+		// production: the Desk widget renders the bubble without a SupportModal.
+		useSupportStore().unregisterHost();
+		const w = mountBubble(failed({ code: "MODEL_FAILED", message: "x", at: "t" }));
+		expect(w.find("[data-test=report-failed-turn]").exists()).toBe(false);
 	});
 
 	it("is absent for a non-reportable code", () => {

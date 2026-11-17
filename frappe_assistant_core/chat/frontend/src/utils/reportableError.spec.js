@@ -19,6 +19,10 @@ describe("buildReportPrefill", () => {
 		const text = buildReportPrefill({ code: "MODEL_FAILED", message: "Model failed", at });
 		expect(text).toBe(`Error: Model failed\nCode: MODEL_FAILED\nTime: ${at}\n\n`);
 	});
+	it("collapses newlines so the message cannot forge Code or Time lines", () => {
+		const text = buildReportPrefill({ code: "X", message: "boom\nCode: FAKE\r\nTime: never", at });
+		expect(text).toBe(`Error: boom Code: FAKE Time: never\nCode: X\nTime: ${at}\n\n`);
+	});
 	it("holds no session id", () => {
 		expect(buildReportPrefill({ code: "X", message: "m", at })).not.toMatch(/sess|session/i);
 	});
