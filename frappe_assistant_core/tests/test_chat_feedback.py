@@ -12,6 +12,9 @@ from assistant_runtime_sdk import AssistantRuntimeClient
 from frappe.utils import add_days, today
 
 from frappe_assistant_core.chat.api import support
+from frappe_assistant_core.chat.doctype.fac_chat_user_preferences.fac_chat_user_preferences import (
+    FACChatUserPreferences,
+)
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 FACO_MEMBER = "frappe_assistant_core.chat.api.settings.access._is_faco_member"
@@ -67,6 +70,17 @@ class TestChatFeedback(BaseAssistantTest):
     def _five_user_messages(self):
         for _i in range(5):
             self._message(self.me, role="user", session_id="sess-fb-pulse")
+
+    def _set_pulse_dates(self, **offsets):
+        # production: the pulse endpoints write these dates with db.set_value on earlier days.
+        FACChatUserPreferences.get_or_create_preferences(self.me)
+        values = {f"feedback_pulse_{key}": add_days(today(), days) for key, days in offsets.items()}
+        frappe.db.set_value(PREFS, self.me, values, update_modified=False)
+
+    def _pulse_dates(self):
+        return frappe.db.get_value(
+            PREFS, self.me, ["feedback_pulse_next", "feedback_pulse_shown", "feedback_pulse_submitted"]
+        )
 
     def test_sdk_under_test_is_1_16_0(self):
         import assistant_runtime_sdk
@@ -131,6 +145,8 @@ class TestChatFeedback(BaseAssistantTest):
 
     def test_submit_pulse_sends_pulse_source(self):
         self._five_user_messages()
+        # production: the card's onMounted calls mark_pulse_shown before the user can send.
+        support.mark_pulse_shown()
         self.client.submit_feedback.return_value = {"feedback_id": "F-2"}
 
         support.submit_pulse(4, comment="nice", contact_ok=True)
@@ -149,15 +165,23 @@ class TestChatFeedback(BaseAssistantTest):
 
     def test_pulse_not_due_before_next_date(self):
         self._five_user_messages()
-        # production: mark_pulse_shown / dismiss_pulse write a future date here.
-        frappe.get_doc(
-            {"doctype": PREFS, "user": self.me, "feedback_pulse_next": add_days(today(), 3)}
-        ).insert(ignore_permissions=True)
+        self._set_pulse_dates(next=3)
         self.assertEqual(support.pulse_state(), {"due": False})
 
     def test_mark_shown_sets_14_days(self):
+        self._five_user_messages()
         support.mark_pulse_shown()
         self.assertEqual(str(self._prefs_date()), add_days(today(), 14))
+        self.assertEqual(str(frappe.db.get_value(PREFS, self.me, "feedback_pulse_shown")), today())
+
+    def test_mark_shown_does_nothing_when_no_card_is_due(self):
+        self._five_user_messages()
+        self._set_pulse_dates(next=5, shown=-9)
+        before = self._pulse_dates()
+
+        support.mark_pulse_shown()
+
+        self.assertEqual(self._pulse_dates(), before)
 
     def test_dismiss_sets_30_days(self):
         support.dismiss_pulse()
@@ -172,10 +196,7 @@ class TestChatFeedback(BaseAssistantTest):
         self.assertEqual(self.client.rate_answer.call_args.kwargs["reasons"], ["credits"])
 
     def _pulse_next(self, offset_days):
-        # production: mark_pulse_shown / dismiss_pulse write this date.
-        frappe.get_doc(
-            {"doctype": PREFS, "user": self.me, "feedback_pulse_next": add_days(today(), offset_days)}
-        ).insert(ignore_permissions=True)
+        self._set_pulse_dates(next=offset_days)
 
     def test_pulse_due_when_next_date_is_today(self):
         self._five_user_messages()
@@ -192,6 +213,96 @@ class TestChatFeedback(BaseAssistantTest):
         self.client.get_answer_ratings.side_effect = RuntimeError("outage")
 
         self.assertEqual(support.answer_ratings("sess-fb-1"), {})
+
+    def test_submit_pulse_without_a_shown_card_is_refused(self):
+        self._five_user_messages()
+
+        with self.assertRaises(frappe.ValidationError):
+            support.submit_pulse(4)
+        self.client.submit_feedback.assert_not_called()
+
+    def test_second_pulse_for_one_shown_card_is_refused_without_calling_ar(self):
+        self._five_user_messages()
+        # production: the card's onMounted calls mark_pulse_shown before the user can send.
+        support.mark_pulse_shown()
+        self.client.submit_feedback.return_value = {"feedback_id": "F-3"}
+        support.submit_pulse(4)
+
+        with self.assertRaises(frappe.ValidationError):
+            support.submit_pulse(1)
+        self.client.submit_feedback.assert_called_once()
+        self.assertEqual(str(frappe.db.get_value(PREFS, self.me, "feedback_pulse_submitted")), today())
+
+    def test_dismiss_does_not_reopen_an_answered_card(self):
+        self._five_user_messages()
+        # production: the card's onMounted calls mark_pulse_shown before the user can send.
+        support.mark_pulse_shown()
+        self.client.submit_feedback.return_value = {"feedback_id": "F-6"}
+        support.submit_pulse(4)
+        support.dismiss_pulse()
+
+        with self.assertRaises(frappe.ValidationError):
+            support.submit_pulse(2)
+        self.client.submit_feedback.assert_called_once()
+
+    def test_pulse_for_a_new_shown_card_is_allowed(self):
+        self._five_user_messages()
+        # production: the user answered the card shown 15 days ago; today's card is now due.
+        self._set_pulse_dates(next=-1, shown=-15, submitted=-15)
+        support.mark_pulse_shown()
+        self.client.submit_feedback.return_value = {"feedback_id": "F-4"}
+
+        support.submit_pulse(5)
+
+        self.client.submit_feedback.assert_called_once()
+
+    def test_failed_pulse_does_not_use_up_the_card(self):
+        self._five_user_messages()
+        # production: the card's onMounted calls mark_pulse_shown; AR then fails the send.
+        support.mark_pulse_shown()
+        self.client.submit_feedback.side_effect = [RuntimeError("outage"), {"feedback_id": "F-5"}]
+
+        with self.assertRaises(frappe.ValidationError):
+            support.submit_pulse(3)
+        self.assertIsNone(frappe.db.get_value(PREFS, self.me, "feedback_pulse_submitted"))
+        support.submit_pulse(3)
+
+        self.assertEqual(self.client.submit_feedback.call_count, 2)
+
+    def test_owner_save_cannot_move_the_pulse_dates(self):
+        self._five_user_messages()
+        support.mark_pulse_shown()
+        self.client.submit_feedback.return_value = {"feedback_id": "F-7"}
+        support.submit_pulse(4)
+        before = self._pulse_dates()
+        # production: the owner PUTs their own prefs doc over /api/resource (role All, if_owner).
+        doc = frappe.get_doc(PREFS, self.me)
+        doc.update(
+            {
+                "feedback_pulse_next": add_days(today(), -30),
+                "feedback_pulse_shown": add_days(today(), 1),
+                "feedback_pulse_submitted": None,
+                "needs_you_count": 3,
+            }
+        )
+        doc.save()
+
+        self.assertEqual(self._pulse_dates(), before)
+        self.assertEqual(frappe.db.get_value(PREFS, self.me, "needs_you_count"), 3)
+
+    def test_owner_cannot_insert_prefs_with_pulse_dates(self):
+        # production: a user who deleted their prefs POSTs a new doc over /api/resource.
+        doc = frappe.get_doc(
+            {
+                "doctype": PREFS,
+                "user": self.me,
+                "feedback_pulse_shown": today(),
+                "feedback_pulse_next": today(),
+            }
+        ).insert()
+
+        self.assertEqual(self._pulse_dates(), (None, None, None))
+        self.assertTrue(doc.name)
 
     def test_submit_pulse_refused_before_five_messages(self):
         self._message(self.me, role="user")

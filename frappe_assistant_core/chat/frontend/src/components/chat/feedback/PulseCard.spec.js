@@ -61,6 +61,12 @@ describe("PulseCard", () => {
 		expect(w.text()).toContain("Thank you, that helps.");
 	});
 
+	it("caps the comment at 2000 characters", async () => {
+		const w = mount(PulseCard);
+		await w.find("[data-rating='3']").trigger("click");
+		expect(w.find("[data-test=pulse-comment]").attributes("maxlength")).toBe("2000");
+	});
+
 	it("a failed Send shows an inline error and keeps the card", async () => {
 		api.feedback.submitPulse.mockRejectedValueOnce(new Error("boom"));
 		const w = mount(PulseCard);
