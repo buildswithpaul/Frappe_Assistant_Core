@@ -36,6 +36,7 @@ from frappe.oauth import OAuthWebRequestValidator
 from frappe.sessions import Session, get_expiry_in_seconds
 from frappe.utils import set_request
 
+from frappe_assistant_core.chat.api._mobile_sessions import stored_sid
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 REDIRECT = "facomobile://oauth/callback"
@@ -75,7 +76,7 @@ def _refresh_accepted(refresh_token: str) -> bool:
 
 def _session_exists(sid: str) -> bool:
     sessions = frappe.qb.DocType("Sessions")
-    return bool(frappe.qb.from_(sessions).select(sessions.sid).where(sessions.sid == sid).run())
+    return bool(frappe.qb.from_(sessions).select(sessions.sid).where(sessions.sid == stored_sid(sid)).run())
 
 
 def _login_manager(full_name: str) -> type:
