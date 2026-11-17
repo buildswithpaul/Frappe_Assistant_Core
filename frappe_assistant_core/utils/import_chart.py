@@ -31,6 +31,8 @@ ACCOUNT = "Account"
 ROOT_TYPES = ("Asset", "Liability", "Equity", "Income", "Expense")
 MAX_ACCOUNTS = 5000
 OUTLINE_DEPTH = 2
+#: Headings of the column that gives each account's parent by number (ERPNext's importer template), as _key keeps them
+PARENT_NUMBER_HEADINGS = ("parent account number", "parent number")
 
 
 class ChartProblem(Exception):
@@ -127,6 +129,16 @@ def read_chart(session, root_type_column: Optional[str] = None) -> List[Dict[str
         if found is None:
             raise ChartProblem(_("The file has no column {0}.").format(root_type_column))
         mapping["root_type"] = found
+    # ERPNext's own Chart of Accounts Importer template names each account's parent by number as well, in a
+    # column no Account field holds: read by its heading, it says which parent is meant when names repeat.
+    if "parent_number" not in mapping:
+        from frappe_assistant_core.utils.import_mapping import session_headers
+
+        found = next(
+            (i for i, h in enumerate(session_headers(session)) if _key(h) in PARENT_NUMBER_HEADINGS), None
+        )
+        if found is not None:
+            mapping["parent_number"] = found
     rows = dry_run.read_sheet_rows(dry_run.readable_session_file(session), session.sheet or None)
 
     def cell(row, field) -> str:
@@ -144,6 +156,7 @@ def read_chart(session, root_type_column: Optional[str] = None) -> List[Dict[str
                 "name": name,
                 "number": cell(row, "account_number"),
                 "parent_name": cell(row, "parent_account"),
+                "parent_number": cell(row, "parent_number"),
                 "root_type": cell(row, "root_type"),
                 "account_type": cell(row, "account_type"),
                 "explicit_group": _truthy(cell(row, "is_group")),
@@ -158,7 +171,9 @@ def read_chart(session, root_type_column: Optional[str] = None) -> List[Dict[str
 
 
 def _link(nodes: List[Dict[str, Any]]) -> None:
-    """Give each node its parent (by name, else by number), its children and whether it is a group."""
+    """Give each node its parent (by the parent's number when the file gives it, else by name, else by
+    number), its children and whether it is a group. A sub-account may repeat its parent's name under its
+    own number, so the parent's number is the one sure link."""
     by_name: Dict[str, List[int]] = {}
     by_number: Dict[str, int] = {}
     for index, node in enumerate(nodes):
@@ -173,7 +188,13 @@ def _link(nodes: List[Dict[str, Any]]) -> None:
         wanted = node["parent_name"]
         if not wanted:
             continue
-        found = by_name.get(_key(wanted)) or ([by_number[_key(wanted)]] if _key(wanted) in by_number else [])
+        by_parent_number = _key(node.get("parent_number"))
+        if by_parent_number and by_parent_number in by_number:
+            found = [by_number[by_parent_number]]
+        else:
+            found = by_name.get(_key(wanted)) or (
+                [by_number[_key(wanted)]] if _key(wanted) in by_number else []
+            )
         found = [i for i in found if i != node["index"]]
         if found:
             node["parent"] = found[0]
@@ -228,11 +249,15 @@ def problems(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 }
             )
     for label, key in (("name", "name"), ("number", "number")):
-        seen: Dict[str, Dict[str, Any]] = {}
+        seen: Dict[Any, Dict[str, Any]] = {}
         for node in nodes:
             value = _key(node[key])
             if not value:
                 continue
+            if label == "name":
+                # ERPNext names an account "<number> - <name> - <abbr>": one name under two numbers is two
+                # accounts. Only the same name with the same number, or with none, is one twice.
+                value = (value, _key(node["number"]))
             if value in seen:
                 out.append(
                     {
