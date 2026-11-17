@@ -358,10 +358,26 @@ def find_account(company: str, abbr: str, text: str) -> Optional[frappe._dict]:
             if matches:  # several: a missing link, not a guess
                 return None
     if not found:
+        found = _by_client_id(company, text)
+    if not found:
         return None
     found = frappe._dict(found)
     found["account_currency"] = frappe.get_cached_value("Account", found.name, "account_currency")
     return found
+
+
+def _by_client_id(company: str, text: str):
+    """The account of ``company`` the client's own name or number stands for, from the old IDs a chart
+    import kept (#34422): the trial balance of the old system names its accounts the way its chart did."""
+    from frappe_assistant_core.utils import import_keys
+
+    for system in import_keys.systems_for("Account"):
+        name = import_keys.resolve("Account", system, [text]).get(import_keys.normalise(text))
+        if name:
+            found = frappe.db.get_value("Account", name, ACCOUNT_FIELDS, as_dict=True)
+            if found and found.company == company:
+                return found
+    return None
 
 
 # -- checking the rows -----------------------------------------------------------------------

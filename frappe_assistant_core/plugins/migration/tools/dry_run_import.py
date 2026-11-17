@@ -108,6 +108,11 @@ class DryRunImport(BaseTool):
         # fenced on its own, so it is still a list of lines run_migration_plan is given back (it
         # takes them with or without their fence).
         self.untrusted_fields = (
+            # a chart check quotes the client's account names
+            "outline",
+            "unclassified",
+            "parents_not_in_the_file",
+            "map",
             "groups",
             "masters_plan",
             "left_out",
@@ -138,6 +143,18 @@ class DryRunImport(BaseTool):
             "type": "object",
             "properties": {
                 "session": {"type": "string", "description": "The import session id: one file"},
+                "chart": {
+                    "type": "object",
+                    "description": (
+                        "With session: check the client's chart of accounts in it instead of the rows "
+                        "(get_skill('import-chart-of-accounts-usage')). Writes nothing. Keys: company "
+                        "(for the modes it allows and which accounts match; default: the site's only "
+                        "company, so ask only on a site of several), classifications ({account "
+                        "name: {root_type, account_type}}, the user's answers for the accounts that "
+                        "couldn't be classified) and root_type_column (the heading of a Root Type "
+                        "column, when the file has one)."
+                    ),
+                },
                 "plan": {
                     "type": "string",
                     "description": "Instead of session: the migration plan id, to check every file of "
@@ -212,6 +229,12 @@ class DryRunImport(BaseTool):
             }
         if plan_name:
             return self._check_plan(plan_name, arguments)
+        if isinstance(arguments.get("chart"), dict):
+            # the chart's own check (#34422): read-only, as every dry run is
+            from frappe_assistant_core.plugins.migration.tools.import_chart_of_accounts import check_chart
+
+            chart = arguments["chart"]
+            return check_chart(session_name, (chart.get("company") or "").strip(), chart)
         if arguments.get("answers"):
             return {
                 "success": False,

@@ -51,6 +51,9 @@ class MigrationPlugin(BasePlugin):
             "plan_migration",
             "run_migration_plan",
             "stop_migration_plan",
+            # The client's own chart of accounts on a company (#34422)
+            "import_chart_of_accounts",
+            "replace_chart_of_accounts",
         ]
 
     def get_tool_packs(self) -> List[ToolPack]:
@@ -58,7 +61,7 @@ class MigrationPlugin(BasePlugin):
             ToolPack(
                 id="migration",
                 title="Data migration",
-                description="Importing or migrating data from files or another system (CSV, Excel, Tally): customers, suppliers, items, opening stock or balances",
+                description="Importing or migrating data from files or another system (CSV, Excel, Tally): a chart of accounts, customers, suppliers, items, opening stock or balances",
                 tools=tuple(self.get_tools()),
                 file_types=("csv", "xlsx", "xls", "xml"),
                 skills=(
@@ -66,6 +69,7 @@ class MigrationPlugin(BasePlugin):
                     "plan-migration-usage",
                     "run-migration-plan-usage",
                     "migration-sign-off",
+                    "import-chart-of-accounts-usage",
                 ),
             )
         ]
