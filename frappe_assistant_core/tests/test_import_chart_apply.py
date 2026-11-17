@@ -361,6 +361,33 @@ class TestImportChart(ChartCase):
         self.assertEqual(self._account("HDFC Current").account_type, "Bank")
         self.assertEqual(self._account("Client Assets").parent_account, None)
 
+    def test_replace_creates_two_sibling_accounts_of_one_name(self):
+        # ERPNext's tree is keyed by name: two accounts of one name under one parent, told apart by their
+        # numbers, became one, and its sub-accounts went with the other (3 of 1,043 lost, live test 2026-11-17)
+        from frappe_assistant_core.tests.chart_case import CLIENT_CHART
+
+        rows = [
+            *CLIENT_CHART,
+            "Service Fee,4100,Client Income,,,Yes",
+            "Service Fee Retail,4110,Service Fee,,,",
+            "Service Fee,4200,Client Income,,,",
+        ]
+        session = self._chart(rows)
+
+        done = self._replace(session)
+
+        self.assertTrue(done["success"], done)
+        self.assertEqual(done["result"]["created"], len(rows))
+        fees = frappe.get_all(
+            "Account",
+            filters={"company": self.company, "account_name": "Service Fee"},
+            pluck="account_number",
+            order_by="account_number",
+        )
+        self.assertEqual(fees, ["4100", "4200"])
+        retail = self._account("Service Fee Retail")
+        self.assertEqual(frappe.db.get_value("Account", retail.parent_account, "account_number"), "4100")
+
     def test_replace_sets_the_default_accounts_again_and_lists_the_ones_left_empty(self):
         done = self._replace(self._chart())["result"]
 

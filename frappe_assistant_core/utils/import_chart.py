@@ -784,11 +784,21 @@ def _company_account_fields() -> List[str]:
 
 def forest(nodes: List[Dict[str, Any]], classes: List[Dict[str, Any]]) -> Dict[str, Any]:
     """The tree as ERPNext's create_charts takes it: nested by account name, a node's own keys beside its
-    children. Raises ChartProblem for a root account that has no root type."""
+    children. Raises ChartProblem for a root account that has no root type. Each node carries its own
+    account_name (create_charts takes it from there for an imported chart), so two siblings of one name,
+    told apart by their numbers, get keys of their own instead of one replacing the other."""
+
+    def key(index: int, taken: set) -> str:
+        node = nodes[index]
+        name = node["name"]
+        if name in taken or name in compat.CHART_NODE_KEYS:
+            name = f"{node['name']} ({node['number'] or node['row']})"
+        taken.add(name)
+        return name
 
     def build(index: int) -> Dict[str, Any]:
         node, c = nodes[index], classes[index]
-        out: Dict[str, Any] = {}
+        out: Dict[str, Any] = {"account_name": node["name"]}
         if node["is_group"]:
             out["is_group"] = 1
         if node["number"]:
@@ -797,8 +807,9 @@ def forest(nodes: List[Dict[str, Any]], classes: List[Dict[str, Any]]) -> Dict[s
             out["root_type"] = c["root_type"]
         if c["account_type"]:
             out["account_type"] = c["account_type"]
+        taken: set = set()
         for child in node["children"]:
-            out[nodes[child]["name"]] = build(child)
+            out[key(child, taken)] = build(child)
         return out
 
     roots = [n for n in nodes if n["parent"] is None]
@@ -815,7 +826,8 @@ def forest(nodes: List[Dict[str, Any]], classes: List[Dict[str, Any]]) -> Dict[s
             raise ChartProblem(
                 _("{0} is at the top of the chart, so it must be a group.").format(root["name"])
             )
-    return {root["name"]: build(root["index"]) for root in roots}
+    taken: set = set()
+    return {key(root["index"], taken): build(root["index"]) for root in roots}
 
 
 def replace_figures(company: str, nodes) -> Dict[str, Any]:
@@ -885,6 +897,14 @@ def replace(company: str, nodes, classes) -> Dict[str, Any]:
         for root in children.get(None, []):
             delete_below(root)
         compat.create_charts(company, tree)
+        made = frappe.db.count(ACCOUNT, {"company": company})
+        if made != len(nodes):
+            # The approval card said how many; fewer, and the chart isn't the client's
+            raise ChartProblem(
+                _("The chart would have {0} accounts, not the {1} in the file. Nothing was changed.").format(
+                    made, len(nodes)
+                )
+            )
         company_doc = frappe.get_doc("Company", company)
         company_doc.update_default_account = True  # a flag ERPNext sets while validating a company
         company_doc.set_default_accounts()
