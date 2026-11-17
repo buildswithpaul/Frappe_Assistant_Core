@@ -666,10 +666,41 @@ def apply_map(company, nodes, classes, add_unmatched: bool = False) -> Dict[str,
 # -- replace ---------------------------------------------------------------------------------------------
 
 
+def cash_links(company: str) -> List[Dict[str, str]]:
+    """The modes of payment's rows for ``company`` that use its default cash account. ERPNext adds one to
+    every new company (Company.set_mode_of_payment_account, v15 and v16), so a fresh company always has
+    it. They don't block a replace: the cash account has a place in any chart, the new chart's cash ledger,
+    so the replace moves them there. A row on any other account still blocks: where it should go is the
+    user's call."""
+    account = frappe.db.get_value("Company", company, "default_cash_account")
+    if not account:
+        return []
+    return frappe.get_all(
+        "Mode of Payment Account",
+        filters={"parenttype": "Mode of Payment", "company": company, "default_account": account},
+        fields=["name", "parent"],
+    )
+
+
+def _relink_cash(company: str, links: List[Dict[str, str]]) -> Optional[str]:
+    """Point the modes of payment that used the old cash account at the new chart's default cash account;
+    None, and they keep no account for the company, when the client's chart has no cash ledger."""
+    account = frappe.db.get_value("Company", company, "default_cash_account")
+    if not account:
+        return None
+    for mode_name in sorted({link["parent"] for link in links}):
+        mode = frappe.get_doc("Mode of Payment", mode_name, for_update=True)
+        mode.append("accounts", {"company": company, "default_account": account})
+        mode.save(ignore_permissions=True)  # as ERPNext saves it for every new company
+    return account
+
+
 def blocking_references(company: str) -> List[str]:
     """What outside the chart points at the company's accounts, so replacing it would break it (C-D2): tax
-    templates, item tax templates, modes of payment and, with India Compliance, GST Settings accounts."""
+    templates, item tax templates, modes of payment and, with India Compliance, GST Settings accounts. A
+    mode of payment's row on the company's default cash account is not one of them (cash_links)."""
     accounts = set(frappe.get_all(ACCOUNT, filters={"company": company}, pluck="name"))
+    moved = {link["name"] for link in cash_links(company)}
     out: List[str] = []
 
     def rows(child: str, parent_doctype: str, field: str, label: str, extra: Optional[Dict] = None) -> None:
@@ -681,10 +712,12 @@ def blocking_references(company: str) -> List[str]:
         found = frappe.get_all(
             child,
             filters={field: ["in", list(accounts)] if accounts else [""], **(extra or {})},
-            fields=["parent", field],
+            fields=["name", "parent", field],
             limit=500,
         )
         for row in found:
+            if row.name in moved:
+                continue
             out.append(_("{0} {1} uses {2}.").format(_(label), row.parent, row[field]))
 
     rows(
@@ -808,6 +841,10 @@ def replace(company: str, nodes, classes) -> Dict[str, Any]:
     removed = frappe.db.count(ACCOUNT, {"company": company})
     frappe.db.savepoint("fac_chart_replace")
     try:
+        # the rows on the old cash account, read before the defaults are cleared, follow it to the new chart
+        moved = cash_links(company)
+        if moved:
+            frappe.db.delete("Mode of Payment Account", {"name": ["in", [link["name"] for link in moved]]})
         fields = _company_account_fields()
         frappe.db.set_value("Company", company, {f: None for f in fields}, update_modified=False)
         existing = frappe.get_all(ACCOUNT, filters={"company": company}, fields=["name", "parent_account"])
@@ -838,9 +875,14 @@ def replace(company: str, nodes, classes) -> Dict[str, Any]:
             )
             if len(found) == 1:
                 frappe.db.set_value("Company", company, field, found[0], update_modified=False)
+        cash_account = _relink_cash(company, moved) if moved else None
         empty = [f for f in fields if not frappe.db.get_value("Company", company, f)]
     except Exception:
         frappe.db.rollback(save_point="fac_chart_replace")
         raise
     created = frappe.db.count(ACCOUNT, {"company": company})
-    return {"company": company, "removed": removed, "created": created, "defaults_left_empty": empty}
+    out = {"company": company, "removed": removed, "created": created, "defaults_left_empty": empty}
+    if moved:
+        # the account the modes of payment now use for this company: the new chart's cash ledger, or none
+        out["cash_mode_of_payment_account"] = cash_account
+    return out
