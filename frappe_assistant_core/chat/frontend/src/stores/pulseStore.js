@@ -26,7 +26,7 @@ export const usePulseStore = defineStore("pulse", () => {
 	let consumed = false; // the card has been shown this page session
 
 	let thanksTimer = null;
-	let marked = false; // this card has started the fortnight clock
+	const marked = ref(false); // this card has started the fortnight clock
 	let hosts = 0; // mounted ChatInterfaces that can render the card
 
 	function latestAssistant() {
@@ -48,9 +48,9 @@ export const usePulseStore = defineStore("pulse", () => {
 		return tour.isOpen || tour.coachOpen || !!useSpotlightStore().current;
 	}
 
-	// Templates render the card only on a quiet turn, so a remount mid-stream
-	// never shows it.
-	const blocked = computed(isBlocked);
+	// A card not yet seen waits for a quiet turn, so a remount mid-stream never
+	// shows it. Once it has rendered (marked) it stays, typed comment and all.
+	const canRender = computed(() => visible.value && (marked.value || !isBlocked()));
 
 	// A host that goes away before the card rendered takes the card with it:
 	// nothing was shown, so nothing is marked, and the page session stays spent.
@@ -60,7 +60,7 @@ export const usePulseStore = defineStore("pulse", () => {
 
 	function detach() {
 		hosts = Math.max(0, hosts - 1);
-		if (hosts === 0 && visible.value && !marked) visible.value = false;
+		if (hosts === 0 && visible.value && !marked.value) visible.value = false;
 	}
 
 	async function maybeShow() {
@@ -76,16 +76,18 @@ export const usePulseStore = defineStore("pulse", () => {
 		}
 		// The world can change during the await: re-check before showing.
 		if (!due || consumed || isBlocked()) return;
-		consumed = true;
+		// With no host mounted nothing can show it: keep the page session (and the
+		// cached answer) for a later turn on a mounted ChatInterface.
 		if (hosts === 0) return;
+		consumed = true;
 		visible.value = true;
 	}
 
 	// Called by the card once it is on screen: only a rendered card starts the
 	// fortnight clock.
 	async function markShown() {
-		if (marked) return;
-		marked = true;
+		if (marked.value) return;
+		marked.value = true;
 		try {
 			await api.feedback.markPulseShown();
 		} catch (err) {
@@ -98,7 +100,7 @@ export const usePulseStore = defineStore("pulse", () => {
 		thanksTimer = null;
 		visible.value = false;
 		thanked.value = false;
-		marked = false;
+		marked.value = false;
 	}
 
 	// An unanswered card belongs to the conversation it appeared in. It was
@@ -131,5 +133,5 @@ export const usePulseStore = defineStore("pulse", () => {
 		return true;
 	}
 
-	return { visible, thanked, blocked, attach, detach, maybeShow, markShown, hide, dismiss, submit };
+	return { visible, thanked, canRender, attach, detach, maybeShow, markShown, hide, dismiss, submit };
 });

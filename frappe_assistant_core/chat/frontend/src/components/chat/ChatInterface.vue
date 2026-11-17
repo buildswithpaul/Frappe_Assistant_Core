@@ -30,7 +30,7 @@
 			/>
 		</template>
 
-		<PulseCard v-if="pulse.visible && !pulse.blocked" />
+		<PulseCard v-if="pulse.canRender" />
 
 		<!-- Document Preview: opens when user clicks a citation pill's "Open
          document" link or a source card's Open button. DocumentPreviewPanel
