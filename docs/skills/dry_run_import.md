@@ -119,13 +119,13 @@ Any other problem (a bad date, a duplicate, a rule ERPNext enforces) is correcte
 A file of projects, orders or invoices often names its customers or suppliers only inside its rows.
 Don't list them one by one, and don't stop at `map` or `leave_out`.
 
-- **They are in `masters_plan`** (Selling or Buying Settings name a new one by its name) **and the
-  file has no column of their own codes:** create them with the other missing masters, in the one
-  table and one approval of `masters_plan`. If an entry has `choose`, ask once which group (or
-  territory) for all of them, in the same question.
-- **Otherwise** (they carry `cannot_create`, or the file has their codes, such as C000065, which later
-  files will refer to), and there are more than a few of them, take them in a second session, which
-  keeps those codes as old IDs. Before asking the user anything:
+- **They are in `masters_plan`** (Selling or Buying Settings name a new one by its name): create
+  them with the other missing masters, in the one table and one approval of `masters_plan`, even when
+  the file also has a column of their codes. If an entry has `choose`, ask once which group (or
+  territory) for all of them, with your other questions. Never ask the user to upload a separate
+  customer file for them.
+- **They carry `cannot_create`** (Settings name them by a series) and there are more than a few:
+  take them in a second session on the same file. Before asking the user anything:
 
 1. **Check the whole file, not the groups shown.** Open a second session on the same file and sheet
    (`start_import_session` with the same file and `sheet`) for Customer or Supplier. Map the party's
