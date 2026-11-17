@@ -24,6 +24,7 @@ import { interruptStaleTurn } from "./chat/interruptedTurn";
 import { __ } from "@/utils/i18n";
 import { isApprovalInteraction } from "./chat/interactionRegime";
 import { getSurface, surfaceClientSignals } from "./chat/surface";
+import { useAnswerRatingStore } from "./answerRatingStore";
 import { useComposerModesStore } from "./composerModesStore";
 import { useModelStore } from "./modelStore";
 import { useSpotlightStore } from "./spotlightStore";
@@ -268,6 +269,8 @@ export const useChatStore = defineStore("chat", () => {
 	});
 	// sync: a join started right after the switch must not be reset by it.
 	watch(currentSessionId, () => liveSync.reset(), { flush: "sync" });
+	// Ratings are read once per session open, not per message.
+	watch(currentSessionId, (id) => id && useAnswerRatingStore().load(id));
 
 	const turnClaim = createTurnClaim({ claim: (id) => api.chat.claimLiveTurn(id), currentSessionId });
 
