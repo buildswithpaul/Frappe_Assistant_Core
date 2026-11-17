@@ -123,10 +123,16 @@ class TestFailureGroups(run_tests.ImportRunCase):
             )
 
         self.assertEqual(import_dry_run.check_cost(session("Customer", 300)), 300)
-        self.assertEqual(import_dry_run.check_cost(session("Sales Invoice", 300)), 600)
-        self.assertEqual(import_dry_run.check_cost(session("Sales Invoice", 300, submit=1)), 900)
+        self.assertEqual(import_dry_run.check_cost(session("Sales Invoice", 300)), 3600)
+        self.assertEqual(import_dry_run.check_cost(session("Sales Invoice", 300, submit=1)), 5400)
         # 300 invoices are under the row limit, but cost more than it: checked in the background
         self.assertLess(300, import_dry_run.BACKGROUND_ROWS)
         self.assertGreater(
             import_dry_run.check_cost(session("Sales Invoice", 300)), import_dry_run.BACKGROUND_ROWS
+        )
+        # Live, 2026-11-17: 2,084 projects took 5 s to check, but went to the background, and the
+        # user had to say "go on" after each of four checks. A file of plain records that size is
+        # checked in the request, so the assistant reads the result and carries on.
+        self.assertLessEqual(
+            import_dry_run.check_cost(session("Project", 2084)), import_dry_run.BACKGROUND_ROWS
         )
