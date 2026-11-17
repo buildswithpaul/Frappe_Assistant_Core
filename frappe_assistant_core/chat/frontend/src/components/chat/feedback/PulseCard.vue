@@ -1,5 +1,5 @@
 <template>
-	<div class="pulse-card" data-test="pulse-card" role="region" :aria-label="__('How is FACO doing for you?')">
+	<div ref="card" class="pulse-card" data-test="pulse-card" role="region" :aria-label="__('How is FACO doing for you?')">
 		<div v-if="store.thanked" class="pulse-thanks" data-test="pulse-thanks" role="status">
 			{{ __("Thank you, that helps.") }}
 		</div>
@@ -53,16 +53,27 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { __ } from "@/utils/i18n";
 import { usePulseStore } from "@/stores/pulseStore";
 
 const store = usePulseStore();
+const card = ref(null);
 const rating = ref(null);
 const comment = ref("");
 const contactOk = ref(false);
 const sending = ref(false);
 const failed = ref(false);
+
+onMounted(() => {
+	store.markShown();
+	card.value?.scrollIntoView?.({ block: "nearest" });
+});
+
+// A card removed mid-thanks must not leave a stuck "thanked" state behind.
+onBeforeUnmount(() => {
+	if (store.thanked) store.hide();
+});
 
 async function send() {
 	if (!rating.value || sending.value) return;

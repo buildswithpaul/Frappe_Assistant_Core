@@ -37,4 +37,18 @@ describe("ChatInterface pulse", () => {
 		await vi.waitFor(() => expect(w.findComponent(PulseCard).exists()).toBe(true));
 		expect(api.feedback.markPulseShown).toHaveBeenCalledTimes(1);
 	});
+
+	it("does not start the clock when the interface unmounts during the await", async () => {
+		const stubs = { MessageBubble: true, DocumentPreviewPanel: true };
+		let release;
+		api.feedback.pulseState.mockReturnValueOnce(new Promise((r) => (release = r)));
+		const w = mount(ChatInterface, { props: { messages: [], isStreaming: true }, global: { stubs } });
+		await w.setProps({ isStreaming: false });
+		// production: New Chat / session switch unmounts the list while the fetch is in flight.
+		w.unmount();
+		release({ due: true });
+		await nextTick();
+		await nextTick();
+		expect(api.feedback.markPulseShown).not.toHaveBeenCalled();
+	});
 });
