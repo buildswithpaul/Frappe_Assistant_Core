@@ -727,6 +727,7 @@ def blocking_references(company: str) -> List[str]:
     accounts = set(frappe.get_all(ACCOUNT, filters={"company": company}, pluck="name"))
     moved = {link["name"] for link in cash_links(company)}
     out: List[str] = []
+    reported: set = set()
 
     def rows(child: str, parent_doctype: str, field: str, label: str, extra: Optional[Dict] = None) -> None:
         if not frappe.db.exists("DocType", child):
@@ -743,6 +744,7 @@ def blocking_references(company: str) -> List[str]:
         for row in found:
             if row.name in moved:
                 continue
+            reported.add(row.name)
             out.append(_("{0} {1} uses {2}.").format(_(label), row.parent, row[field]))
 
     rows(
@@ -771,36 +773,34 @@ def blocking_references(company: str) -> List[str]:
         rows("GST Account", "GST Settings", "cgst_account", "GST Settings", {"company": company})
         rows("GST Account", "GST Settings", "sgst_account", "GST Settings", {"company": company})
         rows("GST Account", "GST Settings", "igst_account", "GST Settings", {"company": company})
-    out.extend(_other_links(company, accounts, moved))
+    out.extend(_other_links(company, accounts, moved | reported))
     return out
 
 
-#: The child tables blocking_references names in its own words.
-_NAMED_TABLES = {
-    "Sales Taxes and Charges",
-    "Purchase Taxes and Charges",
-    "Item Tax Template Detail",
-    "Mode of Payment Account",
-    "GST Account",
-}
-
-
-def _other_links(company: str, accounts: set, moved: set) -> List[str]:
+def _other_links(company: str, accounts: set, skip: set) -> List[str]:
     """Every other record that links to one of the company's accounts: the check ERPNext's delete makes for
     each account (frappe.model.delete_doc.get_linked_docs and get_dynamic_linked_docs), made once for the
     whole chart, so the replace can delete without it. The company's own account fields are cleared by
-    the replace, and the chart's accounts go with it."""
+    the replace, the chart's accounts go with it, and ``skip`` holds the rows already named or moved. A
+    record the user may not read is named by its doctype only."""
     from frappe.model.dynamic_links import get_dynamic_link_map
     from frappe.model.rename_doc import get_link_fields
 
     if not accounts:
         return []
     names = list(accounts)
-    ignored = set(frappe.get_hooks("ignore_links_on_delete")) | _NAMED_TABLES | {ACCOUNT}
+    ignored = set(frappe.get_hooks("ignore_links_on_delete"))
     out: List[str] = []
 
     def found(doctype: str, name: str, account: str) -> None:
-        if doctype == "Company" and name == company:
+        if (doctype == "Company" and name == company) or (doctype == ACCOUNT and name in accounts):
+            return
+        try:
+            readable = frappe.has_permission(doctype, "read", doc=name)
+        except frappe.DoesNotExistError:  # a row whose parent is gone
+            readable = False
+        if not readable:
+            out.append(_("A {0} you can't open uses {1}.").format(_(doctype), account))
             return
         out.append(_("{0} {1} uses {2}.").format(_(doctype), name, account))
 
@@ -822,7 +822,7 @@ def _other_links(company: str, accounts: set, moved: set) -> List[str]:
             fields=["name", field, *(["parent", "parenttype"] if table else [])],
             limit=20,
         ):
-            if row.get("name") in moved or (table and row.parenttype in ignored):
+            if row.get("name") in skip or (table and row.parenttype in ignored):
                 continue
             found(row.parenttype if table else doctype, row.parent if table else row.name, row[field])
     for df in get_dynamic_link_map().get(ACCOUNT, []):
@@ -911,6 +911,15 @@ def replace_problem(company: str) -> Optional[str]:
         return _("{0} Replace is only for a company with no transactions: map or add instead.").format(
             blocked
         )
+    first = frappe.db.get_value(ACCOUNT, {"company": company})
+    doc = frappe.get_doc(ACCOUNT, first) if first else None
+    if not frappe.has_permission(ACCOUNT, "create") or (
+        doc and not frappe.has_permission(ACCOUNT, "delete", doc=doc)
+    ):
+        # before the references: who may not replace the chart isn't told what points at it
+        return _("You need to be allowed to create and delete accounts of {0} (Accounts Manager).").format(
+            company
+        )
     refs = blocking_references(company)
     if refs:
         shown = "; ".join(refs[:10]) + (
@@ -919,14 +928,6 @@ def replace_problem(company: str) -> Optional[str]:
         return _(
             "Replacing the chart would break what points at its accounts: {0}. Remove them, or add instead."
         ).format(shown)
-    first = frappe.db.get_value(ACCOUNT, {"company": company})
-    doc = frappe.get_doc(ACCOUNT, first) if first else None
-    if not frappe.has_permission(ACCOUNT, "create") or (
-        doc and not frappe.has_permission(ACCOUNT, "delete", doc=doc)
-    ):
-        return _("You need to be allowed to create and delete accounts of {0} (Accounts Manager).").format(
-            company
-        )
     return None
 
 
