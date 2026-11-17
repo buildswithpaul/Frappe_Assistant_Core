@@ -111,6 +111,7 @@ class DryRunImport(BaseTool):
         # takes them with or without their fence).
         self.untrusted_fields = (
             "groups",
+            "decisions",  # each value the file has, as the groups quote them
             "masters_plan",
             "left_out",
             "problems",

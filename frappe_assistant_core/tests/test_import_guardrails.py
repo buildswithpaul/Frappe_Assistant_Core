@@ -151,7 +151,8 @@ class TestFileContentIsFenced(GuardrailCase):
         payload = self._mcp("dry_run_import", {"session": session})
 
         self.assertIn(INJECTION, json.dumps(payload["groups"]))
-        self.assertOnlyFenced(payload, ("groups", "masters_plan"))
+        self.assertIn(INJECTION, json.dumps(payload["decisions"]))
+        self.assertOnlyFenced(payload, ("groups", "decisions", "masters_plan"))
 
     def test_create_document_names_the_file_content_its_replies_carry(self):
         # With import_session it creates an import's missing masters, named as the file has them.
