@@ -19,11 +19,12 @@ import subprocess  # nosec
 
 import frappe
 from frappe import _
-from frappe.utils import cint
+from frappe.utils import add_days, cint, getdate, today
 from frappe.utils.caching import redis_cache
 
 from frappe_assistant_core.chat.fac_cloud_client import get_fac_cloud_client
 
+from ..doctype.fac_chat_user_preferences.fac_chat_user_preferences import FACChatUserPreferences
 from ._attachment_validation import is_ticket_image, validate_ticket_attachment
 from ._rate_limits import rate_limit, session_user_or_ip
 from .auth import _ar_user_id
@@ -46,6 +47,12 @@ def _ar_user() -> str:
     """
     return _ar_user_id(frappe.session.user)
 
+
+PREFERENCES_DOCTYPE = "FAC Chat User Preferences"
+MAX_RATING_LOOKUP = 100
+PULSE_MIN_USER_MESSAGES = 5
+PULSE_SHOWN_COOLDOWN_DAYS = 14
+PULSE_DISMISSED_COOLDOWN_DAYS = 30
 
 MAX_TRANSCRIPT_BYTES = 200 * 1024
 MAX_TRANSCRIPT_MESSAGES = 200
@@ -410,3 +417,144 @@ def reply_to_ticket(
     except Exception as e:
         frappe.log_error(title="Support reply_to_ticket failed", message=str(e))
         frappe.throw(_("Couldn't send your reply. Please try again."))
+
+
+def _require_own_answer(message_id: str) -> None:
+    """Throw unless message_id is an assistant message the caller received.
+
+    The ids go to AR, which keys ratings by (user, message_id) but knows nothing of FAC's
+    sessions, so this check is what stops a crafted request rating another user's answer.
+    """
+    owned = frappe.db.exists(
+        "FAC Chat Message",
+        {"message_id": message_id, "user": frappe.session.user, "role": "assistant"},
+    )
+    if not message_id or not owned:
+        frappe.throw(_("You can only rate your own answers."), frappe.PermissionError)
+
+
+def _coerce_reasons(reasons: list | str | None) -> list | None:
+    """Accept a list or a JSON-string list from form data; malformed input reads as no reasons."""
+    parsed = _coerce_ids(reasons)
+    return parsed if isinstance(parsed, list) else None
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(session_user_or_ip, limit=30, seconds=60)
+def rate_answer(
+    message_id: str,
+    reaction: str,
+    reasons: list | str | None = None,
+    comment: str | None = None,
+) -> dict:
+    """Record the caller's thumbs up/down on one assistant answer.
+
+    Returns {feedback_id} (+ locked: True once support has picked it up). Only the message id,
+    reason keys and the comment leave FAC; the conversation text never does.
+    """
+    _require_own_answer(message_id)
+    client = _get_client()
+    try:
+        return client.rate_answer(
+            user_id=_ar_user(),
+            message_id=message_id,
+            reaction=reaction,
+            reasons=_coerce_reasons(reasons),
+            comment=comment or None,
+        )
+    except Exception as e:
+        frappe.log_error(title="Support rate_answer failed", message=str(e))
+        frappe.throw(_("Couldn't save your rating. Please try again."))
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(session_user_or_ip, limit=30, seconds=60)
+def withdraw_answer_rating(message_id: str) -> dict:
+    """Withdraw the caller's reaction to one assistant answer. Returns {withdrawn: bool}."""
+    _require_own_answer(message_id)
+    client = _get_client()
+    try:
+        return client.withdraw_answer_feedback(user_id=_ar_user(), message_id=message_id)
+    except Exception as e:
+        frappe.log_error(title="Support withdraw_answer_rating failed", message=str(e))
+        frappe.throw(_("Couldn't save your rating. Please try again."))
+
+
+@frappe.whitelist(methods=["GET"])
+@rate_limit(session_user_or_ip, limit=60, seconds=60)
+def answer_ratings(session_id: str) -> dict:
+    """The caller's reactions to the answers in one session: {message_id: {reaction, reasons}}.
+
+    Asks AR only about the caller's own assistant messages in that session (the 100 most
+    recent), so a crafted session_id yields nothing.
+    """
+    message_ids = frappe.get_all(
+        "FAC Chat Message",
+        filters={
+            "session_id": session_id,
+            "user": frappe.session.user,
+            "role": "assistant",
+            "message_id": ("is", "set"),
+        },
+        pluck="message_id",
+        order_by="creation desc",
+        limit=MAX_RATING_LOOKUP,
+    )
+    if not message_ids:
+        return {}
+
+    client = _get_client()
+    try:
+        return client.get_answer_ratings(user_id=_ar_user(), message_ids=message_ids) or {}
+    except Exception as e:
+        frappe.log_error(title="Support answer_ratings failed", message=str(e))
+        frappe.throw(_("Couldn't load your ratings. Please try again."))
+
+
+@frappe.whitelist(methods=["POST"])
+def submit_pulse(rating: int, comment: str | None = None, contact_ok: bool = False) -> dict:
+    """Submit the periodic satisfaction pulse (1-5) for the current user. Returns {feedback_id}."""
+    client = _get_client()
+    try:
+        return client.submit_feedback(
+            user_id=_ar_user(),
+            rating=cint(rating),
+            comment=comment or None,
+            source="Pulse",
+            contact_ok=bool(cint(contact_ok)),
+        )
+    except Exception as e:
+        frappe.log_error(title="Support submit_pulse failed", message=str(e))
+        frappe.throw(_("Couldn't save your rating. Please try again."))
+
+
+@frappe.whitelist(methods=["GET"])
+def pulse_state() -> dict:
+    """Whether the pulse card is due: the next-pulse date has come and the user has sent enough."""
+    user = frappe.session.user
+    next_date = frappe.db.get_value(PREFERENCES_DOCTYPE, user, "feedback_pulse_next")
+    if next_date and getdate(next_date) > getdate(today()):
+        return {"due": False}
+    sent = frappe.db.count("FAC Chat Message", {"user": user, "role": "user"})
+    return {"due": sent >= PULSE_MIN_USER_MESSAGES}
+
+
+def _postpone_pulse(days: int) -> dict:
+    user = frappe.session.user
+    FACChatUserPreferences.get_or_create_preferences(user)
+    frappe.db.set_value(
+        PREFERENCES_DOCTYPE, user, "feedback_pulse_next", add_days(today(), days), update_modified=False
+    )
+    return {"ok": True}
+
+
+@frappe.whitelist(methods=["POST"])
+def mark_pulse_shown() -> dict:
+    """The pulse card was shown: ask again in two weeks."""
+    return _postpone_pulse(PULSE_SHOWN_COOLDOWN_DAYS)
+
+
+@frappe.whitelist(methods=["POST"])
+def dismiss_pulse() -> dict:
+    """The user dismissed the pulse card: leave them alone for a month."""
+    return _postpone_pulse(PULSE_DISMISSED_COOLDOWN_DAYS)
