@@ -228,8 +228,8 @@ it's Planning it lists the open questions, and once it runs or has ended it repo
 ## Talking to the user
 
 - Plain business words: "412 customers use a group that doesn't exist", not the ERPNext error.
-- One decision at a time, grouped, never row by row. In a migration plan, all the decisions come
-  together, still grouped: one list, so the user answers once.
+- Every decision at once, grouped, never row by row: the check's decisions list holds all of
+  them, the suggested answer first, so the user answers once. In a migration plan too.
 - Say what each step will do before an approval card, and what it did afterwards, with the counts.
 - After each file, say what's next in the order above.
 

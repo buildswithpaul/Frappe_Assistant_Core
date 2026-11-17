@@ -164,6 +164,11 @@ class DocumentCreate(BaseTool):
                     "type": "string",
                     "description": "With documents: the import session whose missing masters these are (dry_run_import's masters_plan). They are checked against it and listed on it.",
                 },
+                "planned_masters": {
+                    "type": "object",
+                    "description": 'With import_session, instead of documents: create every missing master the session\'s latest check planned (masters_plan), as planned, in one approval. {count: how many masters_plan has, so the card shows it; shared: {DocType: {field: value}} added to each of that DocType, only a party\'s group or territory, e.g. {"Customer": {"customer_group": "Commercial", "territory": "India"}}}. Use it when there are more than a few.',
+                    "properties": {"count": {"type": "integer"}, "shared": {"type": "object"}},
+                },
             },
             "required": [],
         }
@@ -178,6 +183,15 @@ class DocumentCreate(BaseTool):
         ):
             # A masters batch with nothing missing: say so, not "pass doctype and data".
             return {"success": False, "error": _("documents is empty: nothing to create.")}
+        if document_batch.given(arguments.get("planned_masters")):
+            if document_batch.given(arguments.get("documents")) or not document_batch.given(
+                arguments.get("import_session")
+            ):
+                return {
+                    "success": False,
+                    "error": _("planned_masters goes with import_session, instead of documents."),
+                }
+            return self._execute_many(arguments)
         if document_batch.given(arguments.get("import_session")) and not document_batch.given(
             arguments.get("documents")
         ):
@@ -635,13 +649,20 @@ class DocumentCreate(BaseTool):
         session_name = arguments.get("import_session")
         session = None
         try:
-            documents = document_batch.read_documents(arguments, ("doctype", "data"), with_name=False)
+            planned = arguments.get("planned_masters")
+            documents = (
+                None
+                if document_batch.given(planned)
+                else document_batch.read_documents(arguments, ("doctype", "data"), with_name=False)
+            )
             if arguments.get("submit"):
                 raise document_batch.BatchProblem(
                     _("submit is for one document at a time. Create the list as drafts, then submit each.")
                 )
             if document_batch.given(session_name):
                 session = load_session(session_name)
+                if documents is None:
+                    documents = import_fixes.planned_documents(session, planned)
                 documents = import_fixes.check_masters(session, documents)
             document_batch.check_access(documents, "create")
             if arguments.get("validate_only"):

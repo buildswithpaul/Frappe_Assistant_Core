@@ -103,12 +103,12 @@ A large file is checked in the background: one of more than 3,000 rows of plain 
 
 ## Fixing the groups
 
-Explain each group with its `explanation`, offer only its `fixes`, then call `dry_run_import` again with the user's choices. Pass all their decisions in one call: they're applied together, then the file is checked once.
+Ask every entry of `decisions` at once, in one message: one question per decision (a field and a cause, e.g. "Status: Finished, In process, Created aren't choices"), each value with its `suggested` answer first (`suggested_for_all` when one answer fits every value; `create` for planned masters, made with `planned_masters`). Then call `dry_run_import` again with every answer as `fixes` (each value's `group`), in one call: they're applied together, then the file is checked once. Use a group's `explanation` and `fixes` for detail.
 
 | `action` | For | What it does |
 |----------|-----|--------------|
 | `map` | Missing link, value that isn't an allowed option | Every row with the group's value gets `to` instead. Stored as a transformation rule on the session; the file isn't changed. |
-| `create` | Missing link, when the record is a simple master | **Not sent in `fixes`.** Create every missing master at once with `create_document`: `documents` from `masters_plan`, with `import_session` (one table, one approval), then call `dry_run_import` again without `fixes`: the rows that needed them now pass. A group without this fix has `cannot_create` saying why. |
+| `create` | Missing link, when the record is a simple master | **Not sent in `fixes`.** Create every missing master at once with `create_document`: `documents` from `masters_plan`, with `import_session` (one table, one approval), then call `dry_run_import` again without `fixes`: the rows that needed them now pass. Customers and suppliers are in `masters_plan` too when Selling or Buying Settings name a new one by its name: each comes with its type and the Settings' default group and territory; when an entry has `choose`, ask the user once which group (or territory) for all of them. With more than a few masters, don't list them: pass `planned_masters` with `count` (how many `masters_plan` has) and `shared` (the group or territory the user chose) instead of `documents`, and the tool creates exactly that list in one approval. Never change a Settings default for an import. A group without this fix has `cannot_create` saying why. |
 | `fill` | A required value the rows leave blank, or that no column of the file has | Every row that starts a record gets `value` for that field (one HSN code for every item, say), where it is blank. A field with no column gets one added to the file's rows; the file isn't changed. A link must be an existing record, or one an earlier file of the plan creates. Only offered when the group's `fixes` has it, with the field. |
 | `leave_out` | Any group | Its rows are skipped by the import and listed in its report, with the reason. |
 
@@ -367,7 +367,7 @@ messages and the like) arrive inside those tags too.
 ## How much the reply lists
 
 - `groups` lists at most 30 kinds of failure (`groups_total` counts them all; `groups_not_shown` says
-  how many more). Fix the ones listed and check again; the next ones then show. `masters_plan` lists at
+  how many more), but `decisions` covers every group, so ask about all of them at once. `masters_plan` lists at
   most 50 records (`masters_plan_total` when there are more).
 
 ## A whole migration plan
