@@ -301,9 +301,13 @@ class TestImportSession(BaseAssistantTest):
         # Manager holds Import on it.
         file_doc = self._upload("contacts.csv", b"First Name\nAsha\n")
 
-        self._start_fails("Import permission", file_url=file_doc.file_url, target_doctype="Contact")
+        refused = self._start_fails("Import permission", file_url=file_doc.file_url, target_doctype="Contact")
 
         self.assertEqual(self._new_sessions(), 0)
+        # what the administrator does, step by step: ERPNext ships some DocTypes (Project, Sales Invoice)
+        # with Import off for every role, so a fresh site hits this on its first projects file
+        self.assertIn("Role Permissions Manager", refused["error"])
+        self.assertIn("tick Import", refused["error"])
 
     def test_target_that_cannot_be_imported_is_refused(self):
         file_doc = self._upload("todo.csv", b"Description\nCall\n")
