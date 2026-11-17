@@ -14,7 +14,11 @@ import frappe
 from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
-from frappe_assistant_core.plugins.migration.tools.import_chart_of_accounts import prepared, source_system
+from frappe_assistant_core.plugins.migration.tools.import_chart_of_accounts import (
+    company_refusal,
+    prepared,
+    source_system,
+)
 from frappe_assistant_core.utils import import_chart
 from frappe_assistant_core.utils.import_mapping import SESSION_DOCTYPE, load_session
 
@@ -38,7 +42,7 @@ class ReplaceChartOfAccounts(BaseTool):
             "client's account names and numbers are kept as old IDs."
         )
         self.requires_permission = None  # the session, and Account create and delete, are checked
-        self.untrusted_fields = ("defaults_left_empty", "message", "error")
+        self.untrusted_fields = ("defaults_left_empty", "message", "error", "source_system")
         self.inputSchema = {
             "type": "object",
             "properties": {
@@ -67,8 +71,9 @@ class ReplaceChartOfAccounts(BaseTool):
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         name, company = arguments.get("session"), (arguments.get("company") or "").strip()
-        if not frappe.db.exists("Company", company):
-            return {"success": False, "error": _("Company {0} doesn't exist.").format(company)}
+        refused = company_refusal(company)
+        if refused:
+            return refused
         try:
             session = load_session(name)
             nodes, classes = prepared(session, arguments)  # a replaced chart has no outside parents

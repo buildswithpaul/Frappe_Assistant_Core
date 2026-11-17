@@ -21,6 +21,17 @@ from frappe_assistant_core.utils.import_mapping import SESSION_DOCTYPE, load_ses
 SHOWN = 100
 
 
+def company_refusal(company: str) -> Optional[Dict[str, Any]]:
+    """The reply when ``company`` can't have a chart put on it by this user, else None. A User Permission
+    that limits someone to another company keeps them off this one's accounts, as Desk does: the check
+    would list its accounts and the modes it allows, and an import would map onto them."""
+    if not frappe.db.exists("Company", company):
+        return {"success": False, "error": _("Company {0} doesn't exist.").format(company)}
+    if not frappe.has_permission("Company", "read", doc=company):
+        return {"success": False, "error": _("You can't work on the accounts of {0}.").format(company)}
+    return None
+
+
 def prepared(session, arguments: Dict[str, Any], company: Optional[str] = None):
     """The nodes and classes of the chart with the user's answers, or raises ChartProblem saying what to
     fix first: the tree's problems, and any account no rule could classify (all of them, in one list)."""
@@ -87,6 +98,10 @@ class ImportChartOfAccounts(BaseTool):
             "problems",
             "parents_not_in_the_file",
             "map",
+            # named by the user or the file, not by FAC
+            "source_system",
+            "old_id_conflicts",
+            "old_id_systems",
         )
         self.inputSchema = {
             "type": "object",
@@ -123,8 +138,9 @@ class ImportChartOfAccounts(BaseTool):
         )
         if mode not in ("map", "add"):
             return {"success": False, "error": _("mode is map or add.")}
-        if not frappe.db.exists("Company", company):
-            return {"success": False, "error": _("Company {0} doesn't exist.").format(company)}
+        refused = company_refusal(company)
+        if refused:
+            return refused
         try:
             session = load_session(name)
             if not frappe.has_permission("Account", "create"):
@@ -197,17 +213,18 @@ def check_chart(name: str, company: str, arguments: Dict[str, Any]) -> Dict[str,
         # nothing to ask on a site of one company
         only = frappe.get_list("Company", pluck="name", limit=2)
         company = only[0] if len(only) == 1 else ""
+    refused = company_refusal(company) if company else None
+    if refused:
+        return refused
     try:
         session = load_session(name)
         nodes = import_chart.read_chart(session, arguments.get("root_type_column"))
-        if company and frappe.db.exists("Company", company):
+        if company:
             import_chart.apply_outside_parents(nodes, company)
         import_chart.apply_answers(nodes, arguments.get("classifications"))
         classes = import_chart.classify(nodes)
         out: Dict[str, Any] = {"success": True, "session": name, **import_chart.summary(nodes, classes)}
         if company:
-            if not frappe.db.exists("Company", company):
-                return {"success": False, "error": _("Company {0} doesn't exist.").format(company)}
             out["company"] = company
             out["modes"] = import_chart.modes(company)
             proposal = import_chart.map_proposal(nodes, classes, company)
