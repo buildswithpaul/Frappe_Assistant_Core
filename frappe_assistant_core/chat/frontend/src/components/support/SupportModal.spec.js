@@ -24,11 +24,11 @@ const SERVER_ENV = {
 	installed_apps: "erpnext 16.14.0, frappe 16.15.0",
 };
 
-async function openModal({ mode = "issue", conversationId = null } = {}) {
+async function openModal({ mode = "issue", conversationId = null, prefill = null } = {}) {
 	const { useSupportStore } = await import("@/stores/supportStore");
 	const { default: SupportModal } = await import("@/components/support/SupportModal.vue");
 	const store = useSupportStore();
-	store.open({ mode, conversationId });
+	store.open({ mode, conversationId, prefill });
 
 	const w = mount(SupportModal, {
 		global: { stubs: { IssueForm: true, FeedbackForm: true, SupportConfirmation: true } },
@@ -105,5 +105,27 @@ describe("SupportModal feedback scope", () => {
 		expect(payload.rating).toBe(4);
 		expect(payload.comment).toBe("good");
 		expect(payload.environment.fac_version).toBe("3.0.0-beta.1");
+	});
+});
+
+describe("SupportModal prefill", () => {
+	beforeEach(() => {
+		vi.resetModules();
+		getEnvironment.mockReset();
+		getEnvironment.mockResolvedValue(SERVER_ENV);
+		setActivePinia(createPinia());
+	});
+
+	it("hands the prefill to the issue form", async () => {
+		const w = await openModal({ prefill: "Error: boom\n" });
+		expect(w.findComponent({ name: "IssueForm" }).props("prefill")).toBe("Error: boom\n");
+	});
+
+	it("clears the prefill on close", async () => {
+		await openModal({ prefill: "Error: boom\n" });
+		const { useSupportStore } = await import("@/stores/supportStore");
+		const store = useSupportStore();
+		store.close();
+		expect(store.prefill).toBeNull();
 	});
 });
