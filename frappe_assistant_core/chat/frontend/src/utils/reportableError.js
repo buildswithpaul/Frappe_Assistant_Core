@@ -14,5 +14,7 @@ export function isReportable(code) {
 
 /** Seed text for the issue form; the session id is deliberately left out. */
 export function buildReportPrefill({ code, message, at }) {
-	return `Error: ${message || ""}\nCode: ${code || "unknown"}\nTime: ${at}\n\n`;
+	// One line, so a message cannot forge the Code:/Time: lines below it.
+	const oneLine = String(message || "").replace(/\s*[\r\n]+\s*/g, " ");
+	return `Error: ${oneLine}\nCode: ${code || "unknown"}\nTime: ${at}\n\n`;
 }

@@ -58,6 +58,9 @@ describe("ConnectionBanners personal limit refusal", () => {
 });
 
 describe("ConnectionBanners Report this", () => {
+	// production: ChatView mounts SupportModal, which registers itself as a host.
+	beforeEach(() => useSupportStore().registerHost());
+
 	it("shows for a turn failure", () => {
 		expect(mk({ error: "Model failed", errorCode: "MODEL_FAILED" }).find("[data-test=report-error]").exists()).toBe(true);
 	});
@@ -66,8 +69,10 @@ describe("ConnectionBanners Report this", () => {
 		expect(mk({ errorCode: "quota_exhausted", isAdmin: true }).find("[data-test=report-error]").exists()).toBe(false);
 	});
 
-	it("is absent where no support modal exists", () => {
-		expect(mk({ error: "x", errorCode: "MODEL_FAILED", canReport: false }).find("[data-test=report-error]").exists()).toBe(false);
+	it("is absent where no support modal is mounted", () => {
+		// production: the Desk widget renders ConnectionBanners without a SupportModal.
+		useSupportStore().unregisterHost();
+		expect(mk({ error: "x", errorCode: "MODEL_FAILED" }).find("[data-test=report-error]").exists()).toBe(false);
 	});
 
 	it("opens an issue seeded with the error, code and time", async () => {

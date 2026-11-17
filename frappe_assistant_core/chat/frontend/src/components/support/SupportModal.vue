@@ -36,7 +36,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "@/api/client";
 import { useToast } from "@/composables/useToast";
@@ -48,6 +48,8 @@ import FeedbackForm from "./support/FeedbackForm.vue";
 import SupportConfirmation from "./support/SupportConfirmation.vue";
 
 const store = useSupportStore();
+onMounted(store.registerHost);
+onUnmounted(store.unregisterHost);
 const toast = useToast();
 const modelStore = useModelStore();
 const router = useRouter();

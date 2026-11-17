@@ -1228,14 +1228,17 @@ export const useChatStore = defineStore("chat", () => {
 		}
 
 		const lastMsg = findActiveMessage(messages.value);
-		if (lastMsg && lastMsg.role === "assistant" && lastMsg.isStreaming) {
-			lastMsg.isStreaming = false;
-			// Kept on the bubble so Report this outlives the auto-dismissed banner.
+		// Kept on the answer so Report this outlives the auto-dismissed banner. Only an
+		// answer of this turn qualifies: a user message last means no answer exists yet.
+		if (lastMsg?.role === "assistant") {
 			lastMsg.lastError = {
 				code: errorCode || null,
 				message: errorMessage || "Stream error occurred",
 				at: new Date().toISOString(),
 			};
+		}
+		if (lastMsg && lastMsg.role === "assistant" && lastMsg.isStreaming) {
+			lastMsg.isStreaming = false;
 			if (Array.isArray(payload?.blocks) && payload.blocks.length > 0) {
 				lastMsg.blocks = payload.blocks;
 			}

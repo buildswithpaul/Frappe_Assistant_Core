@@ -129,3 +129,21 @@ describe("SupportModal prefill", () => {
 		expect(store.prefill).toBeNull();
 	});
 });
+
+describe("SupportModal host registration", () => {
+	beforeEach(() => {
+		vi.resetModules();
+		getEnvironment.mockReset();
+		getEnvironment.mockResolvedValue(SERVER_ENV);
+		setActivePinia(createPinia());
+	});
+
+	it("makes Help & Feedback openable while mounted and not after", async () => {
+		const { useSupportStore } = await import("@/stores/supportStore");
+		expect(useSupportStore().canOpen).toBe(false);
+		const w = await openModal();
+		expect(useSupportStore().canOpen).toBe(true);
+		w.unmount();
+		expect(useSupportStore().canOpen).toBe(false);
+	});
+});
