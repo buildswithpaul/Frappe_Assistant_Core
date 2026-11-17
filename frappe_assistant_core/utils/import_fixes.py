@@ -1150,6 +1150,61 @@ def masters_plan(session, groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return list(plan.values())
 
 
+PLANNED_AT_ONCE = 1000  # missing masters planned_masters creates in one call, inside one request
+
+
+def planned_documents(session, planned: Any) -> List[Dict[str, Any]]:
+    """create_document's planned_masters: every missing master the session's latest check planned
+    (masters_plan), as it planned it, with ``shared`` values added to each of a DocType (a
+    party's group or territory). Live, 2026-11-17: 262 planned customers had to be listed one by
+    one, more than a call takes (100) and more than the assistant could copy back reliably, so it
+    asked the user for a separate customer file. ``count`` must be the number planned, so the
+    approval card shows it."""
+    from frappe_assistant_core.utils import import_opening_invoices as opening_invoices
+
+    if not isinstance(planned, dict):
+        raise FixProblem(_("planned_masters is an object: {count, shared}."))
+    plan = masters_plan(session, list(last_groups(session).values()))
+    by_doctype: Dict[str, int] = {}
+    for entry in plan:
+        by_doctype[entry["doctype"]] = by_doctype.get(entry["doctype"], 0) + 1
+    listed = ", ".join(f"{count} {_(doctype)}" for doctype, count in by_doctype.items()) or _("none")
+    if cint(planned.get("count")) != len(plan):
+        raise FixProblem(
+            _(
+                "The last check planned {0} missing masters ({1}). Pass count {0}, so the approval "
+                "card shows how many are created."
+            ).format(len(plan), listed)
+        )
+    if not plan:
+        raise FixProblem(_("The last check planned no missing masters: nothing to create."))
+    if len(plan) > PLANNED_AT_ONCE:
+        raise FixProblem(
+            _("{0} missing masters are more than one call creates ({1}). Map or leave out some.").format(
+                len(plan), PLANNED_AT_ONCE
+            )
+        )
+    shared = planned.get("shared") or {}
+    if not isinstance(shared, dict) or any(not isinstance(v, dict) for v in shared.values()):
+        raise FixProblem(
+            _('shared is {DocType: {field: value}}, e.g. {"Customer": {"customer_group": "Commercial"}}.')
+        )
+    for doctype, values in shared.items():
+        allowed = (
+            set(opening_invoices.PARTY_LINKS.get(doctype) or {}) if is_party(session, doctype) else set()
+        )
+        if doctype not in by_doctype or set(values) - allowed:
+            raise FixProblem(
+                _("shared takes, for {0}, only {1}.").format(
+                    _(doctype), ", ".join(sorted(allowed)) or _("nothing")
+                )
+            )
+    return [
+        {"doctype": entry["doctype"], "data": {**entry["data"], **(shared.get(entry["doctype"]) or {})}}
+        for entry in plan
+    ]
+
+
 def check_masters(session, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """``documents`` sent to create_document with ``import_session``: each must be one of the
     session's missing masters, as the latest check planned it (masters_plan), so nothing is
