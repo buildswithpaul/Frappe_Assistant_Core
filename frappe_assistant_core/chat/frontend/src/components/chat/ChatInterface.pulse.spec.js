@@ -16,6 +16,7 @@ vi.mock("@/api/client", () => ({
 }));
 
 import { api } from "@/api/client";
+import { usePulseStore } from "@/stores/pulseStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
 import ChatInterface from "./ChatInterface.vue";
@@ -41,6 +42,13 @@ describe("ChatInterface pulse", () => {
 
 	const stubs = { MessageBubble: true, DocumentPreviewPanel: true };
 
+	// Caches pulse_state while no host is mounted, so a later maybeShow with a
+	// host sets `visible` synchronously, before Vue can flush the card's render.
+	async function warmDue() {
+		await usePulseStore().maybeShow();
+		expect(usePulseStore().visible).toBe(false);
+	}
+
 	async function unmountDuringAwait() {
 		let release;
 		api.feedback.pulseState.mockReturnValueOnce(new Promise((r) => (release = r)));
@@ -59,18 +67,44 @@ describe("ChatInterface pulse", () => {
 		expect(api.feedback.markPulseShown).not.toHaveBeenCalled();
 	});
 
-	it("a later mount, quiet or mid-stream, never resurrects a card that was not shown", async () => {
-		await unmountDuringAwait();
-		const quiet = mount(ChatInterface, { props: { messages: [], isStreaming: false }, global: { stubs } });
-		await nextTick();
-		expect(quiet.findComponent(PulseCard).exists()).toBe(false);
-		quiet.unmount();
-		const streaming = mount(ChatInterface, { props: { messages: [], isStreaming: true }, global: { stubs } });
+	it("a card whose turn turns busy before it renders is not shown or marked", async () => {
+		await warmDue();
+		const w = mount(ChatInterface, { props: { messages: [], isStreaming: false }, global: { stubs } });
+		usePulseStore().maybeShow();
+		expect(usePulseStore().visible).toBe(true);
+		// production: a queued message starts a stream in the same tick the flag flips.
 		useChatStore().isStreaming = true;
 		await nextTick();
-		expect(streaming.findComponent(PulseCard).exists()).toBe(false);
+		expect(w.findComponent(PulseCard).exists()).toBe(false);
 		expect(api.feedback.markPulseShown).not.toHaveBeenCalled();
-		expect(api.feedback.pulseState).toHaveBeenCalledTimes(1);
+	});
+
+	it("a card never rendered is gone when its host unmounts, and a remount shows nothing", async () => {
+		await warmDue();
+		const w = mount(ChatInterface, { props: { messages: [], isStreaming: false }, global: { stubs } });
+		usePulseStore().maybeShow();
+		expect(usePulseStore().visible).toBe(true);
+		// production: New Chat unmounts the list before Vue flushed the card's render.
+		w.unmount();
+		expect(usePulseStore().visible).toBe(false);
+		const again = mount(ChatInterface, { props: { messages: [], isStreaming: false }, global: { stubs } });
+		await nextTick();
+		expect(again.findComponent(PulseCard).exists()).toBe(false);
+		expect(api.feedback.markPulseShown).not.toHaveBeenCalled();
+	});
+
+	it("a card the user has seen survives a new stream with the typed comment", async () => {
+		await warmDue();
+		const w = mount(ChatInterface, { props: { messages: [], isStreaming: false }, global: { stubs } });
+		await usePulseStore().maybeShow();
+		await nextTick();
+		await w.find("[data-rating='3']").trigger("click");
+		await w.find("[data-test=pulse-comment]").setValue("keep me");
+		// production: the user sends another message while the card is open.
+		useChatStore().isStreaming = true;
+		await nextTick();
+		expect(w.findComponent(PulseCard).exists()).toBe(true);
+		expect(w.find("[data-test=pulse-comment]").element.value).toBe("keep me");
 	});
 
 	it("a rendered card survives a remount without a second mark", async () => {
