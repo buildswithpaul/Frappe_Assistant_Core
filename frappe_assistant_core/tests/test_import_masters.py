@@ -613,6 +613,89 @@ class TestImportMasters(BaseAssistantTest):
         self.assertTrue(created["success"], created)
         self.assertEqual(frappe.db.get_value("Customer", name, "customer_group"), group.name)
 
+    def _projects_naming(self, customers):
+        """A checked file of projects, one per customer in ``customers``, none of them in ERPNext,
+        on a site that names a new customer by its name."""
+        self._customers_named_by("Customer Name")
+        company = frappe.get_all("Company", pluck="name", limit=1)[0]
+        lines = ["Project,Customer,Company"] + [
+            f"Site {i} {self.tag},{name},{company}" for i, name in enumerate(customers)
+        ]
+        file_doc = frappe.get_doc(
+            {
+                "doctype": "File",
+                "file_name": "projects.csv",
+                "content": ("\n".join(lines) + "\n").encode(),
+                "is_private": 1,
+            }
+        ).insert()
+        session = self._run("start_import_session", {"file_url": file_doc.file_url})["result"]["session_id"]
+        self._run(
+            "set_column_mapping",
+            {
+                "session": session,
+                "doctype": "Project",
+                "mapping": {"Project": "project_name", "Customer": "customer", "Company": "company"},
+            },
+        )
+        checked = self._run("dry_run_import", {"session": session})
+        self.assertTrue(checked["success"], checked)
+        return session
+
+    def _leaf_group(self):
+        return frappe.get_doc(
+            {
+                "doctype": "Customer Group",
+                "customer_group_name": f"Planned {self.tag}",
+                "parent_customer_group": "All Customer Groups",
+            }
+        ).insert()
+
+    def test_every_planned_master_is_created_with_the_shared_group_in_one_call(self):
+        # Live, 2026-11-17: 262 planned customers had to be listed one by one, more than a call takes
+        # and more than the assistant could copy back, so it asked for a separate customer file.
+        names = [f"Trust {i} {self.tag}" for i in range(3)]
+        session = self._projects_naming(names)
+        group = self._leaf_group()
+
+        created = self._run(
+            "create_document",
+            {
+                "import_session": session,
+                "planned_masters": {"count": 3, "shared": {"Customer": {"customer_group": group.name}}},
+            },
+        )
+
+        self.assertTrue(created["success"], created)
+        for name in names:
+            self.assertEqual(frappe.db.get_value("Customer", name, "customer_group"), group.name)
+        self.assertEqual(len(self._doc(session).created_records), 3)
+
+    def test_planned_masters_with_another_count_is_refused_with_the_number(self):
+        names = [f"Trust {i} {self.tag}" for i in range(2)]
+        session = self._projects_naming(names)
+
+        refused = self._run("create_document", {"import_session": session, "planned_masters": {"count": 5}})
+
+        self.assertFalse(refused["success"])
+        self.assertIn("Pass count 2", json.dumps(refused))
+        self.assertFalse(frappe.db.exists("Customer", names[0]))
+
+    def test_planned_masters_share_only_a_partys_group_or_territory(self):
+        session = self._projects_naming([f"Trust {self.tag}"])
+
+        refused = self._run(
+            "create_document",
+            {
+                "import_session": session,
+                "planned_masters": {"count": 1, "shared": {"Customer": {"credit_limit": 5}}},
+            },
+        )
+
+        self.assertFalse(refused["success"])
+        self.assertIn("customer_group", json.dumps(refused))
+        self.assertFalse(frappe.db.exists("Customer", f"Trust {self.tag}"))
+
     def test_a_master_needing_a_table_row_or_named_after_another_record_is_not_offered(self):
         can = import_fixes.cannot_create
 
