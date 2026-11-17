@@ -14,6 +14,7 @@ from frappe.utils import add_days, today
 from frappe_assistant_core.chat.api import support
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
+FACO_MEMBER = "frappe_assistant_core.chat.api.settings.access._is_faco_member"
 PREFS = "FAC Chat User Preferences"
 OWN_MESSAGE = "msg-aaaaaaaaaaaaaaaa"
 OTHER_MESSAGE = "msg-bbbbbbbbbbbbbbbb"
@@ -34,6 +35,13 @@ class TestChatFeedback(BaseAssistantTest):
         patcher = patch.object(support, "get_fac_cloud_client", return_value=self.client)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # production: a seated user on a site with FAC Chat on; each gate test flips one input.
+        for target in (
+            patch("frappe_assistant_core.chat.api.connections.is_chat_enabled", return_value=True),
+            patch(FACO_MEMBER, return_value=True),
+        ):
+            target.start()
+            self.addCleanup(target.stop)
         self.me = self.make_throwaway_user("fbme")
         self.other = self.make_throwaway_user("fbother")
         as_me = patch.dict(frappe.session, {"user": self.me})
@@ -122,6 +130,7 @@ class TestChatFeedback(BaseAssistantTest):
         self.client.get_answer_ratings.assert_not_called()
 
     def test_submit_pulse_sends_pulse_source(self):
+        self._five_user_messages()
         self.client.submit_feedback.return_value = {"feedback_id": "F-2"}
 
         support.submit_pulse(4, comment="nice", contact_ok=True)
@@ -153,3 +162,69 @@ class TestChatFeedback(BaseAssistantTest):
     def test_dismiss_sets_30_days(self):
         support.dismiss_pulse()
         self.assertEqual(str(self._prefs_date()), add_days(today(), 30))
+
+    def test_rate_answer_forwards_a_real_list_of_reasons(self):
+        self._message(self.me, message_id=OWN_MESSAGE)
+        self.client.rate_answer.return_value = {"feedback_id": "F-1"}
+
+        support.rate_answer(OWN_MESSAGE, "Down", reasons=["credits"])
+
+        self.assertEqual(self.client.rate_answer.call_args.kwargs["reasons"], ["credits"])
+
+    def _pulse_next(self, offset_days):
+        # production: mark_pulse_shown / dismiss_pulse write this date.
+        frappe.get_doc(
+            {"doctype": PREFS, "user": self.me, "feedback_pulse_next": add_days(today(), offset_days)}
+        ).insert(ignore_permissions=True)
+
+    def test_pulse_due_when_next_date_is_today(self):
+        self._five_user_messages()
+        self._pulse_next(0)
+        self.assertEqual(support.pulse_state(), {"due": True})
+
+    def test_pulse_due_when_next_date_is_past(self):
+        self._five_user_messages()
+        self._pulse_next(-3)
+        self.assertEqual(support.pulse_state(), {"due": True})
+
+    def test_answer_ratings_returns_empty_on_ar_failure(self):
+        self._message(self.me, message_id=OWN_MESSAGE)
+        self.client.get_answer_ratings.side_effect = RuntimeError("outage")
+
+        self.assertEqual(support.answer_ratings("sess-fb-1"), {})
+
+    def test_submit_pulse_refused_before_five_messages(self):
+        self._message(self.me, role="user")
+
+        with self.assertRaises(frappe.PermissionError):
+            support.submit_pulse(5)
+        self.client.submit_feedback.assert_not_called()
+
+    def _calls(self):
+        return {
+            "rate_answer": lambda: support.rate_answer(OWN_MESSAGE, "Up"),
+            "withdraw_answer_rating": lambda: support.withdraw_answer_rating(OWN_MESSAGE),
+            "answer_ratings": lambda: support.answer_ratings("sess-fb-1"),
+            "submit_pulse": lambda: support.submit_pulse(5),
+            "pulse_state": support.pulse_state,
+            "mark_pulse_shown": support.mark_pulse_shown,
+            "dismiss_pulse": support.dismiss_pulse,
+        }
+
+    def test_every_endpoint_refuses_a_caller_without_chat_access(self):
+        self._message(self.me, message_id=OWN_MESSAGE)
+        self._five_user_messages()
+        # production: a Website User or unseated user whose browser calls the endpoints directly.
+        with patch(FACO_MEMBER, return_value=False):
+            for name, call in self._calls().items():
+                with self.subTest(endpoint=name), self.assertRaises(frappe.PermissionError):
+                    call()
+        self.client.submit_feedback.assert_not_called()
+
+    def test_every_endpoint_refuses_when_chat_is_disabled(self):
+        self._message(self.me, message_id=OWN_MESSAGE)
+        self._five_user_messages()
+        with patch("frappe_assistant_core.chat.api.connections.is_chat_enabled", return_value=False):
+            for name, call in self._calls().items():
+                with self.subTest(endpoint=name), self.assertRaises(frappe.PermissionError):
+                    call()
