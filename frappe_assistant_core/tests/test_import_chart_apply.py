@@ -523,6 +523,29 @@ class TestImportChart(ChartCase):
         self.assertFalse(refused["success"])
         self.assertTrue(frappe.db.count("Account", {"company": self.company}) > 13)
 
+    def test_replace_is_refused_while_any_record_points_at_an_account_and_says_which(self):
+        # A user sets a warehouse's account in the form; ERPNext refuses to delete an account any record links
+        # to, so the replace names it before deleting anything, whatever the doctype, not a listed few.
+        session = self._chart()
+        account = frappe.get_all(
+            "Account", filters={"company": self.company, "is_group": 0}, pluck="name", limit=1
+        )[0]
+        warehouse = frappe.get_doc(
+            {
+                "doctype": "Warehouse",
+                "warehouse_name": f"Linked {self.tag}",
+                "company": self.company,
+                "account": account,
+            }
+        ).insert()
+        before = frappe.db.count("Account", {"company": self.company})
+
+        refused = self._replace(session)
+
+        self.assertFalse(refused["success"])
+        self.assertIn(warehouse.name, refused["error"])
+        self.assertEqual(frappe.db.count("Account", {"company": self.company}), before)
+
     def test_replace_is_refused_while_a_tax_template_points_at_an_account_and_says_which(self):
         session = self._chart()
         before = frappe.db.count("Account", {"company": self.company})

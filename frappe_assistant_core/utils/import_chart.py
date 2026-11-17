@@ -771,6 +771,70 @@ def blocking_references(company: str) -> List[str]:
         rows("GST Account", "GST Settings", "cgst_account", "GST Settings", {"company": company})
         rows("GST Account", "GST Settings", "sgst_account", "GST Settings", {"company": company})
         rows("GST Account", "GST Settings", "igst_account", "GST Settings", {"company": company})
+    out.extend(_other_links(company, accounts, moved))
+    return out
+
+
+#: The child tables blocking_references names in its own words.
+_NAMED_TABLES = {
+    "Sales Taxes and Charges",
+    "Purchase Taxes and Charges",
+    "Item Tax Template Detail",
+    "Mode of Payment Account",
+    "GST Account",
+}
+
+
+def _other_links(company: str, accounts: set, moved: set) -> List[str]:
+    """Every other record that links to one of the company's accounts: the check ERPNext's delete makes for
+    each account (frappe.model.delete_doc.get_linked_docs and get_dynamic_linked_docs), made once for the
+    whole chart, so the replace can delete without it. The company's own account fields are cleared by
+    the replace, and the chart's accounts go with it."""
+    from frappe.model.dynamic_links import get_dynamic_link_map
+    from frappe.model.rename_doc import get_link_fields
+
+    if not accounts:
+        return []
+    names = list(accounts)
+    ignored = set(frappe.get_hooks("ignore_links_on_delete")) | _NAMED_TABLES | {ACCOUNT}
+    out: List[str] = []
+
+    def found(doctype: str, name: str, account: str) -> None:
+        if doctype == "Company" and name == company:
+            return
+        out.append(_("{0} {1} uses {2}.").format(_(doctype), name, account))
+
+    for link in get_link_fields(ACCOUNT):
+        doctype, field = link["parent"], link["fieldname"]
+        if doctype in ignored or not frappe.db.exists("DocType", doctype):
+            continue
+        if frappe.get_meta(doctype).is_virtual:
+            continue
+        if link["issingle"]:
+            value = frappe.db.get_single_value(doctype, field)
+            if value in accounts:
+                found(doctype, doctype, value)
+            continue
+        table = frappe.get_meta(doctype).istable
+        for row in frappe.get_all(
+            doctype,
+            filters={field: ["in", names]},
+            fields=["name", field, *(["parent", "parenttype"] if table else [])],
+            limit=20,
+        ):
+            if row.get("name") in moved or (table and row.parenttype in ignored):
+                continue
+            found(row.parenttype if table else doctype, row.parent if table else row.name, row[field])
+    for df in get_dynamic_link_map().get(ACCOUNT, []):
+        if df.parent in ignored or frappe.get_meta(df.parent).issingle:
+            continue
+        for row in frappe.get_all(
+            df.parent,
+            filters={df.options: ACCOUNT, df.fieldname: ["in", names]},
+            fields=["name", df.fieldname],
+            limit=20,
+        ):
+            found(df.parent, row.name, row[df.fieldname])
     return out
 
 
@@ -892,7 +956,9 @@ def replace(company: str, nodes, classes) -> Dict[str, Any]:
         def delete_below(name: str) -> None:
             for child in children.get(name, []):
                 delete_below(child)
-            frappe.delete_doc(ACCOUNT, name)
+            # replace_problem made ERPNext's link check for the whole chart (_other_links): repeated per
+            # account it takes minutes on a full chart, past what a chat waits for a tool
+            frappe.delete_doc(ACCOUNT, name, force=True)
 
         for root in children.get(None, []):
             delete_below(root)

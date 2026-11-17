@@ -32,8 +32,8 @@ class ReplaceChartOfAccounts(BaseTool):
         self.description = (
             "Replace a company's chart of accounts with the client's (an import session read with "
             "dry_run_import with chart). Only for a company with no general ledger entries and no submitted "
-            "documents, and only while no tax template, item tax template, mode of payment or GST Settings "
-            "points at its accounts: otherwise it is refused with the list, and map or add are the way. It "
+            "documents, and only while no record outside the chart (a tax template, mode of payment, "
+            "warehouse, customer account, GST Settings...) points at its accounts: otherwise it is refused with the list, and map or add are the way. It "
             "DELETES the company's accounts and creates the client's through ERPNext's own chart code, as "
             "the user (who needs to be allowed to create and delete accounts), all or nothing, then sets the "
             "company's default accounts again and lists the ones the new chart has no account for. Pass "
