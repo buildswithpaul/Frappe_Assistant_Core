@@ -1,8 +1,9 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
 import { retryTarget } from "./chat/retryTurn";
+import { isPausedTurn } from "@/utils/turnState";
 import { useChatStore } from "./chatStore";
 import { useSpotlightStore } from "./spotlightStore";
 import { useTourStore } from "./tourStore";
@@ -24,10 +25,24 @@ export const usePulseStore = defineStore("pulse", () => {
 	let due = null; // null = not asked yet this page session
 	let consumed = false; // the card has been shown this page session
 
+	let thanksTimer = null;
+
+	function latestAssistant() {
+		const messages = useChatStore().messages;
+		for (let i = messages.length - 1; i >= 0; i--) {
+			if (messages[i]?.role === "assistant") return messages[i];
+		}
+		return null;
+	}
+
+	// Only a finished, quiet turn is a good moment: not streaming, not errored,
+	// not stopped, not waiting on the user's approval or answer.
 	function blocked() {
 		const chat = useChatStore();
 		const tour = useTourStore();
-		if (chat.errorCode || retryTarget(chat.messages)) return true;
+		if (chat.isStreaming || chat.errorCode || retryTarget(chat.messages)) return true;
+		const last = latestAssistant();
+		if (last?.aborted || isPausedTurn(last?.blocks)) return true;
 		return tour.isOpen || tour.coachOpen || !!useSpotlightStore().current;
 	}
 
@@ -46,6 +61,11 @@ export const usePulseStore = defineStore("pulse", () => {
 		if (!due || consumed || blocked()) return;
 		consumed = true;
 		visible.value = true;
+	}
+
+	// Called by the card once it is on screen: only a rendered card starts the
+	// fortnight clock.
+	async function markShown() {
 		try {
 			await api.feedback.markPulseShown();
 		} catch (err) {
@@ -53,8 +73,22 @@ export const usePulseStore = defineStore("pulse", () => {
 		}
 	}
 
-	async function dismiss() {
+	function hide() {
+		clearTimeout(thanksTimer);
+		thanksTimer = null;
 		visible.value = false;
+		thanked.value = false;
+	}
+
+	// An unanswered card belongs to the conversation it appeared in. It was
+	// already marked shown and the page session stays consumed, so no re-ask.
+	watch(
+		() => useChatStore().currentSessionId,
+		() => hide()
+	);
+
+	async function dismiss() {
+		hide();
 		try {
 			await api.feedback.dismissPulse();
 		} catch (err) {
@@ -71,12 +105,10 @@ export const usePulseStore = defineStore("pulse", () => {
 			return false;
 		}
 		thanked.value = true;
-		setTimeout(() => {
-			visible.value = false;
-			thanked.value = false;
-		}, THANKS_MS);
+		clearTimeout(thanksTimer);
+		thanksTimer = setTimeout(hide, THANKS_MS);
 		return true;
 	}
 
-	return { visible, thanked, maybeShow, dismiss, submit };
+	return { visible, thanked, maybeShow, markShown, hide, dismiss, submit };
 });

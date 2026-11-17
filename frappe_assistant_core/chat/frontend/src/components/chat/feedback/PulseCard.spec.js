@@ -31,6 +31,13 @@ describe("PulseCard", () => {
 		expect(w.findAll("[data-rating]")).toHaveLength(5);
 	});
 
+	it("marks shown only once the card is mounted", () => {
+		expect(api.feedback.markPulseShown).not.toHaveBeenCalled();
+		const w = mount(PulseCard);
+		expect(api.feedback.markPulseShown).toHaveBeenCalledTimes(1);
+		w.unmount();
+	});
+
 	it("dismiss calls dismiss_pulse", async () => {
 		const w = mount(PulseCard);
 		await w.find("[data-test=pulse-dismiss]").trigger("click");
