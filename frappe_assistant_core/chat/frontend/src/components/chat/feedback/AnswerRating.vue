@@ -1,5 +1,5 @@
 <template>
-	<div class="answer-rating">
+	<div ref="root" class="answer-rating" @keydown.esc="close">
 		<button
 			type="button"
 			class="action-btn"
@@ -18,7 +18,10 @@
 			type="button"
 			class="action-btn"
 			:class="{ 'is-active': reaction === 'Down' }"
+			ref="downButton"
 			data-test="thumb-down"
+			:aria-expanded="open"
+			:aria-controls="popoverId"
 			:title="__('Bad answer')"
 			:aria-label="__('Bad answer')"
 			:aria-pressed="reaction === 'Down'"
@@ -29,7 +32,7 @@
 			</svg>
 		</button>
 
-		<div v-if="open" class="reasons-popover" data-test="reasons" role="dialog" :aria-label="__('What went wrong?')">
+		<div v-if="open" :id="popoverId" ref="popover" tabindex="-1" class="reasons-popover" data-test="reasons" role="dialog" :aria-label="__('What went wrong?')">
 			<div class="reasons-title">{{ __("What went wrong?") }}</div>
 			<div class="reasons-chips">
 				<button
@@ -61,7 +64,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { useAnswerRatingStore } from "@/stores/answerRatingStore";
 import { __ } from "@/utils/i18n";
 
@@ -79,11 +82,37 @@ const REASONS = [
 ];
 
 const store = useAnswerRatingStore();
+const popoverId = `reasons-${props.messageId}`;
+const root = ref(null);
+const downButton = ref(null);
+const popover = ref(null);
 const open = ref(false);
 const selected = ref([]);
 const comment = ref("");
 
 const reaction = computed(() => store.ratings[props.messageId]?.reaction || null);
+
+function close() {
+	if (!open.value) return;
+	open.value = false;
+	downButton.value?.focus();
+}
+
+function closeOnOutsideClick(event) {
+	if (!root.value?.contains(event.target)) open.value = false;
+}
+
+watch(open, async (isOpen) => {
+	if (isOpen) {
+		document.addEventListener("mousedown", closeOnOutsideClick);
+		await nextTick();
+		popover.value?.focus();
+	} else {
+		document.removeEventListener("mousedown", closeOnOutsideClick);
+	}
+});
+
+onBeforeUnmount(() => document.removeEventListener("mousedown", closeOnOutsideClick));
 
 function onUp() {
 	open.value = false;
@@ -108,7 +137,7 @@ function toggle(key) {
 
 function send() {
 	store.rate(props.messageId, "Down", selected.value, comment.value.trim() || null);
-	open.value = false;
+	close();
 	selected.value = [];
 	comment.value = "";
 }
