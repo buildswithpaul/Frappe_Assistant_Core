@@ -217,7 +217,7 @@ class TestDryRunImport(BaseAssistantTest):
         # "Leave out" could both be ticked; the plan's guidance already said single_select
         description = self.registry.get_tool("dry_run_import").description
 
-        self.assertIn("one single-choice card per group", description)
+        self.assertIn("one single-choice question per decision", description)
         self.assertIn("never multi_select: a group's fixes exclude each other", description)
 
     # -- what a check must not leave behind -------------------------------------------
