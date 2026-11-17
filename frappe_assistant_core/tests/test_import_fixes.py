@@ -151,12 +151,18 @@ class TestImportFixes(BaseAssistantTest):
         doc = self._doc(session)
         import_dry_run.link_site_file(doc, corrected)  # what dry_run_import does before queueing it
 
-        response = self._fix_fails(session, {"group": group["id"], "action": "leave_out", "reason": "x"})
+        with self._large():
+            response = self._fix_fails(session, {"group": group["id"], "action": "leave_out", "reason": "x"})
 
         self.assertIn("Check it first", response["error"])
         self.assertIsNone(self._doc(session).excluded_rows)
 
     UNCHECKED = "Your fixes are already applied but weren't checked yet. Check again without fixes."
+
+    def _large(self):
+        """A file checked in the background: fixes sent before its check are still refused, as the
+        call can't check it first. A smaller one is checked first in the same call."""
+        return patch.object(import_dry_run, "check_cost", return_value=import_dry_run.BACKGROUND_ROWS + 1)
 
     def _leave_out_robot(self, result):
         group = self._group(result, "Not an allowed option")
@@ -171,7 +177,8 @@ class TestImportFixes(BaseAssistantTest):
             self._fix_fails(session, fix)
         self.assertEqual(json.loads(self._doc(session).excluded_rows), [5])  # the fixes stayed
 
-        response = self._fix_fails(session, fix)
+        with self._large():
+            response = self._fix_fails(session, fix)
 
         self.assertEqual(response["error"], self.UNCHECKED)
         # Checked again without fixes, as it says: the check is of the fixes already applied.
@@ -189,7 +196,8 @@ class TestImportFixes(BaseAssistantTest):
         ):
             self.assertEqual(self._fix(session, fix)["state"], "running")
 
-        self.assertEqual(self._fix_fails(session, fix)["error"], self.UNCHECKED)
+        with self._large():
+            self.assertEqual(self._fix_fails(session, fix)["error"], self.UNCHECKED)
 
     def test_a_new_file_after_fixes_whose_check_failed_is_still_a_changed_file(self):
         session, result = self._session()
@@ -210,7 +218,8 @@ class TestImportFixes(BaseAssistantTest):
         ).insert()
         import_dry_run.link_site_file(self._doc(session), other)
 
-        response = self._fix_fails(session, fix)
+        with self._large():
+            response = self._fix_fails(session, fix)
 
         self.assertIn("The file changed since its last check", response["error"])
 
@@ -495,13 +504,36 @@ class TestImportFixes(BaseAssistantTest):
 
     # -- when a fix can't be applied ---------------------------------------------------------
 
-    def test_a_session_not_checked_yet_is_refused(self):
+    def test_a_large_session_not_checked_yet_is_refused(self):
+        session, _result = self._session()
+        self._run("set_column_mapping", {"session": session, "mapping": {"Notes": "Don't Import"}})
+
+        with self._large():
+            response = self._fix_fails(session, {"group": "G1", "action": "leave_out"})
+
+        self.assertIn("Check the file first", response["error"])
+
+    def test_fixes_after_a_mapping_change_are_applied_to_a_check_made_first(self):
+        # Live, 2026-11-17: a column was left out, then the fixes the user had chosen were refused
+        # ("Check the file first"), a round trip and a check each time. Their groups are found
+        # again by the check the call makes first: the same cause and value, the same id.
+        session, result = self._session()
+        fix = self._leave_out_robot(result)
+        self._run("set_column_mapping", {"session": session, "mapping": {"Notes": "Don't Import"}})
+
+        fixed = self._fix(session, fix)
+
+        self.assertNotIn("Not an allowed option", [g["cause"] for g in fixed["groups"]])
+        self.assertEqual(json.loads(self._doc(session).excluded_rows), [5])
+        self.assertTrue(import_fixes.checked_as_is(self._doc(session)))
+
+    def test_a_fix_for_a_group_the_check_made_first_no_longer_finds_is_refused(self):
         session, _result = self._session()
         self._run("set_column_mapping", {"session": session, "mapping": {"Notes": "Don't Import"}})
 
         response = self._fix_fails(session, {"group": "G1", "action": "leave_out"})
 
-        self.assertIn("Check the file first", response["error"])
+        self.assertIn("G1", json.dumps(response))
 
     def test_a_group_from_an_older_check_is_refused(self):
         session, _result = self._session()
