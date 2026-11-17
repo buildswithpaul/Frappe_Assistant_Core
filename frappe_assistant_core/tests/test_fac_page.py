@@ -20,6 +20,7 @@ import glob
 import hashlib
 import json
 import os
+import re
 import textwrap
 from unittest.mock import patch
 
@@ -78,6 +79,22 @@ def _insert_shared_page(published: int = 1, roles: tuple = (), **overrides) -> s
     )
     doc.insert(ignore_permissions=True)
     return doc.name
+
+
+def _inline_styles(html: str) -> dict:
+    """Each div's style attribute by class, without quotes or spaces.
+
+    Frappe's sanitizer has quoted the same declaration as ``url(/files/logo.png)`` and as
+    ``url("/files/logo.png")`` in a single-quoted attribute; the test is about which
+    declarations survive, not how they are quoted.
+    """
+    from bs4 import BeautifulSoup
+
+    styles = {}
+    for div in BeautifulSoup(html, "html.parser").find_all("div"):
+        style = div.get("style")
+        styles[div["class"][0]] = re.sub(r"[\s\"']", "", style) if style is not None else None
+    return styles
 
 
 class TestFACPage(BaseAssistantTest):
@@ -486,9 +503,10 @@ class TestPersonalFACPage(BaseAssistantTest):
         served = get_page(name)["html"]
 
         self.assertNotIn("evil.example", served)
-        self.assertIn('class="mk-a" style="color: red;"', served)
-        self.assertIn('<div class="mk-b">b</div>', served)
-        self.assertIn('style="background: url(/files/logo.png);"', served)
+        styles = _inline_styles(served)
+        self.assertEqual(styles["mk-a"], "color:red;")
+        self.assertIsNone(styles["mk-b"])
+        self.assertEqual(styles["mk-c"], "background:url(/files/logo.png);")
 
     def _served_style(self, user: str, style: str) -> str:
         # Production: the owner's page is edited through FACO's update_document, which saves the doc.
