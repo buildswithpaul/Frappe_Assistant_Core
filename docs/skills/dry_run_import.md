@@ -146,9 +146,9 @@ old IDs and gives one report.
 A `Duplicate in the file` group means only the first row of each name can be imported. Never let it
 pass inside a long list. Say it on its own, in plain words, with the count and two or three examples:
 
-> "322 projects have the same name as an earlier project in the file (for example PMSF_0001_01 is
-> 'ABB India Foundation-Kolar' twice). ERPNext needs each project name to be unique. Should I skip
-> these 322, or will you give them unique names (for example add '-01') and send the file again?"
+> "40 projects have the same name as an earlier project in the file (for example 'Warehouse Fit-out'
+> is both P-0012 and P-0012-01). ERPNext needs each project name to be unique. Should I skip these
+> 40, or will you give them unique names (for example add '-01') and send the file again?"
 
 - **Skip**: `leave_out` with the user's reason. Say in the import's summary how many were skipped
   and why.
