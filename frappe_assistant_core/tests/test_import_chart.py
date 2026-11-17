@@ -236,6 +236,58 @@ class TestReadChart(ChartCase):
 
         self.assertIn("duplicate_number", found)
 
+    # A client's chart made for ERPNext's own Chart of Accounts Importer: a sub-account may repeat its parent's
+    # name under its own number ("Advance Tax" 2290110 under "Advance Tax" 2290100), which ERPNext names
+    # "2290110 - Advance Tax - ABBR", and the Parent Account Number column says which parent is meant.
+    ERPNEXT_HEADER = (
+        "Account Name,Parent Account,Account Number,Parent Account Number,Is Group,Account Type,Root Type"
+    )
+    ERPNEXT_MAPPING = {
+        "Account Name": "account_name",
+        "Parent Account": "parent_account",
+        "Account Number": "account_number",
+        "Parent Account Number": "Don't Import",
+        "Is Group": "is_group",
+        "Account Type": "account_type",
+        "Root Type": "Don't Import",
+    }
+
+    def _erpnext_chart(self, rows):
+        return self._chart(rows, header=self.ERPNEXT_HEADER, mapping=self.ERPNEXT_MAPPING)
+
+    def test_one_name_under_two_numbers_is_two_accounts(self):
+        session = self._erpnext_chart(
+            [
+                "Client Assets,,1000,,1,,Asset",
+                "Advance Tax,Client Assets,1100,1000,1,,Asset",
+                "Advance Tax,Advance Tax,1110,1100,0,,Asset",
+            ]
+        )
+
+        self.assertEqual(self._check(session, root_type_column="Root Type")["problems"], [])
+
+    def test_the_parent_number_picks_the_parent_when_names_repeat(self):
+        # The ledger "Other Income" comes first in the file: by name, Misc Income would go under it
+        session = self._erpnext_chart(
+            [
+                "Client Income,,3000,,1,,Income",
+                "Other Income,Client Income,3100,3000,0,Income Account,Income",
+                "Other Income,Client Income,3200,3000,1,,Income",
+                "Misc Income,Other Income,3210,3200,0,Income Account,Income",
+            ]
+        )
+
+        self.assertEqual(self._check(session, root_type_column="Root Type")["problems"], [])
+        nodes = import_chart.read_chart(frappe.get_doc("FAC Import Session", session), "Root Type")
+        misc = next(n for n in nodes if n["name"] == "Misc Income")
+        self.assertEqual(nodes[misc["parent"]]["number"], "3200")
+
+    def test_one_name_and_one_number_twice_is_still_listed(self):
+        session = self._erpnext_chart(["Rent,,5000,,0,,Expense", "Rent,,5000,,0,,Expense"])
+
+        kinds = {p["kind"] for p in self._check(session, root_type_column="Root Type")["problems"]}
+        self.assertIn("duplicate_number", kinds)
+
     def test_a_clean_chart_has_no_problems(self):
         self.assertEqual(self._check(self._chart())["problems"], [])
 
