@@ -315,12 +315,16 @@ def check_cost(session) -> int:
     chat until the user speaks again. A row of a submittable DocType counts 12 times (its
     controller works out totals, taxes and stock), 18 when it is submitted too, as an opening
     import's always is: 250 and 166 rows, as before plain records were let through."""
-    weight = 1
+    return row_count(session) * row_weight(session)
+
+
+def row_weight(session) -> int:
+    """What one row of the session costs to check, in plain records (check_cost)."""
     if special_engine(session):
-        weight = 18
-    elif session.target_doctype and frappe.get_meta(session.target_doctype).is_submittable:
-        weight = 18 if session.submit_after_import else 12
-    return row_count(session) * weight
+        return 18
+    if session.target_doctype and frappe.get_meta(session.target_doctype).is_submittable:
+        return 18 if session.submit_after_import else 12
+    return 1
 
 
 def row_count(session) -> int:
@@ -418,7 +422,7 @@ def run(session_name: str, commit_progress: bool = False, in_background: bool = 
     session = engine_session(session_name)
     file_doc = readable_session_file(session)
     sheet_rows = read_sheet_rows(file_doc, session.sheet or None)
-    _real_size(len(sheet_rows) - 1, in_background=commit_progress or in_background)
+    _real_size(len(sheet_rows) - 1, row_weight(session), in_background=commit_progress or in_background)
     # What is checked is the session as it is now: a change saved while the check runs (a remap
     # in another request) must not be stamped as checked when the result is stored.
     _checking()[session_name] = fingerprint(session, file_doc)
@@ -1710,14 +1714,15 @@ def held_back():
 # -- storing the result ----------------------------------------------------------------
 
 
-def _real_size(rows: int, in_background: bool) -> None:
+def _real_size(rows: int, weight: int, in_background: bool) -> None:
     """The Max Rows refusal and the choice of a background check read the row count the session
     recorded, whose fields can be written over the REST API: the file's own count is held to them
-    too, so a file swapped in is neither checked past the limit nor inside the web request."""
+    too, so a file swapped in is neither checked past the limit nor inside the web request, its
+    rows weighed as check_cost weighs them."""
     problem = row_limit_problem(rows)
     if problem:
         raise DryRunProblem(problem)
-    if not in_background and rows > BACKGROUND_ROWS:
+    if not in_background and rows * weight > BACKGROUND_ROWS:
         raise DryRunProblem(
             _(
                 "This file has {0} rows, not the number this session recorded, so it isn't checked "
