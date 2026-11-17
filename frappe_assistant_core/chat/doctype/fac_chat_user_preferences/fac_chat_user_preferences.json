@@ -23,6 +23,7 @@
   "load_tools_as_needed",
   "pinned_prompt_templates",
   "selected_model",
+  "feedback_pulse_next",
   "section_break_privacy",
   "privacy_consent_complete",
   "processing_restricted"
@@ -146,6 +147,14 @@
    "hidden": 1,
    "label": "Selected Model",
    "length": 140
+  },
+  {
+   "description": "The earliest date the satisfaction pulse card may show again: set when it is shown or dismissed.",
+   "fieldname": "feedback_pulse_next",
+   "fieldtype": "Date",
+   "hidden": 1,
+   "label": "Next Feedback Pulse",
+   "no_copy": 1
   },
   {
    "fieldname": "section_break_privacy",
