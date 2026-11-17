@@ -114,6 +114,58 @@ Explain each group with its `explanation`, offer only its `fixes`, then call `dr
 
 Any other problem (a bad date, a duplicate, a rule ERPNext enforces) is corrected in the file: tell the user which rows and what to change, then start again with the new file. The group says so with `"fix_in_file": true`.
 
+### Many rows need customers or suppliers that aren't in ERPNext yet
+
+A file of projects, orders or invoices often names its customers or suppliers only inside its rows.
+Don't list them one by one, and don't stop at `map` or `leave_out`.
+
+- **They are in `masters_plan`** (Selling or Buying Settings name a new one by its name): create
+  them with the other missing masters, in the one table and one approval of `masters_plan`, even when
+  the file also has a column of their codes. If an entry has `choose`, ask once which group (or
+  territory) for all of them, with your other questions. Never ask the user to upload a separate
+  customer file for them.
+- **They carry `cannot_create`** (Settings name them by a series) and there are more than a few:
+  take them in a second session on the same file. Before asking the user anything:
+
+1. **Check the whole file, not the groups shown.** Open a second session on the same file and sheet
+   (`start_import_session` with the same file and `sheet`) for Customer or Supplier. Map the party's
+   name column, and its code column as the old ID when the file has one. Run `dry_run_import` on it.
+   - Rows that repeat an earlier party come back as `Duplicate in the file`: leave them out, they are
+     the same party again.
+   - Parties already in ERPNext come back as `Already in ERPNext`: leave them out too. The first file
+     links to them as they are.
+   - What is left is the parties to create.
+2. **Ask once.** One message: "Your file links to N customers: X are already in ERPNext and will be
+   linked as they are, Y are new. Create the Y new ones?" In the same message, ask for anything the new
+   ones need that the file doesn't give, such as a Customer Group, and give it with the group's
+   `fill`. **Never change a Selling or Buying Settings default for an import:** it changes every
+   customer or supplier made afterwards, not just these.
+3. **Import that session, then go back to the first file:** check it again and carry on. Don't ask
+   about the parties again.
+
+Never create the parties one by one with `create_document` for this: the second session keeps their
+old IDs and gives one report.
+
+### Rows that repeat a name
+
+A `Duplicate in the file` group means only the first row of each name can be imported. Never let it
+pass inside a long list. Say it on its own, in plain words, with the count and two or three examples:
+
+> "40 projects have the same name as an earlier project in the file (for example 'Warehouse Fit-out'
+> is both P-0012 and P-0012-01). ERPNext needs each project name to be unique. Should I skip these
+> 40, or will you give them unique names (for example add '-01') and send the file again?"
+
+- **Skip**: `leave_out` with the user's reason. Say in the import's summary how many were skipped
+  and why.
+- **Unique names**: the user corrects the file. Check it in the **same session**: `dry_run_import`
+  with the new file's `file_id` (see **The corrected file**), never a new session. The mapping and
+  the fixes already made are kept.
+
+When the repeated rows are sub-records of the first (a code such as `_01` after the parent's), say so:
+the user may want them under unique names rather than skipped.
+
+### Each fix
+
 Each fix:
 
 | Key | Description |
