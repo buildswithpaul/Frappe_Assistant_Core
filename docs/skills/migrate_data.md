@@ -81,6 +81,13 @@ the normal way, in the same call.
 Steps 3 to 5 repeat until nothing fails: explain each group in its own words, offer only its
 `fixes`, apply the user's choices in one call, and give the new count.
 
+**The company the user names is the company.** When the request names it ("import these projects
+into Acme Traders"), every record goes to that company: don't ask again, and never let a column of
+the file override it. A file's own company column (often called Legal entity or Entity) usually
+holds the old system's code for it, such as "ACME": map that column to Company in step 2, then, in
+the first check's fixes, `map` its value to the company the user named, without asking. With no
+such column, `fill` Company with it.
+
 **Opening balances use their own setup tool in step 2** instead of `set_column_mapping`. They also
 have their own import tool in step 6 instead of `start_import`:
 
