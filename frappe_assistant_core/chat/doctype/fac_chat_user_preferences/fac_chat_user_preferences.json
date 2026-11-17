@@ -24,6 +24,8 @@
   "pinned_prompt_templates",
   "selected_model",
   "feedback_pulse_next",
+  "feedback_pulse_shown",
+  "feedback_pulse_submitted",
   "section_break_privacy",
   "privacy_consent_complete",
   "processing_restricted"
@@ -154,7 +156,26 @@
    "fieldtype": "Date",
    "hidden": 1,
    "label": "Next Feedback Pulse",
-   "no_copy": 1
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "The day the satisfaction pulse card was last shown: it opens a one-answer window.",
+   "fieldname": "feedback_pulse_shown",
+   "fieldtype": "Date",
+   "hidden": 1,
+   "label": "Feedback Pulse Shown",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "The date the user last sent the satisfaction pulse: one submission per shown card.",
+   "fieldname": "feedback_pulse_submitted",
+   "fieldtype": "Date",
+   "hidden": 1,
+   "label": "Feedback Pulse Submitted",
+   "no_copy": 1,
+   "read_only": 1
   },
   {
    "fieldname": "section_break_privacy",
@@ -181,7 +202,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-16 20:00:00.000000",
+ "modified": "2026-11-17 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Chat",
  "name": "FAC Chat User Preferences",

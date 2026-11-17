@@ -54,6 +54,7 @@ MAX_RATING_LOOKUP = 100
 PULSE_MIN_USER_MESSAGES = 5
 PULSE_SHOWN_COOLDOWN_DAYS = 14
 PULSE_DISMISSED_COOLDOWN_DAYS = 30
+PULSE_SUBMIT_SAVEPOINT = "fac_pulse_submit"
 
 MAX_TRANSCRIPT_BYTES = 200 * 1024
 MAX_TRANSCRIPT_MESSAGES = 200
@@ -523,11 +524,25 @@ def submit_pulse(rating: int, comment: str | None = None, contact_ok: bool = Fal
 
     Refused until the user has sent enough messages to have been shown the card: AR's
     submit_feedback budget is shared by the whole tenant, so an open endpoint would let one
-    user starve everyone's Form feedback.
+    user starve everyone's Form feedback. Each shown card takes one answer.
     """
     _assert_chat_access()
-    if _user_message_count(frappe.session.user) < PULSE_MIN_USER_MESSAGES:
+    user = frappe.session.user
+    if _user_message_count(user) < PULSE_MIN_USER_MESSAGES:
         frappe.throw(_("The feedback pulse isn't available yet."), frappe.PermissionError)
+    # Locks the row so two concurrent sends for one card cannot both pass the check.
+    prefs = frappe.db.get_value(
+        PREFERENCES_DOCTYPE,
+        user,
+        ["feedback_pulse_shown", "feedback_pulse_submitted"],
+        as_dict=True,
+        for_update=True,
+    )
+    if not _pulse_card_open(prefs):
+        frappe.throw(_("You've already rated FACO this time. Thank you!"), frappe.ValidationError)
+
+    frappe.db.savepoint(PULSE_SUBMIT_SAVEPOINT)
+    frappe.db.set_value(PREFERENCES_DOCTYPE, user, "feedback_pulse_submitted", today(), update_modified=False)
     client = _get_client()
     try:
         return client.submit_feedback(
@@ -538,42 +553,68 @@ def submit_pulse(rating: int, comment: str | None = None, contact_ok: bool = Fal
             contact_ok=bool(cint(contact_ok)),
         )
     except Exception as e:
+        # A failed send must not use up the card.
+        frappe.db.rollback(save_point=PULSE_SUBMIT_SAVEPOINT)
         frappe.log_error(title="Support submit_pulse failed", message=str(e))
         frappe.throw(_("Couldn't save your rating. Please try again."))
+
+
+def _pulse_card_open(prefs: dict | None) -> bool:
+    """A card was shown (mark_pulse_shown stamps the day) and nothing was sent since that day."""
+    if not prefs or not prefs.feedback_pulse_shown:
+        return False
+    submitted = prefs.feedback_pulse_submitted
+    return not submitted or getdate(submitted) < getdate(prefs.feedback_pulse_shown)
 
 
 @frappe.whitelist(methods=["GET"])
 def pulse_state() -> dict:
     """Whether the pulse card is due: the next-pulse date has come and the user has sent enough."""
     _assert_chat_access()
-    user = frappe.session.user
+    return {"due": _pulse_due(frappe.session.user)}
+
+
+def _pulse_due(user: str) -> bool:
     next_date = frappe.db.get_value(PREFERENCES_DOCTYPE, user, "feedback_pulse_next")
     if next_date and getdate(next_date) > getdate(today()):
-        return {"due": False}
-    return {"due": _user_message_count(user) >= PULSE_MIN_USER_MESSAGES}
+        return False
+    return _user_message_count(user) >= PULSE_MIN_USER_MESSAGES
 
 
 def _user_message_count(user: str) -> int:
     return frappe.db.count("FAC Chat Message", {"user": user, "role": "user"})
 
 
-def _postpone_pulse(days: int) -> dict:
-    _assert_chat_access()
-    user = frappe.session.user
+def _set_pulse_dates(user: str, values: dict) -> None:
+    # db.set_value skips the controller, whose validate keeps these dates out of user saves.
     FACChatUserPreferences.get_or_create_preferences(user)
-    frappe.db.set_value(
-        PREFERENCES_DOCTYPE, user, "feedback_pulse_next", add_days(today(), days), update_modified=False
-    )
-    return {"ok": True}
+    frappe.db.set_value(PREFERENCES_DOCTYPE, user, values, update_modified=False)
 
 
 @frappe.whitelist(methods=["POST"])
 def mark_pulse_shown() -> dict:
-    """The pulse card was shown: ask again in two weeks."""
-    return _postpone_pulse(PULSE_SHOWN_COOLDOWN_DAYS)
+    """The pulse card was shown: open its one-answer window and ask again in two weeks.
+
+    Only a due card opens a window, so calling this at will cannot buy extra answers.
+    """
+    _assert_chat_access()
+    user = frappe.session.user
+    if _pulse_due(user):
+        _set_pulse_dates(
+            user,
+            {
+                "feedback_pulse_shown": today(),
+                "feedback_pulse_next": add_days(today(), PULSE_SHOWN_COOLDOWN_DAYS),
+            },
+        )
+    return {"ok": True}
 
 
 @frappe.whitelist(methods=["POST"])
 def dismiss_pulse() -> dict:
     """The user dismissed the pulse card: leave them alone for a month."""
-    return _postpone_pulse(PULSE_DISMISSED_COOLDOWN_DAYS)
+    _assert_chat_access()
+    _set_pulse_dates(
+        frappe.session.user, {"feedback_pulse_next": add_days(today(), PULSE_DISMISSED_COOLDOWN_DAYS)}
+    )
+    return {"ok": True}
