@@ -31,8 +31,8 @@ finds its accounts by the client's names and numbers.
    - **add**: `import_chart_of_accounts(mode="add")`. The accounts are created under the right parents,
      parents first. One the company has already is kept.
    - **replace**: tell the user it **deletes** the company's accounts and creates the client's, and how many
-     of each (`replace_chart_of_accounts` without the figures gives them). Pass `accounts_removed` and
-     `accounts_created` exactly. It is refused, with the list, while any record outside the chart points
+     of each: the check gives them in `modes.replace_figures`. Pass `accounts_removed` and
+     `accounts_created` exactly, on the first call, so the user approves one card that shows them. It is refused, with the list, while any record outside the chart points
      at the company's accounts (a tax template, a mode of payment, a warehouse, a customer's account, GST
      Settings): the user removes those, or picks add.
      A mode of payment on the company's default cash account is not refused: ERPNext sets one up for every

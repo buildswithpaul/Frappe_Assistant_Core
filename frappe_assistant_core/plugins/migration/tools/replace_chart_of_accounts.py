@@ -37,8 +37,9 @@ class ReplaceChartOfAccounts(BaseTool):
             "DELETES the company's accounts and creates the client's through ERPNext's own chart code, as "
             "the user (who needs to be allowed to create and delete accounts), all or nothing, then sets the "
             "company's default accounts again and lists the ones the new chart has no account for. Pass "
-            "accounts_removed and accounts_created as the check shows them, so the approval card shows the "
-            "user how many accounts go and come; a call without them is refused with the figures. The "
+            "accounts_removed and accounts_created as the check shows them (modes.replace_figures of "
+            "dry_run_import with chart), so the one approval card shows the user how many accounts go and "
+            "come; a call without them is refused with the figures. The "
             "client's account names and numbers are kept as old IDs."
         )
         self.requires_permission = None  # the session, and Account create and delete, are checked
