@@ -16,6 +16,7 @@ vi.mock("@/api/client", () => ({
 }));
 
 import { api } from "@/api/client";
+import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
 import ChatInterface from "./ChatInterface.vue";
 import PulseCard from "./feedback/PulseCard.vue";
@@ -38,8 +39,9 @@ describe("ChatInterface pulse", () => {
 		expect(api.feedback.markPulseShown).toHaveBeenCalledTimes(1);
 	});
 
-	it("does not start the clock when the interface unmounts during the await", async () => {
-		const stubs = { MessageBubble: true, DocumentPreviewPanel: true };
+	const stubs = { MessageBubble: true, DocumentPreviewPanel: true };
+
+	async function unmountDuringAwait() {
 		let release;
 		api.feedback.pulseState.mockReturnValueOnce(new Promise((r) => (release = r)));
 		const w = mount(ChatInterface, { props: { messages: [], isStreaming: true }, global: { stubs } });
@@ -47,8 +49,39 @@ describe("ChatInterface pulse", () => {
 		// production: New Chat / session switch unmounts the list while the fetch is in flight.
 		w.unmount();
 		release({ due: true });
+		await vi.waitFor(() => expect(api.feedback.pulseState).toHaveBeenCalled());
 		await nextTick();
 		await nextTick();
+	}
+
+	it("does not start the clock when the interface unmounts during the await", async () => {
+		await unmountDuringAwait();
 		expect(api.feedback.markPulseShown).not.toHaveBeenCalled();
+	});
+
+	it("a later mount, quiet or mid-stream, never resurrects a card that was not shown", async () => {
+		await unmountDuringAwait();
+		const quiet = mount(ChatInterface, { props: { messages: [], isStreaming: false }, global: { stubs } });
+		await nextTick();
+		expect(quiet.findComponent(PulseCard).exists()).toBe(false);
+		quiet.unmount();
+		const streaming = mount(ChatInterface, { props: { messages: [], isStreaming: true }, global: { stubs } });
+		useChatStore().isStreaming = true;
+		await nextTick();
+		expect(streaming.findComponent(PulseCard).exists()).toBe(false);
+		expect(api.feedback.markPulseShown).not.toHaveBeenCalled();
+		expect(api.feedback.pulseState).toHaveBeenCalledTimes(1);
+	});
+
+	it("a rendered card survives a remount without a second mark", async () => {
+		const w = mount(ChatInterface, { props: { messages: [], isStreaming: true }, global: { stubs } });
+		await w.setProps({ isStreaming: false });
+		await vi.waitFor(() => expect(w.findComponent(PulseCard).exists()).toBe(true));
+		w.unmount();
+		// production: ChatStagePicker / WidgetPanel swap ChatInterface on messages.length.
+		const again = mount(ChatInterface, { props: { messages: [], isStreaming: false }, global: { stubs } });
+		await nextTick();
+		expect(again.findComponent(PulseCard).exists()).toBe(true);
+		expect(api.feedback.markPulseShown).toHaveBeenCalledTimes(1);
 	});
 });

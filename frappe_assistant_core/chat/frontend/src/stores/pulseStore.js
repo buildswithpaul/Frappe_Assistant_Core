@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { api } from "@/api/client";
 import { logger } from "@/utils/logger";
 import { retryTarget } from "./chat/retryTurn";
@@ -26,6 +26,8 @@ export const usePulseStore = defineStore("pulse", () => {
 	let consumed = false; // the card has been shown this page session
 
 	let thanksTimer = null;
+	let marked = false; // this card has started the fortnight clock
+	let hosts = 0; // mounted ChatInterfaces that can render the card
 
 	function latestAssistant() {
 		const messages = useChatStore().messages;
@@ -37,7 +39,7 @@ export const usePulseStore = defineStore("pulse", () => {
 
 	// Only a finished, quiet turn is a good moment: not streaming, not errored,
 	// not stopped, not waiting on the user's approval or answer.
-	function blocked() {
+	function isBlocked() {
 		const chat = useChatStore();
 		const tour = useTourStore();
 		if (chat.isStreaming || chat.errorCode || retryTarget(chat.messages)) return true;
@@ -46,9 +48,24 @@ export const usePulseStore = defineStore("pulse", () => {
 		return tour.isOpen || tour.coachOpen || !!useSpotlightStore().current;
 	}
 
+	// Templates render the card only on a quiet turn, so a remount mid-stream
+	// never shows it.
+	const blocked = computed(isBlocked);
+
+	// A host that goes away before the card rendered takes the card with it:
+	// nothing was shown, so nothing is marked, and the page session stays spent.
+	function attach() {
+		hosts += 1;
+	}
+
+	function detach() {
+		hosts = Math.max(0, hosts - 1);
+		if (hosts === 0 && visible.value && !marked) visible.value = false;
+	}
+
 	async function maybeShow() {
 		if (consumed || visible.value) return;
-		if (useUserStore().capabilities?.feedback_v2 !== true || blocked()) return;
+		if (useUserStore().capabilities?.feedback_v2 !== true || isBlocked()) return;
 		if (due === null) {
 			try {
 				due = (await api.feedback.pulseState())?.due === true;
@@ -58,14 +75,17 @@ export const usePulseStore = defineStore("pulse", () => {
 			}
 		}
 		// The world can change during the await: re-check before showing.
-		if (!due || consumed || blocked()) return;
+		if (!due || consumed || isBlocked()) return;
 		consumed = true;
+		if (hosts === 0) return;
 		visible.value = true;
 	}
 
 	// Called by the card once it is on screen: only a rendered card starts the
 	// fortnight clock.
 	async function markShown() {
+		if (marked) return;
+		marked = true;
 		try {
 			await api.feedback.markPulseShown();
 		} catch (err) {
@@ -78,6 +98,7 @@ export const usePulseStore = defineStore("pulse", () => {
 		thanksTimer = null;
 		visible.value = false;
 		thanked.value = false;
+		marked = false;
 	}
 
 	// An unanswered card belongs to the conversation it appeared in. It was
@@ -110,5 +131,5 @@ export const usePulseStore = defineStore("pulse", () => {
 		return true;
 	}
 
-	return { visible, thanked, maybeShow, markShown, hide, dismiss, submit };
+	return { visible, thanked, blocked, attach, detach, maybeShow, markShown, hide, dismiss, submit };
 });

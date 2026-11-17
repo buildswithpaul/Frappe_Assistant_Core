@@ -38,6 +38,12 @@ describe("PulseCard", () => {
 		w.unmount();
 	});
 
+	it("remounting while visible marks shown only once", () => {
+		mount(PulseCard).unmount();
+		mount(PulseCard).unmount();
+		expect(api.feedback.markPulseShown).toHaveBeenCalledTimes(1);
+	});
+
 	it("dismiss calls dismiss_pulse", async () => {
 		const w = mount(PulseCard);
 		await w.find("[data-test=pulse-dismiss]").trigger("click");
