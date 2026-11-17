@@ -28,6 +28,7 @@ from ..doctype.fac_chat_user_preferences.fac_chat_user_preferences import FACCha
 from ._attachment_validation import is_ticket_image, validate_ticket_attachment
 from ._rate_limits import rate_limit, session_user_or_ip
 from .auth import _ar_user_id
+from .connections import _assert_chat_access
 
 
 def _get_client():
@@ -452,6 +453,7 @@ def rate_answer(
     Returns {feedback_id} (+ locked: True once support has picked it up). Only the message id,
     reason keys and the comment leave FAC; the conversation text never does.
     """
+    _assert_chat_access()
     _require_own_answer(message_id)
     client = _get_client()
     try:
@@ -471,6 +473,7 @@ def rate_answer(
 @rate_limit(session_user_or_ip, limit=30, seconds=60)
 def withdraw_answer_rating(message_id: str) -> dict:
     """Withdraw the caller's reaction to one assistant answer. Returns {withdrawn: bool}."""
+    _assert_chat_access()
     _require_own_answer(message_id)
     client = _get_client()
     try:
@@ -488,6 +491,7 @@ def answer_ratings(session_id: str) -> dict:
     Asks AR only about the caller's own assistant messages in that session (the 100 most
     recent), so a crafted session_id yields nothing.
     """
+    _assert_chat_access()
     message_ids = frappe.get_all(
         "FAC Chat Message",
         filters={
@@ -507,13 +511,23 @@ def answer_ratings(session_id: str) -> dict:
     try:
         return client.get_answer_ratings(user_id=_ar_user(), message_ids=message_ids) or {}
     except Exception as e:
+        # Called on every session open: an AR outage should show no thumbs, not an error.
         frappe.log_error(title="Support answer_ratings failed", message=str(e))
-        frappe.throw(_("Couldn't load your ratings. Please try again."))
+        return {}
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(session_user_or_ip, limit=5, seconds=3600)
 def submit_pulse(rating: int, comment: str | None = None, contact_ok: bool = False) -> dict:
-    """Submit the periodic satisfaction pulse (1-5) for the current user. Returns {feedback_id}."""
+    """Submit the periodic satisfaction pulse (1-5) for the current user. Returns {feedback_id}.
+
+    Refused until the user has sent enough messages to have been shown the card: AR's
+    submit_feedback budget is shared by the whole tenant, so an open endpoint would let one
+    user starve everyone's Form feedback.
+    """
+    _assert_chat_access()
+    if _user_message_count(frappe.session.user) < PULSE_MIN_USER_MESSAGES:
+        frappe.throw(_("The feedback pulse isn't available yet."), frappe.PermissionError)
     client = _get_client()
     try:
         return client.submit_feedback(
@@ -531,15 +545,20 @@ def submit_pulse(rating: int, comment: str | None = None, contact_ok: bool = Fal
 @frappe.whitelist(methods=["GET"])
 def pulse_state() -> dict:
     """Whether the pulse card is due: the next-pulse date has come and the user has sent enough."""
+    _assert_chat_access()
     user = frappe.session.user
     next_date = frappe.db.get_value(PREFERENCES_DOCTYPE, user, "feedback_pulse_next")
     if next_date and getdate(next_date) > getdate(today()):
         return {"due": False}
-    sent = frappe.db.count("FAC Chat Message", {"user": user, "role": "user"})
-    return {"due": sent >= PULSE_MIN_USER_MESSAGES}
+    return {"due": _user_message_count(user) >= PULSE_MIN_USER_MESSAGES}
+
+
+def _user_message_count(user: str) -> int:
+    return frappe.db.count("FAC Chat Message", {"user": user, "role": "user"})
 
 
 def _postpone_pulse(days: int) -> dict:
+    _assert_chat_access()
     user = frappe.session.user
     FACChatUserPreferences.get_or_create_preferences(user)
     frappe.db.set_value(
