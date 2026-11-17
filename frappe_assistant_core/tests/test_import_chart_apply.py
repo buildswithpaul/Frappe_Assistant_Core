@@ -401,16 +401,50 @@ class TestImportChart(ChartCase):
         self.assertIn("map or add instead", refused["error"])
         self.assertEqual(frappe.db.count("Account", {"company": self.company}), before)
 
+    def test_replace_on_a_company_as_erpnext_made_it(self):
+        # ERPNext gives every new company a row on a Cash mode of payment for its default cash account
+        # (Company.set_mode_of_payment_account): a fresh company always has it, so it can't block a replace.
+        old_cash = frappe.db.get_value("Company", self.company, "default_cash_account")
+        modes = frappe.get_all(
+            "Mode of Payment Account",
+            filters={"company": self.company, "default_account": old_cash},
+            pluck="parent",
+        )
+        self.assertTrue(modes)
+        self._clear_references(modes_of_payment=False)
+
+        done = self._replace(self._chart(), clear=False)
+
+        self.assertTrue(done["success"], done)
+        # the modes of payment follow the cash account to the new chart, never left on a deleted account
+        new_cash = frappe.db.get_value("Company", self.company, "default_cash_account")
+        linked = frappe.get_all(
+            "Mode of Payment Account",
+            filters={"company": self.company, "parent": ["in", modes]},
+            pluck="default_account",
+        )
+        self.assertEqual(linked, [new_cash] * len(modes) if new_cash else [])
+        self.assertEqual(done["result"]["cash_mode_of_payment_account"], new_cash)
+        for account in linked:
+            self.assertEqual(frappe.db.get_value("Account", account, "company"), self.company)
+
     def test_replace_is_refused_while_a_mode_of_payment_points_at_an_account(self):
+        # A row on any account but the default cash one is the user's setup: where it goes is their call.
         self._clear_references()
         account = frappe.db.get_value(
-            "Account", {"company": self.company, "account_type": "Cash", "is_group": 0}
+            "Account",
+            {
+                "company": self.company,
+                "is_group": 0,
+                "root_type": "Asset",
+                "name": ["!=", frappe.db.get_value("Company", self.company, "default_cash_account")],
+            },
         )
         frappe.get_doc(
             {
                 "doctype": "Mode of Payment",
                 "mode_of_payment": f"Till {self.tag}",
-                "type": "Cash",
+                "type": "Bank",
                 "accounts": [{"company": self.company, "default_account": account}],
             }
         ).insert()

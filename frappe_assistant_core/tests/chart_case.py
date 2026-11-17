@@ -85,10 +85,10 @@ class ChartCase(ImportRunCase):
             as_dict=True,
         )
 
-    def _clear_references(self):
+    def _clear_references(self, modes_of_payment=True):
         """What the company's own setup puts outside the chart that points at its accounts (tax templates,
         item tax templates, the modes of payment's cash account), removed: a replace is refused while they
-        are there."""
+        are there. ``modes_of_payment=False`` keeps the Cash row ERPNext adds to every new company."""
         for doctype in (
             "Sales Taxes and Charges Template",
             "Purchase Taxes and Charges Template",
@@ -96,7 +96,8 @@ class ChartCase(ImportRunCase):
         ):
             for name in frappe.get_all(doctype, filters={"company": self.company}, pluck="name"):
                 frappe.delete_doc(doctype, name, force=True)
-        frappe.db.delete("Mode of Payment Account", {"company": self.company})
+        if modes_of_payment:
+            frappe.db.delete("Mode of Payment Account", {"company": self.company})
 
     def _make_a_ledger_entry(self):
         """A submitted journal entry between a cash and an equity account of the company."""

@@ -42,7 +42,13 @@ class ReplaceChartOfAccounts(BaseTool):
             "client's account names and numbers are kept as old IDs."
         )
         self.requires_permission = None  # the session, and Account create and delete, are checked
-        self.untrusted_fields = ("defaults_left_empty", "message", "error", "source_system")
+        self.untrusted_fields = (
+            "defaults_left_empty",
+            "message",
+            "error",
+            "source_system",
+            "cash_mode_of_payment_account",  # an account named by the client's chart
+        )
         self.inputSchema = {
             "type": "object",
             "properties": {
