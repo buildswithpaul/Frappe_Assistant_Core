@@ -30,7 +30,7 @@
 			/>
 		</template>
 
-		<PulseCard v-if="pulse.visible" />
+		<PulseCard v-if="pulse.visible && !pulse.blocked" />
 
 		<!-- Document Preview: opens when user clicks a citation pill's "Open
          document" link or a source card's Open button. DocumentPreviewPanel
@@ -42,7 +42,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, onBeforeUnmount } from "vue";
 import MessageBubble from "./MessageBubble.vue";
 import DocumentPreviewPanel from "@/components/knowledge/DocumentPreviewPanel.vue";
 import PulseCard from "./feedback/PulseCard.vue";
@@ -79,6 +79,8 @@ defineEmits([
 ]);
 
 const pulse = usePulseStore();
+pulse.attach();
+onBeforeUnmount(() => pulse.detach());
 
 // A turn finished when the stream stops; the store decides whether to ask.
 watch(

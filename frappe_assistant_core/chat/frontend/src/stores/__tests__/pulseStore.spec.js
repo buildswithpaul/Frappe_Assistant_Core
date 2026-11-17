@@ -29,6 +29,8 @@ describe("pulseStore", () => {
 		// production: the capabilities endpoint passes through AR's feedback_v2 block.
 		useUserStore().capabilities = { feedback_v2: true };
 		store = usePulseStore();
+		// production: ChatInterface attaches on mount, which is what triggers maybeShow.
+		store.attach();
 	});
 
 	it("no pulse without feedback_v2", async () => {
