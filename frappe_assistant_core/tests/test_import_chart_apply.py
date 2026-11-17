@@ -523,6 +523,40 @@ class TestImportChart(ChartCase):
         self.assertFalse(refused["success"])
         self.assertTrue(frappe.db.count("Account", {"company": self.company}) > 13)
 
+    def test_who_may_not_delete_accounts_is_not_told_what_points_at_them(self):
+        # the company's own tax templates point at its accounts, as ERPNext sets them up for a new company
+        user = self.make_desk_user("nodelete")
+        frappe.set_user(user)
+
+        problem = import_chart.replace_problem(self.company)
+
+        self.assertIn("Accounts Manager", problem)
+        self.assertNotIn("tax template", problem)
+
+    def test_a_draft_documents_tax_row_on_an_account_blocks_a_replace(self):
+        # A draft quotation's tax row, as the Quotation form saves it: the same child table as a tax
+        # template's, under another parent, which the tax template check doesn't look at.
+        self._clear_references()
+        account = frappe.get_all(
+            "Account", filters={"company": self.company, "is_group": 0}, pluck="name", limit=1
+        )[0]
+        row = frappe.get_doc(
+            {
+                "doctype": "Sales Taxes and Charges",
+                "parenttype": "Quotation",
+                "parentfield": "taxes",
+                "parent": f"SAL-QTN-{self.tag}",
+                "charge_type": "Actual",
+                "account_head": account,
+                "description": "Freight",
+            }
+        )
+        row.db_insert()
+
+        refs = import_chart.blocking_references(self.company)
+
+        self.assertTrue(any(f"SAL-QTN-{self.tag}" in ref or "Quotation" in ref for ref in refs), refs)
+
     def test_replace_is_refused_while_any_record_points_at_an_account_and_says_which(self):
         # A user sets a warehouse's account in the form; ERPNext refuses to delete an account any record links
         # to, so the replace names it before deleting anything, whatever the doctype, not a listed few.
