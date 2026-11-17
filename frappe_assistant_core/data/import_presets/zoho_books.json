@@ -111,7 +111,8 @@
     "signature": {
       "min_optional": 1,
       "required": [["Account Name"], ["Account Type"]],
-      "optional": [["Account Code"], ["Account ID"], ["Parent Account"], ["Account Status"], ["Description"], ["Currency"]]
+      "optional": [["Account Code"], ["Account ID"], ["Parent Account"], ["Account Status"], ["Description"], ["Currency"]],
+      "absent": [["Parent Account Number"]]
     },
     "columns": {
       "Account": {"from": ["Account Name"]},
