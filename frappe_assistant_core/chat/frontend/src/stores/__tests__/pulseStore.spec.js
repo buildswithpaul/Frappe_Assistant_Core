@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { nextTick } from "vue";
 import { setActivePinia, createPinia } from "pinia";
 
 vi.mock("@/api/client", () => ({
@@ -73,13 +74,11 @@ describe("pulseStore", () => {
 	it("shows once per page session, marks shown, and asks the server once", async () => {
 		await store.maybeShow();
 		expect(store.visible).toBe(true);
-		expect(api.feedback.markPulseShown).toHaveBeenCalledTimes(1);
 		store.visible = false;
 		await store.maybeShow();
 		await store.maybeShow();
 		expect(store.visible).toBe(false);
 		expect(api.feedback.pulseState).toHaveBeenCalledTimes(1);
-		expect(api.feedback.markPulseShown).toHaveBeenCalledTimes(1);
 	});
 
 	it("a not-due answer is cached for the page session", async () => {
@@ -97,10 +96,64 @@ describe("pulseStore", () => {
 		expect(store.visible).toBe(true);
 	});
 
-	it("a failed mark-shown is ignored", async () => {
+	it("maybeShow alone does not start the clock; markShown does, and its failure is ignored", async () => {
+		await store.maybeShow();
+		expect(api.feedback.markPulseShown).not.toHaveBeenCalled();
 		api.feedback.markPulseShown.mockRejectedValue(new Error("boom"));
+		await expect(store.markShown()).resolves.toBeUndefined();
+		expect(api.feedback.markPulseShown).toHaveBeenCalledTimes(1);
+	});
+
+	it("a stream that starts during the pulse_state await means no card", async () => {
+		const chat = useChatStore();
+		let release;
+		api.feedback.pulseState.mockReturnValue(new Promise((r) => (release = r)));
+		const pending = store.maybeShow();
+		// production: a queued or fast-sent message starts a stream while the fetch is in flight.
+		chat.isStreaming = true;
+		release({ due: true });
+		await pending;
+		expect(store.visible).toBe(false);
+		expect(api.feedback.markPulseShown).not.toHaveBeenCalled();
+	});
+
+	it("no pulse after a stopped turn", async () => {
+		// production: handleStreamAborted sets aborted on the live assistant message.
+		useChatStore().messages = [{ role: "assistant", aborted: true, blocks: [] }];
+		await store.maybeShow();
+		expect(store.visible).toBe(false);
+	});
+
+	it("no pulse while an approval is pending", async () => {
+		// production: an interrupt event appends an interaction block with status pending.
+		useChatStore().messages = [
+			{ role: "assistant", blocks: [{ type: "interaction", status: "pending", interactionType: "approval" }] },
+		];
+		await store.maybeShow();
+		expect(store.visible).toBe(false);
+	});
+
+	it("an unanswered card is hidden on a session switch, without dismissing, and not re-asked", async () => {
+		const chat = useChatStore();
 		await store.maybeShow();
 		expect(store.visible).toBe(true);
+		// production: opening another conversation or New Chat changes currentSessionId.
+		chat.currentSessionId = "other-session";
+		await nextTick();
+		expect(store.visible).toBe(false);
+		expect(api.feedback.dismissPulse).not.toHaveBeenCalled();
+		await store.maybeShow();
+		expect(store.visible).toBe(false);
+	});
+
+	it("dismiss clears the thanks timer", async () => {
+		vi.useFakeTimers();
+		api.feedback.submitPulse.mockResolvedValue({});
+		await store.maybeShow();
+		await store.submit({ rating: 5 });
+		await store.dismiss();
+		expect(vi.getTimerCount()).toBe(0);
+		vi.useRealTimers();
 	});
 
 	it("dismiss hides and calls dismiss_pulse, ignoring failure", async () => {
