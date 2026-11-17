@@ -758,8 +758,9 @@ def import_target_problem(doctype: str, import_type: str = "Insert New Records")
     if not frappe.has_permission(doctype, "import"):
         problem = _(
             "You can create {0} records but don't have Import permission on {0}. "
-            "A System Manager can grant it in Role Permissions Manager."
-        ).format(doctype)
+            "A System Manager can grant it in Role Permissions Manager: choose Document Type {0}, then "
+            "tick Import for {1}."
+        ).format(doctype, _roles_that_create(doctype) or _("your role"))
         opening = OPENING_TOOLS.get(doctype)
         if opening and import_type != "Update Existing Records":
             # No ERPNext role has Import on Sales Invoice by default (QA 2026-11-04 #3): opening
@@ -770,6 +771,19 @@ def import_target_problem(doctype: str, import_type: str = "Insert New Records")
             ).format(_(opening[1]), opening[0])
         return problem
     return None
+
+
+def _roles_that_create(doctype: str) -> str:
+    """The user's roles that may create ``doctype``, as Role Permissions Manager lists them: the row to tick
+    Import on. ERPNext ships some DocTypes (Project, Sales Invoice) with Import off for every role."""
+    # Frappe reads a DocType's Custom DocPerm rows instead of its DocPerm ones once it has any
+    table = "Custom DocPerm" if frappe.db.exists("Custom DocPerm", {"parent": doctype}) else "DocPerm"
+    roles = frappe.get_all(
+        table,
+        filters={"parent": doctype, "permlevel": 0, "create": 1, "role": ["in", frappe.get_roles()]},
+        pluck="role",
+    )
+    return ", ".join(sorted(set(roles) - {"All", "Guest"}))
 
 
 # DocType → (the tool that sets a file up as its opening records, what they are): the opening engines
