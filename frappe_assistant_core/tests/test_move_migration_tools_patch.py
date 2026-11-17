@@ -67,9 +67,11 @@ class TestMoveMigrationToolsPatch(BaseAssistantTest):
         ).insert(ignore_permissions=True)
 
     def test_the_plugin_holds_the_14_tools_and_core_none_of_them(self):
-        self.assertEqual(sorted(MigrationPlugin().get_tools()), sorted(patch.TOOLS))
+        # The chart tools (#34422) came after the move and were never core's: nothing of theirs to repoint.
+        since_the_move = {"import_chart_of_accounts", "replace_chart_of_accounts"}
+        self.assertEqual(sorted(MigrationPlugin().get_tools()), sorted(set(patch.TOOLS) | since_the_move))
         self.assertEqual(len(patch.TOOLS), 14)
-        self.assertFalse(set(patch.TOOLS) & set(CorePlugin().get_tools()))
+        self.assertFalse((set(patch.TOOLS) | since_the_move) & set(CorePlugin().get_tools()))
 
     def test_every_recorded_module_path_imports_its_tool(self):
         for tool, cls in patch.TOOLS.items():
