@@ -16,6 +16,7 @@
 
 				<IssueForm v-if="store.mode === 'issue'"
 					:conversation-id="store.conversationId"
+					:prefill="store.prefill"
 					:environment="environment"
 					:submitting="submitting"
 					@submit="onSubmitIssue" @cancel="onClose" />
