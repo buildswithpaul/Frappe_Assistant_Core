@@ -116,10 +116,16 @@ Any other problem (a bad date, a duplicate, a rule ERPNext enforces) is correcte
 
 ### Many rows need customers or suppliers that aren't in ERPNext yet
 
-A file of projects, orders or invoices often names its customers or suppliers only inside its rows. When
-missing-link groups for a Customer or Supplier carry `cannot_create` and there are more than a few of
-them (or the check doesn't list them all: `groups_not_shown`), don't list them one by one, and don't
-stop at `map` or `leave_out`. Before asking the user anything:
+A file of projects, orders or invoices often names its customers or suppliers only inside its rows.
+Don't list them one by one, and don't stop at `map` or `leave_out`.
+
+- **They are in `masters_plan`** (Selling or Buying Settings name a new one by its name) **and the
+  file has no column of their own codes:** create them with the other missing masters, in the one
+  table and one approval of `masters_plan`. If an entry has `choose`, ask once which group (or
+  territory) for all of them, in the same question.
+- **Otherwise** (they carry `cannot_create`, or the file has their codes, such as C000065, which later
+  files will refer to), and there are more than a few of them, take them in a second session, which
+  keeps those codes as old IDs. Before asking the user anything:
 
 1. **Check the whole file, not the groups shown.** Open a second session on the same file and sheet
    (`start_import_session` with the same file and `sheet`) for Customer or Supplier. Map the party's
@@ -131,10 +137,9 @@ stop at `map` or `leave_out`. Before asking the user anything:
    - What is left is the parties to create.
 2. **Ask once.** One message: "Your file links to N customers: X are already in ERPNext and will be
    linked as they are, Y are new. Create the Y new ones?" In the same message, ask for anything the new
-   ones need that the file doesn't give, such as a Customer Group. Give it with the group's `fill`
-   when it has one. When it has none, propose setting that default in Selling Settings (Buying
-   Settings for suppliers) for this import, on its own approval, and **set it back as soon as the
-   import ends, then say so**.
+   ones need that the file doesn't give, such as a Customer Group, and give it with the group's
+   `fill`. **Never change a Selling or Buying Settings default for an import:** it changes every
+   customer or supplier made afterwards, not just these.
 3. **Import that session, then go back to the first file:** check it again and carry on. Don't ask
    about the parties again.
 
