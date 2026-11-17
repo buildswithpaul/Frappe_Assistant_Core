@@ -116,6 +116,7 @@ class DryRunImport(BaseTool):
             "parents_not_in_the_file",
             "map",
             "groups",
+            "decisions",  # each value the file has, as the groups quote them
             "masters_plan",
             "left_out",
             "problems",
