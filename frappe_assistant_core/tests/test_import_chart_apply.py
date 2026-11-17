@@ -413,6 +413,9 @@ class TestImportChart(ChartCase):
 
         self.assertFalse(refused["success"])
         self.assertEqual(refused["result"]["approval"]["accounts_created"], 13)
+        # The skill has the first call leave the figures out to learn them: it must reach the tool.
+        asked = self._run("replace_chart_of_accounts", {"session": session, "company": self.company})
+        self.assertEqual(asked["result"]["approval"]["accounts_created"], 13, asked)
         self.assertTrue(
             frappe.db.exists("Account", {"company": self.company, "account_name": "Cash"})
             or frappe.db.count("Account", {"company": self.company}) > 13
