@@ -83,7 +83,7 @@ The full per-row list is attached to the session (`validation_results`). You get
 
 ## Large files
 
-A large file is checked in the background: one of more than 500 rows, or fewer for a submittable DocType (an invoice, an entry), whose rows count twice, three times when they are submitted too, as an opening import's are. The reply has `"state": "running"`. Tell the user, then read the session later with `get_document` (doctype `FAC Import Session`): `progress` shows how far it got, and `validation_summary` holds the result once `status` changes: the same reply as above, with each group's `explanation` and `fixes`, and the ready message. Examples are given as row numbers (`example_rows`), since the session keeps no values from the file. Calling the tool again while it runs only reports progress.
+A large file is checked in the background: one of more than 3,000 rows of plain records (customers, items, projects), more than 250 of a submittable DocType (an invoice, an entry), or more than 166 when they are submitted too, as an opening import's are. The reply has `"state": "running"`. Tell the user, then read the session later with `get_document` (doctype `FAC Import Session`): `progress` shows how far it got, and `validation_summary` holds the result once `status` changes: the same reply as above, with each group's `explanation` and `fixes`, and the ready message. Examples are given as row numbers (`example_rows`), since the session keeps no values from the file. Calling the tool again while it runs only reports progress.
 
 ## Best Practices
 

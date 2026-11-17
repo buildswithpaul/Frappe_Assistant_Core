@@ -48,7 +48,7 @@ class DryRunImport(BaseTool):
             "ERPNext's own rules. Call it once the columns are mapped, and again after fixes. "
             "Returns '<n> rows ready, <m> would fail' and the failures grouped by cause, each with "
             "a count and up to 3 example rows; show the user that, not row-by-row lists. Files of "
-            f"more than {dry_run.BACKGROUND_ROWS} rows (fewer for invoices and other submitted "
+            f"more than {dry_run.BACKGROUND_ROWS} rows (250 for invoices and other submitted "
             "documents, whose rows take longer) are checked in the background: say so, and "
             "read the session with get_document later (progress, then validation_summary, which "
             "holds this same reply). The file must be on this site: if the session's file is only "

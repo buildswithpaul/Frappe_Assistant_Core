@@ -62,7 +62,7 @@ from frappe_assistant_core.utils.import_session import (
 )
 
 SESSION_DOCTYPE = "FAC Import Session"
-BACKGROUND_ROWS = 500  # larger files are checked in a background job
+BACKGROUND_ROWS = 3000  # a check costing more (check_cost) runs in a background job
 PROGRESS_EVERY = 100
 EXAMPLES_PER_GROUP = 3
 VALUES_KEPT = 20  # a group of refusals keeps this many of the values its message quoted
@@ -309,15 +309,17 @@ def link_site_file(session, file_doc, sheet_url: Optional[str] = None) -> None:
 
 
 def check_cost(session) -> int:
-    """What checking the session costs, counted in rows (#34407): a row of a submittable DocType
-    counts twice (its controller works out totals, taxes and stock), three times when it is
-    submitted too, as an opening import's always is. Above BACKGROUND_ROWS, it is checked in the
-    background, so a slow file can't run past the request's time limit."""
+    """What checking the session costs, counted in rows (#34407): above BACKGROUND_ROWS, it is
+    checked in the background, so a slow file can't run past the request's time limit. A row of
+    plain records counts once: 2,084 projects took 5 s, and a check in the background stops the
+    chat until the user speaks again. A row of a submittable DocType counts 12 times (its
+    controller works out totals, taxes and stock), 18 when it is submitted too, as an opening
+    import's always is: 250 and 166 rows, as before plain records were let through."""
     weight = 1
     if special_engine(session):
-        weight = 3
+        weight = 18
     elif session.target_doctype and frappe.get_meta(session.target_doctype).is_submittable:
-        weight = 3 if session.submit_after_import else 2
+        weight = 18 if session.submit_after_import else 12
     return row_count(session) * weight
 
 
