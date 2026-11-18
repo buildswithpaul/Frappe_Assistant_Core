@@ -112,6 +112,13 @@ def left_out(session) -> List[Dict[str, Any]]:
     return [{"row": row, "reason": cstr(reasons.get(str(row)))} for row in rows]
 
 
+def left_out_problems(session) -> Dict[str, Dict[str, Optional[str]]]:
+    """What the check found wrong with each row left out, by row: ``{"error", "fix"}``. The
+    reason given for leaving rows out is often only the user's request ("leave the failing rows
+    out"); the failed-rows file says what to correct in them (#34417)."""
+    return dict(_rules(session).get("left_out_problems") or {})
+
+
 def left_out_report(session) -> List[Dict[str, Any]]:
     """The left-out rows grouped by reason, for the user: reason, count and the row numbers."""
     by_reason: Dict[str, List[int]] = {}
@@ -816,6 +823,7 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
     maps = value_maps(session)
     filled = fills(session)
     reasons = {str(entry["row"]): entry["reason"] for entry in left_out(session)}
+    row_problems = left_out_problems(session)
     zero_rate = list(_rules(session).get("zero_rate_items") or [])
     post_at_cutoff = bool(_rules(session).get("post_at_cutoff"))
     done, problems, planned = [], [], []
@@ -842,9 +850,14 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
                     )
                 )
             elif action == LEAVE_OUT:
-                reason = cstr(fix.get("reason")).strip() or group.get("message") or group["cause"]
+                from frappe_assistant_core.utils.import_failures import fix_of
+
+                error = group.get("message") or group["cause"]
+                reason = cstr(fix.get("reason")).strip() or error
+                problem = {"error": error, "fix": fix_of(session, group)}
                 for row in group["rows"]:
                     reasons.setdefault(str(row), reason)
+                    row_problems.setdefault(str(row), problem)
                 done.append(_("Left out {0}: {1}.").format(_rows(group["count"]), row_ranges(group["rows"])))
             elif action == ALLOW_ZERO_RATE:
                 from frappe_assistant_core.utils import import_opening_stock as opening_stock
@@ -906,6 +919,7 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
         "value_maps": maps,
         "fills": filled,
         "left_out": reasons,
+        "left_out_problems": {row: problem for row, problem in row_problems.items() if row in reasons},
         "zero_rate_items": zero_rate,
         "post_at_cutoff": post_at_cutoff,
     }
@@ -932,6 +946,7 @@ def forget_left_out(session) -> str:
         return ""
     rules = _rules(session)
     rules.pop("left_out", None)
+    rules.pop("left_out_problems", None)
     session.transformation_rules = frappe.as_json(rules) if rules else None
     session.excluded_rows = None
     note = _("This is a different file, so the {0} left out before are checked again.").format(

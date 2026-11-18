@@ -204,7 +204,10 @@ class DryRunImport(BaseTool):
                             },
                             "reason": {
                                 "type": "string",
-                                "description": "For 'leave_out': why, in the user's words.",
+                                "description": "For 'leave_out': the user's own reason for "
+                                "leaving these rows out (a closed shop, say), in their words. Leave "
+                                "it out when they only asked to leave the failing rows out: the "
+                                "check's error is kept for each row anyway.",
                             },
                             "value": {
                                 "type": "string",

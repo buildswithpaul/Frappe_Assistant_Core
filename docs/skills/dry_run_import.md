@@ -242,11 +242,11 @@ When some rows can't be fixed in chat, or the user would rather fix them in Exce
   "rows": 3,
   "file_url": "/private/files/IMP-2026-00012-failed-rows.xlsx",
   "download_url": "https://erp.example.com/private/files/IMP-2026-00012-failed-rows.xlsx",
-  "message": "3 rows in an Excel file, with the user's columns, then 'FACO Original Row' ... and 'FACO Error' ..."
+  "message": "3 rows in an Excel file, with the user's columns, then 'Row in your file' ... and 'Error' ..."
 }
 ```
 
-Give the user the `download_url`. The file has the user's own columns (with the fixes made in chat), then **FACO Original Row** (the row's number in their file), **FACO Error** and, when FACO has one for any row, **FACO Fix** ("Use 'Distributors'"). Every cell is text, so codes keep their leading zeros and nothing runs as a formula. Rows left out say "Left out: <reason>", so a **Completed** import's left-out rows can be corrected and imported too. It works before an import as well: then it holds the rows the last check failed.
+Give the user the `download_url`. The file has the user's own columns (with the fixes made in chat), then **Row in your file** (the row's number in their file), **Error** and, when FACO has one for any row, **Fix** ("Use 'Distributors'"). When the user's own columns already have one of those names, that column is called **FACO Original Row**, **FACO Error** or **FACO Fix** instead. Every cell is text, so codes keep their leading zeros and nothing runs as a formula. A row left out keeps what the check found wrong with it, and its fix: "Item Group 'Hand Tols' doesn't exist. You left this row out." So a **Completed** import's left-out rows can be corrected and imported too. When leaving rows out, pass `reason` only for a reason of the user's own (a closed shop); for "leave the failing rows out" leave it empty. It works before an import as well: then it holds the rows the last check failed.
 
 ### The corrected file
 

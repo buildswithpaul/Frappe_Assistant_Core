@@ -23,6 +23,7 @@ Every Data Import stays linked to the session, so the report covers every run.
 
 import io
 import json
+import re
 from collections import Counter
 from typing import Any, Dict, List, Optional
 
@@ -39,15 +40,19 @@ from frappe_assistant_core.utils.import_session import (
     readable_session_file,
 )
 
-#: The columns the failed-rows file adds after the user's own. A file sent back with them is
-#: the same file: they are not imported.
-ROW_COLUMN = "FACO Original Row"
-REASON_COLUMN = "FACO Error"
+#: The columns the failed-rows file adds after the user's own, in words a client reads without
+#: knowing FACO (#34417). A file sent back with them is the same file: they are not imported.
+ROW_COLUMN = "Row in your file"
+REASON_COLUMN = "Error"
 #: FACO's suggestion for the row, when it has one (#34417)
-FIX_COLUMN = "FACO Fix"
+FIX_COLUMN = "Fix"
+#: The names before: a file given with them can still come back, and they are used when the
+#: user's own columns already have one of the names above (see added_columns).
+FACO_COLUMNS = {ROW_COLUMN: "FACO Original Row", REASON_COLUMN: "FACO Error", FIX_COLUMN: "FACO Fix"}
 #: The reason's column in the CSV files FACO gave before #34417: such a file can still come back
 OLD_REASON_COLUMN = "FACO Failure Reason"
-ADDED_COLUMNS = (ROW_COLUMN, REASON_COLUMN, FIX_COLUMN, OLD_REASON_COLUMN)
+ROW_COLUMNS = (ROW_COLUMN, FACO_COLUMNS[ROW_COLUMN])
+ADDED_COLUMNS = (*FACO_COLUMNS, *FACO_COLUMNS.values(), OLD_REASON_COLUMN)
 
 #: Statuses whose failures come from the last Data Import, and from the last check.
 AFTER_IMPORT = ("Partially Completed", "Failed")
@@ -342,20 +347,42 @@ def csv_cell(value) -> str:
     return text
 
 
-def _xlsx(rows: List[List[str]]) -> bytes:
+#: Width of a column in characters, at most: a long error wraps past it rather than run off the screen
+MAX_WIDTH = 60
+#: The added columns' shade: FACO's notes, told apart from the user's own data at a glance
+NOTE_FILL = "FFF2CC"
+
+
+def _xlsx(rows: List[List[str]], notes: int = 0) -> bytes:
     """``rows`` as an Excel sheet where every cell is text (#34417): a code keeps its leading zeros
-    (00123), and a cell that starts like a formula (=, +, -, @) is shown, never run."""
+    (00123), and a cell that starts like a formula (=, +, -, @) is shown, never run. Read by someone
+    who doesn't know FACO: the columns fit their text, the heading row is bold and stays in view,
+    and the last ``notes`` columns, FACO's own, are shaded."""
     from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
 
     book = Workbook()
     sheet = book.active
     sheet.title = "Rows not imported"
+    width = max((len(row) for row in rows), default=0)
+    shade = PatternFill(start_color=NOTE_FILL, end_color=NOTE_FILL, fill_type="solid")
+    widths = [0] * width
     for r, row in enumerate(rows, start=1):
         for c, value in enumerate(row, start=1):
             cell = sheet.cell(row=r, column=c)
             cell.value = cstr(value)
             cell.data_type = "s"  # openpyxl would take "=..." for a formula
             cell.number_format = "@"
+            widths[c - 1] = max(widths[c - 1], len(cell.value))
+            if r == 1:
+                cell.font = Font(bold=True)
+            if c > width - notes:
+                cell.fill = shade
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+    for c, longest in enumerate(widths, start=1):
+        sheet.column_dimensions[get_column_letter(c)].width = min(longest + 2, MAX_WIDTH)
+    sheet.freeze_panes = "A2"
     buffer = io.BytesIO()
     book.save(buffer)
     return buffer.getvalue()
@@ -377,7 +404,7 @@ def failed_rows_file(session) -> Dict[str, Any]:
     rows = import_fixes.apply_value_maps(session, read_sheet_rows(source, session.sheet or None))
     width = len(own_columns(rows[0]))
     with_fix = any(problem["fix"] for problem in problems.values())
-    added = [ROW_COLUMN, REASON_COLUMN] + ([FIX_COLUMN] if with_fix else [])
+    added = added_columns(rows[0][:width], with_fix)
     out = [rows[0][:width] + added]
     for number in sorted(problems):
         if 1 <= number - 1 < len(rows):
@@ -401,7 +428,7 @@ def failed_rows_file(session) -> Dict[str, Any]:
         {
             "doctype": "File",
             "file_name": file_name,
-            "content": _xlsx(out),
+            "content": _xlsx(out, notes=len(added)),
             "is_private": 1,
             "attached_to_doctype": dry_run.SESSION_DOCTYPE,
             "attached_to_name": session.name,
@@ -420,9 +447,9 @@ def failed_rows_file(session) -> Dict[str, Any]:
     message = _(
         "{0} rows in an Excel file, with the user's columns, then '{1}' (the row's number in the file) "
         "and '{2}'"
-    ).format(count, ROW_COLUMN, REASON_COLUMN)
+    ).format(count, added[0], added[1])
     if with_fix:
-        message += _(", and '{0}' where FACO has a fix").format(FIX_COLUMN)
+        message += _(", and '{0}' where FACO has a fix").format(added[2])
     message += ". " + _(
         "Every cell is text, so codes keep their leading zeros. Once corrected, the file can come back "
         "as it is: once uploaded, pass it to dry_run_import as file_id, and only these rows are checked "
@@ -437,14 +464,30 @@ def failed_rows_file(session) -> Dict[str, Any]:
     }
 
 
-def _fix_of(session, group: Dict[str, Any]) -> Optional[str]:
+def added_columns(own: List[Any], with_fix: bool) -> List[str]:
+    """The names of the columns the file adds: the plain ones, or FACO's where the user's own
+    columns already have that name, so each column is still told apart when the file comes back."""
+    taken = {cstr(name).strip().lower() for name in own}
+    names = [ROW_COLUMN, REASON_COLUMN] + ([FIX_COLUMN] if with_fix else [])
+    return [FACO_COLUMNS[name] if name.lower() in taken else name for name in names]
+
+
+def fix_of(session, group: Dict[str, Any]) -> Optional[str]:
     """FACO's fix for a failed group, in a few words: the likely name it meant, or what a known
     refusal needs. None when FACO has none."""
     if group.get("cause") == dry_run.CAUSE_MISSING_LINK:
         # advise works out the linked DocType from the group's field, as the check stored it
         advice = import_fixes.advise(session, {**group, "count": 1})
         likely = next((f.get("likely") for f in advice["fixes"] if f.get("likely")), None)
-        return _("Use '{0}'").format(likely) if likely else None
+        if likely:
+            return _("Use '{0}'").format(likely)
+        # No name close to it: say what the user can still do, rather than leave Fix empty
+        doctype = import_fixes._with_target(session, group).get("link_doctype")
+        if doctype and group.get("value"):
+            return _("Pick an existing {0}, or create '{1}' in ERPNext first").format(
+                _(doctype), group["value"]
+            )
+        return None
     return import_fixes.known_refusal(group.get("message"), _("This row"))
 
 
@@ -452,6 +495,7 @@ def _problems(session) -> Dict[int, Dict[str, Optional[str]]]:
     """Each row still not imported, failed or left out: {"reason", "fix"}. From the last Data
     Import once the import ended, from the last check before (or after a check of what is left)."""
     problems: Dict[int, Dict[str, Optional[str]]] = {}
+    saved = import_fixes.left_out_problems(session)
 
     def add(row: int, reason: str, fix: Optional[str] = None) -> None:
         problems[row] = {"reason": reason, "fix": fix}
@@ -462,7 +506,7 @@ def _problems(session) -> Dict[int, Dict[str, Optional[str]]]:
         # where each row of the file stands.
         for outcome in engine.outcomes(session):
             if outcome["status"] == "excluded":
-                add(outcome["row"], _("Left out: {0}").format(outcome["reason"]))
+                add(outcome["row"], *_left_out(outcome["row"], outcome["reason"], saved))
             elif outcome["status"] == "failed":
                 add(
                     outcome["row"],
@@ -493,20 +537,58 @@ def _problems(session) -> Dict[int, Dict[str, Optional[str]]]:
             ids = [g for g in row.get("groups") or [] if g in groups]
             for g in ids:
                 if g not in fixes:
-                    fixes[g] = _fix_of(session, groups[g])
+                    fixes[g] = fix_of(session, groups[g])
             reason = "; ".join(groups[g].get("message") or groups[g]["cause"] for g in ids)
             add(row["row"], reason, "; ".join(fixes[g] for g in ids if fixes[g]) or None)
     for entry in import_fixes.left_out(session):
         if entry["row"] not in problems:
-            add(entry["row"], _("Left out: {0}").format(entry["reason"] or _("by the user")))
+            add(entry["row"], *_left_out(entry["row"], entry["reason"], saved))
     for row in imported_rows(session):
         problems.pop(row, None)
     return problems
 
 
+#: A reason that only says the rows were to be left out: FACO often passes the user's request
+#: ("Leave out the Pipe Wrench row.") as the reason, which tells the one correcting the file nothing.
+ONLY_ASKED = re.compile(r"\b(leave|leaving|left)\b.*\bout\b|\b(exclude|skip|drop|remove)\b", re.IGNORECASE)
+
+
+def _left_out(row: int, reason: Optional[str], saved: Dict[str, Dict[str, Optional[str]]]) -> tuple:
+    """(error, fix) of a row the user left out: what the check found wrong with it, so the one
+    correcting the file knows what to change, and the reason they gave when it is more than that.
+    A row left out before the problems were kept says only the reason."""
+    problem = saved.get(str(row))
+    if not problem:
+        return _("Left out: {0}").format(reason or _("by the user")), None
+    error = cstr(problem.get("error")).strip()
+    if error and error[-1] not in ".!?":
+        error += "."
+    reason = cstr(reason).strip()
+    if reason and reason != cstr(problem.get("error")).strip() and not ONLY_ASKED.search(reason):
+        note = _("You left this row out: {0}").format(reason)
+    else:
+        note = _("You left this row out.")
+    return f"{error} {note}".strip(), problem.get("fix")
+
+
+def row_column(columns: List[Any]) -> Optional[int]:
+    """Where the columns this module adds start in a file it gave, or None: at its row number
+    column, when only added columns follow it. A file of the user's own that happens to end with
+    a column called "Error" keeps it."""
+    names = [cstr(name).strip() for name in columns]
+    for i in range(len(names) - 1, -1, -1):
+        if names[i] in ROW_COLUMNS:
+            return i if all(name in ADDED_COLUMNS for name in names[i:]) else None
+    return None
+
+
 def own_columns(columns: List[str]) -> List[str]:
     """The user's columns: a file this module gave ends with its added ones."""
     columns = list(columns)
-    while columns and cstr(columns[-1]).strip() in ADDED_COLUMNS:
+    start = row_column(columns)
+    if start is not None:
+        return columns[:start]
+    # Without its row number column, only names no one else uses are taken for FACO's
+    while columns and cstr(columns[-1]).strip() in (*FACO_COLUMNS.values(), OLD_REASON_COLUMN):
         columns.pop()
     return columns
