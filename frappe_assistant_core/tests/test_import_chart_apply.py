@@ -415,6 +415,18 @@ class TestImportChart(ChartCase):
         )
         self.assertEqual(after, before)
 
+    def test_the_check_says_a_company_already_has_this_chart_and_offers_nothing(self):
+        # Live, 2026-11-18: checking a chart the company already had offered replace and add, and
+        # called its accounts "standard".
+        session = self._chart()
+        self._replace(session)
+
+        checked = self._check(session, company=self.company)
+
+        self.assertTrue(checked["already_in_place"])
+        self.assertEqual(checked["modes"]["offered"], [])
+        self.assertIn(self.company, checked["message"])
+
     def test_replace_keeps_the_clients_ids(self):
         self._replace(self._chart())
 

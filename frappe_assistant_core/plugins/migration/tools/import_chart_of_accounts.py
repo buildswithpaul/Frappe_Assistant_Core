@@ -224,6 +224,18 @@ def check_chart(name: str, company: str, arguments: Dict[str, Any]) -> Dict[str,
         import_chart.apply_answers(nodes, arguments.get("classifications"))
         classes = import_chart.classify(nodes)
         out: Dict[str, Any] = {"success": True, "session": name, **import_chart.summary(nodes, classes)}
+        if company and import_chart.already_in_place(company, nodes):
+            # Live, 2026-11-18: a chart the company already had was offered replace and add again
+            out.update(
+                company=company,
+                already_in_place=True,
+                modes={"offered": []},
+                message=_(
+                    "{0} already has this chart ({1} accounts): there is nothing to put on it. Don't "
+                    "offer replace or add."
+                ).format(company, len(nodes)),
+            )
+            return out
         if company:
             out["company"] = company
             out["modes"] = import_chart.modes(company)

@@ -21,6 +21,8 @@ finds its accounts by the client's names and numbers.
      list, then pass the answers as `classifications` ({account name: {root_type, account_type}}): inside `chart` on the next check, and as a parameter of the import.
    - `problems` lists a cycle, an account under a ledger, an account twice. Nothing can be imported until
      the file is corrected.
+   - `already_in_place`: the company has this chart already. Say so and stop; there is nothing to
+     offer.
 3. Say which modes the company allows (`modes`). **map** is the default when the company has transactions,
    **add** otherwise; **replace** is offered only for a company with no ledger entries and no submitted
    documents, and is refused with the reason otherwise.
