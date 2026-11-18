@@ -1093,6 +1093,10 @@ def is_party(session, doctype: str) -> bool:
 
     if opening_invoices.is_party(session, doctype):
         return True
+    if not session:
+        # A migration plan creates its masters with create_master, which sends only the name: a
+        # party needs its group and territory, so an approved plan would refuse to run over it.
+        return False
     name_field = opening_invoices.PARTY_NAME_FIELDS.get(doctype)
     return bool(name_field) and dry_run._name_field(doctype) == name_field
 
