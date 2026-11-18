@@ -113,6 +113,7 @@ class DryRunImport(BaseTool):
             # a chart check quotes the client's account names
             "outline",
             "unclassified",
+            "doubtful",
             "parents_not_in_the_file",
             "map",
             "groups",

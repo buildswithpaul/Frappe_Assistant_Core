@@ -343,12 +343,49 @@ class TestReadChart(ChartCase):
 
         self.assertFalse(refused["success"])
 
+    def test_the_check_lists_accounts_whose_type_does_not_belong_under_their_root(self):
+        # Live, 2026-11-18: a client's chart had 13 "Stock" accounts under Equity; ERPNext books stock to them
+        session = self._chart(["Client Equity,,,,,Yes", "Share Stock,3100,Client Equity,Stock,,No"])
+
+        checked = self._check(
+            session,
+            classifications={
+                "Client Equity": {"root_type": "Equity"},
+                "Share Stock": {"root_type": "Equity", "account_type": "Stock"},
+            },
+        )
+
+        self.assertEqual(
+            [
+                (d["account"], d["account_type"], d["root_type"], d["expected_root_type"])
+                for d in checked["doubtful"]
+            ],
+            [("Share Stock", "Stock", "Equity", "Asset")],
+        )
+
+    def test_a_bank_account_under_liabilities_is_not_doubtful(self):
+        # an overdraft is a bank account and a liability
+        session = self._chart(["Client Loans,,,,,Yes", "OD Account,2010,Client Loans,Bank,,No"])
+
+        checked = self._check(
+            session,
+            classifications={
+                "Client Loans": {"root_type": "Liability"},
+                "OD Account": {"root_type": "Liability", "account_type": "Bank"},
+            },
+        )
+
+        self.assertEqual(checked["doubtful"], [])
+
     def test_on_a_site_of_one_company_the_check_uses_it_unasked(self):
         # the shared test site holds a company per test: the list a one-company site returns stands in
         real = frappe.get_list
 
         def one_company(doctype, *args, **kwargs):
-            return [self.company] if doctype == "Company" else real(doctype, *args, **kwargs)
+            # only the list of company names the check asks for: the replace check reads Company rows too
+            if doctype == "Company" and kwargs.get("pluck") == "name":
+                return [self.company]
+            return real(doctype, *args, **kwargs)
 
         with patch.object(frappe, "get_list", side_effect=one_company):
             checked = self._check(self._chart())

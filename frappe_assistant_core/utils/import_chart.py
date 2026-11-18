@@ -18,6 +18,7 @@ resolves by them.
 """
 
 import re
+from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Tuple
 
 import frappe
@@ -406,6 +407,53 @@ def report(session) -> Dict[str, Any]:
     return summary(nodes, classify(nodes))
 
 
+#: The root types an account type belongs under, where ERPNext's own charts never put it anywhere else:
+#: a "Stock" account is stock in hand to ERPNext (perpetual inventory posts to it), so one under Equity is
+#: a mistake in the file, not a choice. Types that sit under more than one root (Bank: an overdraft is a
+#: liability; Tax; Chargeable...) are not checked.
+EXPECTED_ROOTS = {
+    "Receivable": ("Asset",),
+    "Payable": ("Liability",),
+    "Cash": ("Asset",),
+    "Stock": ("Asset",),
+    "Fixed Asset": ("Asset",),
+    "Accumulated Depreciation": ("Asset",),
+    "Current Asset": ("Asset",),
+    "Current Liability": ("Liability",),
+    "Equity": ("Equity",),
+    "Income Account": ("Income",),
+    "Direct Income": ("Income",),
+    "Indirect Income": ("Income",),
+    "Expense Account": ("Expense",),
+    "Direct Expense": ("Expense",),
+    "Indirect Expense": ("Expense",),
+    "Cost of Goods Sold": ("Expense",),
+    "Depreciation": ("Expense",),
+}
+
+
+def doubtful(nodes: List[Dict[str, Any]], classes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Accounts whose account type doesn't belong under their root type (EXPECTED_ROOTS), as the file has
+    them: ERPNext takes them, and books to them as their type says. Live, 2026-11-18, a client's chart had
+    13 "Stock" accounts under Equity and an expense account under Income. The user decides: correct the
+    file, or go on."""
+    out = []
+    for node, c in zip(nodes, classes):
+        expected = EXPECTED_ROOTS.get(c["account_type"] or "")
+        if expected and c["root_type"] and c["root_type"] not in expected:
+            out.append(
+                {
+                    "row": node["row"],
+                    "account": node["name"],
+                    "number": node["number"] or None,
+                    "account_type": c["account_type"],
+                    "root_type": c["root_type"],
+                    "expected_root_type": expected[0],
+                }
+            )
+    return out
+
+
 def summary(nodes: List[Dict[str, Any]], classes: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Counts, the tree's top levels with each account's proposed types, every account that couldn't be
     classified in one list, the problems of the tree and the parents the file names that it doesn't hold."""
@@ -444,6 +492,7 @@ def summary(nodes: List[Dict[str, Any]], classes: List[Dict[str, Any]]) -> Dict[
             if not c["root_type"]
         ],
         "problems": problems(nodes),
+        "doubtful": doubtful(nodes, classes),
         "parents_not_in_the_file": sorted({n["outside_parent"] for n in nodes if n["outside_parent"]}),
     }
 
@@ -491,13 +540,28 @@ def modes(company: str) -> Dict[str, Any]:
 # -- finding the company's accounts --------------------------------------------------------------------
 
 
-def _existing(company: str, node: Dict[str, Any]) -> Optional[str]:
-    """The company's account the node is, by number then by name, or None."""
+def _existing(company: str, node: Dict[str, Any], c: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    """The company's account the node is, by number then by name, or None. With the node's class ``c``,
+    only an account of the same kind counts: a group for a group, a ledger for a ledger, of the same root
+    type. ERPNext's India chart has a ledger "Reserves and Surplus"; a client's group of that name, with
+    accounts under it, isn't that ledger (live, 2026-11-18: add put the client's accounts under the ledger
+    and ERPNext refused the whole chart)."""
+    same = _same_kind(node, c)
     if node["number"]:
-        found = frappe.db.get_value(ACCOUNT, {"company": company, "account_number": node["number"]})
+        found = frappe.db.get_value(ACCOUNT, {"company": company, "account_number": node["number"], **same})
         if found:
             return found
-    return frappe.db.get_value(ACCOUNT, {"company": company, "account_name": node["name"]})
+    return frappe.db.get_value(ACCOUNT, {"company": company, "account_name": node["name"], **same})
+
+
+def _same_kind(node: Dict[str, Any], c: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The filters an account of the company must meet to be the node: none without its class."""
+    if c is None:
+        return {}
+    out: Dict[str, Any] = {"is_group": int(node["is_group"])}
+    if c.get("root_type"):
+        out["root_type"] = c["root_type"]
+    return out
 
 
 def _root_account(company: str, root_type: str) -> Optional[str]:
@@ -513,10 +577,14 @@ def map_proposal(nodes: List[Dict[str, Any]], classes: List[Dict[str, Any]], com
     other account has been matched to. What matches nothing is listed."""
     matched, unmatched, used = [], [], set()
     for node in nodes:
-        account = frappe.db.get_value(ACCOUNT, {"company": company, "account_name": node["name"]})
+        # only an account of the same kind (_existing): a client's group isn't the company's ledger
+        same = _same_kind(node, classes[node["index"]])
+        account = frappe.db.get_value(ACCOUNT, {"company": company, "account_name": node["name"], **same})
         how = "name"
         if not account and node["number"]:
-            account = frappe.db.get_value(ACCOUNT, {"company": company, "account_number": node["number"]})
+            account = frappe.db.get_value(
+                ACCOUNT, {"company": company, "account_number": node["number"], **same}
+            )
             how = "number"
         if account:
             used.add(account)
@@ -558,7 +626,14 @@ def _order(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return sorted(nodes, key=lambda n: (_depth(nodes, n), n["index"]))
 
 
-def _insert(company: str, node: Dict[str, Any], c: Dict[str, Any], parent: str) -> str:
+def _report_type(root_type: str) -> str:
+    return "Balance Sheet" if root_type in ("Asset", "Liability", "Equity") else "Profit and Loss"
+
+
+def _insert(company: str, node: Dict[str, Any], c: Dict[str, Any], parent: Optional[str]) -> str:
+    """Create the node's account under ``parent``; with no parent, as the company's root account of its
+    root type, the way ERPNext's chart code creates a root (create_charts: Parent Account is mandatory on
+    an Account, so a root is inserted without the mandatory check, with its root and report type set)."""
     doc = frappe.get_doc(
         {
             "doctype": ACCOUNT,
@@ -568,16 +643,42 @@ def _insert(company: str, node: Dict[str, Any], c: Dict[str, Any], parent: str) 
             "parent_account": parent,
             "is_group": int(node["is_group"]),
             "root_type": c["root_type"],
+            "report_type": _report_type(c["root_type"]),
             "account_type": c["account_type"] or None,
         }
     )
-    doc.insert()
+    if parent is None:
+        doc.flags.ignore_mandatory = True
+    try:
+        doc.insert()
+    except frappe.DuplicateEntryError as e:
+        # the company has an account of this name of another kind (_existing), and the file gives no number
+        # to tell them apart: ERPNext names an account "<number> - <name> - <abbr>"
+        raise ChartProblem(
+            _(
+                "{0} already has an account named {1} that isn't the file's {1} (a group in one, a ledger in "
+                "the other, or another root type). Give the file's {1} an account number or another name."
+            ).format(company, node["name"])
+        ) from e
     return doc.name
 
 
-def _parent_for(company, nodes, node, c, placed) -> str:
+def missing_roots(company: str, nodes, classes) -> List[str]:
+    """The root types the file's top accounts have that the company has no root account of: add creates
+    those top accounts as the company's roots. ERPNext's "India - Chart of Accounts" has no Equity root
+    (live, 2026-11-18: a client's Equity accounts had nowhere to go, and the chat put them under
+    Liabilities by hand)."""
+    wanted = sorted(
+        {classes[n["index"]]["root_type"] for n in nodes if n["parent"] is None and not n["outside_parent"]}
+        - {None, ""}
+    )
+    return [root_type for root_type in wanted if not _root_account(company, root_type)]
+
+
+def _parent_for(company, nodes, node, c, placed) -> Optional[str]:
     """The account a node goes under: its parent's account (made or found), the company account the file's
-    outside parent names, or the company's root account of its root type."""
+    outside parent names, or the company's root account of its root type. None when the company has no
+    root of that type and the node is a top group of the file: it becomes that root."""
     if node["parent"] is not None:
         if node["parent"] not in placed:
             raise ChartProblem(
@@ -598,9 +699,31 @@ def _parent_for(company, nodes, node, c, placed) -> str:
             )
         return found
     root = _root_account(company, c["root_type"])
-    if not root:
-        raise ChartProblem(_("{0} has no root account for {1}.").format(company, c["root_type"]))
-    return root
+    if root:
+        return root
+    if node["is_group"]:
+        return None
+    raise ChartProblem(
+        _(
+            "{0} has no top-level {1} account, and {2} is a ledger: the top account of a type must be a "
+            "group. Put {2} under a group of the file."
+        ).format(company, _(c["root_type"]), node["name"])
+    )
+
+
+@contextmanager
+def _tree_built_once():
+    """Insert accounts without ERPNext updating the account tree's nested set after each one, then rebuild
+    it once, as ERPNext's own chart code does (create_charts). Each update rewrites the tree: a client's
+    1,043 accounts took 115 minutes to add one by one (live test, 2026-11-19), far past what a chat waits."""
+    from frappe.utils.nestedset import rebuild_tree
+
+    frappe.local.flags.ignore_update_nsm = True
+    try:
+        yield
+    finally:
+        frappe.local.flags.ignore_update_nsm = False
+    rebuild_tree(ACCOUNT)
 
 
 def add(company, nodes, classes, only: Optional[set] = None) -> Dict[str, Any]:
@@ -609,16 +732,17 @@ def add(company, nodes, classes, only: Optional[set] = None) -> Dict[str, Any]:
     are matched. Returns the account each node is, and what was created."""
     placed: Dict[int, str] = {}
     created: List[str] = []
-    for node in _order(nodes):
-        existing = _existing(company, node)
-        if existing:
-            placed[node["index"]] = existing
-            continue
-        if only is not None and node["index"] not in only:
-            continue
-        c = classes[node["index"]]
-        placed[node["index"]] = _insert(company, node, c, _parent_for(company, nodes, node, c, placed))
-        created.append(placed[node["index"]])
+    with _tree_built_once():
+        for node in _order(nodes):
+            existing = _existing(company, node, classes[node["index"]])
+            if existing:
+                placed[node["index"]] = existing
+                continue
+            if only is not None and node["index"] not in only:
+                continue
+            c = classes[node["index"]]
+            placed[node["index"]] = _insert(company, node, c, _parent_for(company, nodes, node, c, placed))
+            created.append(placed[node["index"]])
     return {"accounts": placed, "created": created}
 
 
@@ -675,15 +799,16 @@ def apply_map(company, nodes, classes, add_unmatched: bool = False) -> Dict[str,
     created: List[str] = []
     if add_unmatched and proposal["unmatched"]:
         left = {by_row[u["row"]]["index"] for u in proposal["unmatched"]}
-        for node in _order(nodes):
-            if node["index"] not in left:
-                continue
-            c = classes[node["index"]]
-            parent = (accounts.get(node["parent"]) if node["parent"] is not None else None) or _parent_for(
-                company, nodes, node, c, accounts
-            )
-            accounts[node["index"]] = _insert(company, node, c, parent)
-            created.append(accounts[node["index"]])
+        with _tree_built_once():
+            for node in _order(nodes):
+                if node["index"] not in left:
+                    continue
+                c = classes[node["index"]]
+                parent = (
+                    accounts.get(node["parent"]) if node["parent"] is not None else None
+                ) or _parent_for(company, nodes, node, c, accounts)
+                accounts[node["index"]] = _insert(company, node, c, parent)
+                created.append(accounts[node["index"]])
         proposal["unmatched"] = []
     return {"accounts": accounts, "created": created, **proposal}
 
@@ -720,12 +845,98 @@ def _relink_cash(company: str, links: List[Dict[str, str]]) -> Optional[str]:
     return account
 
 
+#: The company's tax setup, as ERPNext and India Compliance make it for every new company on its standard
+#: chart (an Indian company: 4 sales, 4 purchase and 7 item tax templates, a row in each of 127 tax
+#: withholding categories and its GST Settings accounts): records of the company's own, made for the chart
+#: a replace deletes. Live, 2026-11-18, they blocked the replace of every Indian company, and clearing them
+#: in chat took 127 approvals and still failed.
+TAX_TEMPLATES = (
+    ("Sales Taxes and Charges Template", "Sales Taxes and Charges", "account_head"),
+    ("Purchase Taxes and Charges Template", "Purchase Taxes and Charges", "account_head"),
+    ("Item Tax Template", "Item Tax Template Detail", "tax_type"),
+)
+#: Shared records that hold one row per company: only the company's rows go.
+TAX_ROWS = (
+    ("Tax Withholding Category", "Tax Withholding Account"),
+    ("GST Settings", "GST Account"),
+)
+
+
+def tax_setup(company: str) -> Dict[str, Any]:
+    """The company's tax setup a replace removes with its chart: ``templates`` by DocType, ``rows`` (the
+    company's rows of shared records) by the record's DocType, and ``row_names``, every child row of
+    them, which the check for other references leaves out."""
+    templates: Dict[str, List[str]] = {}
+    rows: Dict[str, List[str]] = {}
+    row_names: set = set()
+    for doctype, child, _field in TAX_TEMPLATES:
+        if not frappe.db.exists("DocType", doctype):
+            continue
+        names = frappe.get_all(doctype, filters={"company": company}, pluck="name")
+        if names:
+            templates[doctype] = names
+            row_names.update(
+                frappe.get_all(child, filters={"parenttype": doctype, "parent": ["in", names]}, pluck="name")
+            )
+    for parenttype, child in TAX_ROWS:
+        if not frappe.db.exists("DocType", child):
+            continue
+        names = frappe.get_all(child, filters={"parenttype": parenttype, "company": company}, pluck="name")
+        if names:
+            rows[parenttype] = names
+            row_names.update(names)
+    return {"templates": templates, "rows": rows, "row_names": row_names}
+
+
+def tax_setup_counts(setup: Dict[str, Any]) -> Dict[str, int]:
+    """What the approval card of a replace shows of the tax setup it removes, in words."""
+    labels = {
+        "Sales Taxes and Charges Template": _("Sales tax templates"),
+        "Purchase Taxes and Charges Template": _("Purchase tax templates"),
+        "Item Tax Template": _("Item tax templates"),
+        "Tax Withholding Category": _("Tax withholding category rows of the company"),
+        "GST Settings": _("GST Settings account rows of the company"),
+    }
+    out = {labels[d]: len(n) for d, n in setup["templates"].items()}
+    out.update({labels[d]: len(n) for d, n in setup["rows"].items()})
+    return out
+
+
+def _clear_tax_setup(company: str, setup: Dict[str, Any]) -> Dict[str, int]:
+    """Remove the company's tax setup (tax_setup) before its accounts go. A template is deleted as the
+    user, with ERPNext's link check: one an item, a customer or a tax rule uses is the user's setup in
+    use, and the replace stops there, all of it rolled back. The company's rows of the shared records
+    go; the records stay, with the other companies' rows."""
+    for doctype, names in setup["templates"].items():
+        for name in names:
+            try:
+                frappe.delete_doc(doctype, name)
+            except frappe.LinkExistsError as e:
+                raise ChartProblem(
+                    _(
+                        "{0} {1} is in use, so it isn't only the company's starting setup: {2} Change what "
+                        "uses it, or add instead. Nothing was changed."
+                    ).format(_(doctype), name, _text(e))
+                ) from e
+    for parenttype, names in setup["rows"].items():
+        child = dict(TAX_ROWS)[parenttype]
+        frappe.db.delete(child, {"name": ["in", names]})
+        if frappe.get_meta(parenttype).issingle:
+            frappe.clear_document_cache(parenttype, parenttype)
+    return tax_setup_counts(setup)
+
+
+def _text(e: Exception) -> str:
+    return frappe.utils.strip_html(str(e)).strip()
+
+
 def blocking_references(company: str) -> List[str]:
-    """What outside the chart points at the company's accounts, so replacing it would break it (C-D2): tax
-    templates, item tax templates, modes of payment and, with India Compliance, GST Settings accounts. A
-    mode of payment's row on the company's default cash account is not one of them (cash_links)."""
+    """What outside the chart points at the company's accounts, so replacing it would break it (C-D2): a
+    draft document's row, a mode of payment's, a warehouse's or any other record's account. The company's
+    own tax setup is not one of them (tax_setup): the replace removes it, with the user's approval of its
+    counts. Nor is a mode of payment's row on the company's default cash account (cash_links)."""
     accounts = set(frappe.get_all(ACCOUNT, filters={"company": company}, pluck="name"))
-    moved = {link["name"] for link in cash_links(company)}
+    moved = {link["name"] for link in cash_links(company)} | tax_setup(company)["row_names"]
     out: List[str] = []
     reported: set = set()
 
@@ -913,11 +1124,15 @@ def forest(nodes: List[Dict[str, Any]], classes: List[Dict[str, Any]]) -> Dict[s
 
 
 def replace_figures(company: str, nodes) -> Dict[str, Any]:
-    """What the approval card of a replace shows: the accounts removed and created."""
+    """What the approval card of a replace shows: the accounts removed and created, and how many records
+    of the company's tax setup go with them (tax_setup_removed, by kind in tax_setup)."""
+    counts = tax_setup_counts(tax_setup(company))
     return {
         "company": company,
         "accounts_removed": frappe.db.count(ACCOUNT, {"company": company}),
         "accounts_created": len(nodes),
+        "tax_setup_removed": sum(counts.values()),
+        "tax_setup": counts,
     }
 
 
@@ -938,6 +1153,17 @@ def replace_problem(company: str) -> Optional[str]:
         return _("You need to be allowed to create and delete accounts of {0} (Accounts Manager).").format(
             company
         )
+    setup = tax_setup(company)
+    for doctype in setup["templates"]:
+        if not frappe.has_permission(doctype, "delete"):
+            return _(
+                "Replacing the chart removes the company's {0}: you need to be allowed to delete them."
+            ).format(_(doctype))
+    for parenttype in setup["rows"]:
+        if not frappe.has_permission(parenttype, "write"):
+            return _(
+                "Replacing the chart removes the company's rows of {0}: you need to be allowed to change it."
+            ).format(_(parenttype))
     refs = blocking_references(company)
     if refs:
         shown = "; ".join(refs[:10]) + (
@@ -959,8 +1185,11 @@ def replace(company: str, nodes, classes) -> Dict[str, Any]:
         raise ChartProblem(problem)
     tree = forest(nodes, classes)  # before anything is deleted
     removed = frappe.db.count(ACCOUNT, {"company": company})
+    setup = tax_setup(company)
     frappe.db.savepoint("fac_chart_replace")
     try:
+        # made for the chart that goes: removed first, so nothing is left on a deleted account
+        tax_removed = _clear_tax_setup(company, setup)
         # the rows on the old cash account, read before the defaults are cleared, follow it to the new chart
         moved = cash_links(company)
         if moved:
@@ -1012,6 +1241,9 @@ def replace(company: str, nodes, classes) -> Dict[str, Any]:
         raise
     created = frappe.db.count(ACCOUNT, {"company": company})
     out = {"company": company, "removed": removed, "created": created, "defaults_left_empty": empty}
+    if tax_removed:
+        # set up again on the new chart's own tax accounts: which ones is the user's call
+        out["tax_setup_removed"] = tax_removed
     if moved:
         # the account the modes of payment now use for this company: the new chart's cash ledger, or none
         out["cash_mode_of_payment_account"] = cash_account

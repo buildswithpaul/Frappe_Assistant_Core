@@ -85,7 +85,11 @@ class ImportChartOfAccounts(BaseTool):
             "an account the company has already is kept as it is. Either way the client's account names and "
             "numbers are kept as old IDs so the opening trial balance finds its accounts by them. To replace "
             "the standard chart of a company with no transactions use replace_chart_of_accounts. Every "
-            "account needs a root type: answer the unclassified list of the check first."
+            "account needs a root type: answer the unclassified list of the check first. A top group of "
+            "the file whose root type the company has no top-level account of (ERPNext's India chart has "
+            "no Equity) becomes the company's top-level account of that type. If this tool refuses or "
+            "fails, tell the user why and stop: never create or move accounts by hand with "
+            "create_document or update_document to get round it."
         )
         self.requires_permission = None  # the session, and Account create, are checked
         self.untrusted_fields = (
@@ -95,6 +99,7 @@ class ImportChartOfAccounts(BaseTool):
             "error",
             "outline",
             "unclassified",
+            "doubtful",
             "problems",
             "parents_not_in_the_file",
             "map",
@@ -240,9 +245,19 @@ def check_chart(name: str, company: str, arguments: Dict[str, Any]) -> Dict[str,
             out["company"] = company
             out["modes"] = import_chart.modes(company)
             if "replace" in out["modes"]["offered"]:
-                # What replace_chart_of_accounts' approval card shows: sent with the first call, the
-                # user approves once, with the figures (live, a call without them was a second card)
-                out["modes"]["replace_figures"] = import_chart.replace_figures(company, nodes)
+                problem = import_chart.replace_problem(company)
+                if problem:
+                    # said before the user picks replace (live, 2026-11-18: picked, then refused)
+                    out["modes"]["offered"].remove("replace")
+                    out["modes"]["replace_refused"] = problem
+                else:
+                    # What replace_chart_of_accounts' approval card shows: sent with the first call, the
+                    # user approves once, with the figures (live, a call without them was a second card)
+                    out["modes"]["replace_figures"] = import_chart.replace_figures(company, nodes)
+            roots = import_chart.missing_roots(company, nodes, classes)
+            if roots:
+                # add and map make the file's top account of that type the company's root: shown first
+                out["add_creates_top_level"] = roots
             proposal = import_chart.map_proposal(nodes, classes, company)
             out["map"] = {
                 "matched": len(proposal["matched"]),
