@@ -27,6 +27,8 @@ def post(chat: str, text: str) -> None:
     # The id came from the caller's X-AR-Session-Id header: post only in a conversation of the job's user
     if frappe.db.get_value("FAC Chat Conversation", chat, "user") != frappe.session.user:
         return
+    if awaiting_answer(chat):
+        return
     from frappe_assistant_core.chat.doctype.fac_chat_message.fac_chat_message import FACChatMessage
 
     try:
@@ -40,6 +42,27 @@ def post(chat: str, text: str) -> None:
     except Exception:
         # The import is done and recorded either way; only the message is lost.
         frappe.log_error(title=_("FAC Import: posting the result failed"), message=frappe.get_traceback())
+
+
+def awaiting_answer(chat: str) -> bool:
+    """FACO's last message in ``chat`` asks the user something not yet answered. The chat answers a
+    question on its newest message only, so a message posted after it left the question's buttons and
+    typed answer doing nothing (live, 2026-11-17): the job's result is not posted then. FACO started
+    the job in that turn and reads the result itself."""
+    last = frappe.get_all(
+        "FAC Chat Message",
+        filters={"session_id": chat},
+        fields=["role", "blocks"],
+        order_by="idx desc",
+        limit=1,
+    )
+    if not last or last[0].role != "assistant" or not last[0].blocks:
+        return False
+    blocks = frappe.parse_json(last[0].blocks) or []
+    return any(
+        isinstance(block, dict) and block.get("type") == "interaction" and block.get("status") == "pending"
+        for block in blocks
+    )
 
 
 def check_ended(session) -> None:

@@ -64,12 +64,14 @@ const props = defineProps({
 	conversationId: { type: String, default: null },
 	environment: { type: Object, required: true },
 	submitting: { type: Boolean, default: false },
+	// Seeds the description only; the user can edit it.
+	prefill: { type: String, default: null },
 });
 const emit = defineEmits(["submit", "cancel"]);
 
 const subject = ref("");
 const category = ref("Bug");
-const description = ref("");
+const description = ref(props.prefill || "");
 const includeConversation = ref(false);
 const attachments = useTicketAttachments();
 

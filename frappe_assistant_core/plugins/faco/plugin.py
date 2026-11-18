@@ -39,6 +39,7 @@ Utility modules (not registered as tools):
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from frappe_assistant_core.core.tool_packs import ToolPack
 from frappe_assistant_core.plugins.base_plugin import BasePlugin
 
 
@@ -103,6 +104,43 @@ class FacoPlugin(BasePlugin):
             "customisation_impact",
             # FAC Cloud checks a build plan against the site before showing it. Never shown to the model.
             "check_build_plan",
+        ]
+
+    def get_tool_packs(self) -> List[ToolPack]:
+        # screenshot_vision has no registered tool on this branch, so it is not listed.
+        # generate_document and attach_chat_file stay in the base set.
+        return [
+            ToolPack(
+                id="crm",
+                title="Frappe CRM",
+                description="Working with Frappe CRM leads and deals: their activity, emailing a lead, converting a lead to a deal",
+                tools=("add_crm_activity", "convert_crm_lead", "get_crm_activity", "send_crm_email"),
+            ),
+            ToolPack(
+                id="helpdesk",
+                title="Helpdesk",
+                description="Replying to a customer on a Helpdesk ticket",
+                tools=("reply_to_helpdesk_ticket",),
+            ),
+            ToolPack(
+                id="insights",
+                title="Frappe Insights",
+                description="Reading reports built in the Frappe Insights app: its dashboards, charts and their numbers",
+                tools=("get_insights_chart", "get_insights_dashboard", "list_insights_dashboards"),
+            ),
+            ToolPack(
+                id="browser",
+                title="Browser",
+                description="Reading or acting on the page the user has open in their browser: the current form, a screenshot, navigating",
+                tools=(
+                    "browser_capture_diagnostics",
+                    "browser_get_form_data",
+                    "browser_get_page_context",
+                    "browser_navigate_to",
+                    "browser_take_screenshot",
+                    "browser_wait_for_page",
+                ),
+            ),
         ]
 
     def is_fac_cloud_only(self) -> bool:

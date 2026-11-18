@@ -121,6 +121,7 @@ from .chat import (
 
 # ── Discovery banner ────────────────────────────────────────────────
 from .discovery import (
+    banner_shown,
     dismiss_banner,
     get_chat_analytics,
     get_chat_status,
@@ -151,6 +152,7 @@ from .home import (
     get_home_preferences,
     get_home_signals,
     hide_home_signal,
+    save_discovery_state,
     update_home_preferences,
 )
 
@@ -237,6 +239,12 @@ from .team_instructions import (
     get_shared_knowledge,
     share_memory_to_knowledge,
     update_shared_knowledge,
+)
+
+# ── Tool loading ─────────────────────────────────────────────────────
+from .tool_loading import (
+    get_tool_loading,
+    set_tool_loading,
 )
 
 # ── Users (Admin) ────────────────────────────────────────────────────

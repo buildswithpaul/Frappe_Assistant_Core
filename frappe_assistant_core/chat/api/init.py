@@ -140,7 +140,7 @@ def initialize_spa() -> dict:
     return {
         "access": access,
         "quota": quota,
-        "capabilities": capabilities or _default_capabilities(),
+        "capabilities": _with_default_discovery(capabilities or _default_capabilities()),
         "user_auth": _format_user_auth(user_auth, settings),
         "terms": _format_terms(ar_results.get("terms"), is_admin),
         "onboarding": None,  # Retained for backward compat (mobile). Onboarding chat removed.
@@ -427,6 +427,18 @@ def _format_user_auth(user_auth: dict | None, settings: Document) -> dict:
         "expired_server_names": expired_servers,
         "needs_reconnect": expired_count > 0,
     }
+
+
+# ============================================================================
+# Helper: the default Your FAC powers
+# ============================================================================
+
+
+def _with_default_discovery(capabilities: dict) -> dict:
+    """Add the default Your FAC powers when AR sent none, so every site shows the ring."""
+    from frappe_assistant_core.chat.discovery_defaults import with_default_discovery
+
+    return with_default_discovery(capabilities)
 
 
 # ============================================================================

@@ -41,13 +41,24 @@ function pageProblem() {
 }
 
 /**
+ * What the open page has shown that FAC's tools hide from FACO (utils/pageReach.js), or null when
+ * that can't be told, as for a page from a server that sends no withheld list.
+ */
+const shownOnPage = () => usePagePanel().pageView.value?.shown?.() ?? null;
+
+/** Whether a picture of the page needs the user's approval: it shows what FACO may not see, or it can't be told. */
+const needsAsking = (shown) => !shown || shown.fields.length > 0 || shown.methods.length > 0;
+
+/**
  * FACO's screenshot in the chat SPA: the page open beside the chat, never the chat itself, so
  * `selector` and `full_page` do not apply.
  *
  * @param {object} params the tool's parameters
  * @param {string} [askedAbout] the page open when the user was asked; another page is not captured
+ * @param {{unasked?: boolean}} [options] `unasked`: the user was not asked, since the page showed
+ *   nothing FACO may not see; a page that shows something by the time of the picture is not captured
  */
-export async function takePageScreenshot(params = {}, askedAbout = undefined) {
+export async function takePageScreenshot(params = {}, askedAbout = undefined, { unasked = false } = {}) {
 	const panel = usePagePanel();
 	const problem = pageProblem();
 	if (problem) return { error: problem };
@@ -62,6 +73,13 @@ export async function takePageScreenshot(params = {}, askedAbout = undefined) {
 	if (askedAbout !== undefined && panel.openName.value !== askedAbout) {
 		return { error: __("Another page was opened before this one could be captured. Ask again.") };
 	}
+	// Checked again once the picture is drawn: a read that landed meanwhile may be in it.
+	const nowHidden = () =>
+		unasked && needsAsking(shownOnPage())
+			? { error: __("The page now shows data FAC's tools hide from you. Ask again to look at it.") }
+			: null;
+	const hiddenBefore = nowHidden();
+	if (hiddenBefore) return hiddenBefore;
 	const view = panel.pageView.value;
 	// The page's visible text and errors go with every answer, picture or not, so FACO can check the
 	// page when it can't read images or the picture fails.
@@ -73,6 +91,8 @@ export async function takePageScreenshot(params = {}, askedAbout = undefined) {
 	});
 	try {
 		const shot = view.capture ? await captureFrame(view, params) : await captureElement(view, params);
+		const hiddenAfter = nowHidden();
+		if (hiddenAfter) return hiddenAfter;
 		const { blob, text, page_width: pageWidth, page_height: pageHeight, ...size } = shot;
 		// A canvas past the browser's maximum size encodes to null.
 		if (!blob) return { error: __("Screenshot too large to encode."), ...size, ...check(text) };
@@ -137,17 +157,27 @@ function visibleText(root) {
 	return text.length > MAX_PAGE_TEXT ? `${text.slice(0, MAX_PAGE_TEXT)}…` : text;
 }
 
-const pageCopy = () => ({
-	action: __("Look at the page"),
-	detail: __(
-		"FACO wants to look at the page open beside the chat and send the assistant a picture of it and the text it shows. Both may contain any data the page shows.",
-	),
-});
+// The card says why it asks: what the page showed that FAC's tools keep from FACO, when known.
+function pageCopy(shown) {
+	const detail = [
+		__(
+			"FACO wants to look at the page open beside the chat and send the assistant a picture of it and the text it shows. Both may contain any data the page shows.",
+		),
+	];
+	if (shown?.fields.length) {
+		detail.push(__("This page shows data FAC's tools keep from FACO: {0}.", [shown.fields.join(", ")]));
+	}
+	if (shown?.methods.length) {
+		detail.push(__("This page shows data from {0}, which FAC can't check.", [shown.methods.join(", ")]));
+	}
+	return { action: __("Look at the page"), detail: detail.join(" ") };
+}
 
 /**
  * Let FACO look at the page open in the side panel. Calls arrive on the SPA socket, which sits in
- * the conversation's task_progress room; each screenshot asks the user first, and "Allow on this
- * page in this chat" covers that page in that conversation only. The card offers no wider trust.
+ * the conversation's task_progress room. FACO looks without asking while the page has shown
+ * nothing FAC's tools hide from it; otherwise the user is asked, and "Allow on this page in this
+ * chat" covers that page in that conversation only. The card offers no wider trust.
  *
  * @param {{getSessionId: () => string|null}} options
  */
@@ -155,6 +185,8 @@ export function useSpaBrowserTools({ getSessionId }) {
 	// The page each call was about when it was accepted, keyed by the call's params object, which
 	// the dispatcher hands unchanged to preflight and then to the handler.
 	const askedAbout = new WeakMap();
+	// The calls let through without asking, so the capture can check the page still shows nothing hidden.
+	const unasked = new WeakSet();
 	const pageKey = (toolName) => `${getSessionId()}|${usePagePanel().openName.value}|${toolName}`;
 	function preflight(toolName, params) {
 		const problem = pageProblem();
@@ -164,7 +196,10 @@ export function useSpaBrowserTools({ getSessionId }) {
 
 	const dispatcher = createDispatcher({
 		transport: { on: onSpaSocketEvent, call: baseCall },
-		handlers: { take_screenshot: (params) => takePageScreenshot(params, askedAbout.get(params)) },
+		handlers: {
+			take_screenshot: (params) =>
+				takePageScreenshot(params, askedAbout.get(params), { unasked: unasked.has(params) }),
+		},
 		// The chat app's turns only, or a widget's turn this tab took over (the server retypes those
 		// calls); an older AR names no client and never offers the chat app a tool.
 		ownsCall: (call) =>
@@ -173,13 +208,18 @@ export function useSpaBrowserTools({ getSessionId }) {
 		// A call typed for the chat app is no other client's to answer, so a Desk-only tool is
 		// answered at once: left alone, FACO would wait on nobody (#34515).
 		unknownToolError: () => DESK_ONLY_TOOL_ERROR(),
-		confirmTools: new Set(["take_screenshot"]),
+		needsConfirm(toolName, params) {
+			if (toolName !== "take_screenshot") return false;
+			if (needsAsking(shownOnPage())) return true;
+			unasked.add(params);
+			return false;
+		},
 		trustKey: pageKey,
 		pageTrustKey: (toolName) => (getSessionId() ? pageKey(toolName) : null),
 		describe: () => __("The page open beside the chat"),
 		// With nothing to capture, answer at once rather than ask the user to approve nothing.
 		preflight,
-		confirm: (request) => askConfirm({ ...request, copy: pageCopy(), alwaysAllow: false }),
+		confirm: (request) => askConfirm({ ...request, copy: pageCopy(shownOnPage()), alwaysAllow: false }),
 		getSessionId,
 	});
 

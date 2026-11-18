@@ -48,16 +48,18 @@ class DryRunImport(BaseTool):
             "ERPNext's own rules. Call it once the columns are mapped, and again after fixes. "
             "Returns '<n> rows ready, <m> would fail' and the failures grouped by cause, each with "
             "a count and up to 3 example rows; show the user that, not row-by-row lists. Files of "
-            f"more than {dry_run.BACKGROUND_ROWS} rows (fewer for invoices and other submitted "
+            f"more than {dry_run.BACKGROUND_ROWS} rows (250 for invoices and other submitted "
             "documents, whose rows take longer) are checked in the background: say so, and "
             "read the session with get_document later (progress, then validation_summary, which "
             "holds this same reply). The file must be on this site: if the session's file is only "
             "in the chat, ask the user to upload it in File Manager (or attach it in FAC Chat) and "
             "pass its file_id; the user must be allowed to read it. A different file passed as "
             "file_id or file_url puts back the rows left out before. Each group comes with a plain "
-            "explanation and the fixes that fit it: explain it and offer only those fixes, on one "
-            "single-choice card per group (ask_user single_select, never multi_select: a group's "
-            "fixes exclude each other). For an Update "
+            "explanation and the fixes that fit it: explain it and offer only those fixes. decisions "
+            "holds every failure, shown or not, one per field and cause, with each value's suggested "
+            "answer: ask them all at once, in one message, one single-choice question per decision "
+            "(ask_user single_select, never multi_select: a group's fixes exclude each other), the "
+            "suggested answer first, then send every answer as fixes in one call. For an Update "
             "Existing Records session the reply also has update: records_changing, fields_changing, "
             "by_field (how many records change each field) and up to 5 samples with each field's old "
             "and new value: show the user those as a table before asking to import. Rows that change "
@@ -108,7 +110,13 @@ class DryRunImport(BaseTool):
         # fenced on its own, so it is still a list of lines run_migration_plan is given back (it
         # takes them with or without their fence).
         self.untrusted_fields = (
+            # a chart check quotes the client's account names
+            "outline",
+            "unclassified",
+            "parents_not_in_the_file",
+            "map",
             "groups",
+            "decisions",  # each value the file has, as the groups quote them
             "masters_plan",
             "left_out",
             "problems",
@@ -138,6 +146,18 @@ class DryRunImport(BaseTool):
             "type": "object",
             "properties": {
                 "session": {"type": "string", "description": "The import session id: one file"},
+                "chart": {
+                    "type": "object",
+                    "description": (
+                        "With session: check the client's chart of accounts in it instead of the rows "
+                        "(get_skill('import-chart-of-accounts-usage')). Writes nothing. Keys: company "
+                        "(for the modes it allows and which accounts match; default: the site's only "
+                        "company, so ask only on a site of several), classifications ({account "
+                        "name: {root_type, account_type}}, the user's answers for the accounts that "
+                        "couldn't be classified) and root_type_column (the heading of a Root Type "
+                        "column, when the file has one)."
+                    ),
+                },
                 "plan": {
                     "type": "string",
                     "description": "Instead of session: the migration plan id, to check every file of "
@@ -212,6 +232,12 @@ class DryRunImport(BaseTool):
             }
         if plan_name:
             return self._check_plan(plan_name, arguments)
+        if isinstance(arguments.get("chart"), dict):
+            # the chart's own check (#34422): read-only, as every dry run is
+            from frappe_assistant_core.plugins.migration.tools.import_chart_of_accounts import check_chart
+
+            chart = arguments["chart"]
+            return check_chart(session_name, (chart.get("company") or "").strip(), chart)
         if arguments.get("answers"):
             return {
                 "success": False,
@@ -283,11 +309,22 @@ class DryRunImport(BaseTool):
                 dry_run.link_site_file(session, new_file, sheet_url or None)
                 if before and not _same_content(before, session.source_file):
                     notice = import_fixes.forget_left_out(session)
-            if fixes and session.status not in import_failures.AFTER_CHECK:
+            unchecked = fixes and (
+                session.status not in import_failures.AFTER_CHECK or not import_fixes.checked_as_is(session)
+            )
+            if unchecked and dry_run.check_cost(session) <= dry_run.BACKGROUND_ROWS:
+                # Live, 2026-11-17: fixes sent after a mapping change were refused until the file was
+                # checked again, a round trip each time. A file checked in the request is checked
+                # here first; the fixes apply to the groups it finds, whose ids stay the same for
+                # the same cause and value, and one sent for a group that is gone is refused.
+                dry_run.check_can_run(session)
+                import_fixes.check(session.name)
+                session.reload()
+            elif fixes and session.status not in import_failures.AFTER_CHECK:
                 raise dry_run.DryRunProblem(
                     _("Check the file first, without fixes; fixes apply to the groups it finds.")
                 )
-            if fixes and not import_fixes.checked_as_is(session):
+            elif fixes and not import_fixes.checked_as_is(session):
                 if import_fixes.fixed_unchecked(session):
                     # The file and mapping are as checked; the fixes sent before are saved (#34607)
                     raise dry_run.DryRunProblem(

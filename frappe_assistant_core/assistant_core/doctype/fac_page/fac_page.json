@@ -8,12 +8,15 @@
  "engine": "InnoDB",
  "field_order": [
   "title",
+  "description",
   "slug",
   "column_break_main",
   "visibility",
   "published",
   "access_section",
   "roles",
+  "data_section",
+  "doctypes",
   "content_section",
   "html",
   "script",
@@ -26,6 +29,12 @@
    "in_list_view": 1,
    "label": "Title",
    "reqd": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description",
+   "description": "One line shown under the title in the Pages list."
   },
   {
    "description": "Lower-case letters and digits in words joined by single hyphens, at most 80 characters. Unique among shared pages, and among each user's own pages. It cannot change after the page is saved.",
@@ -69,6 +78,18 @@
    "fieldtype": "Table",
    "label": "Roles",
    "options": "FAC Page Role"
+  },
+  {
+   "fieldname": "data_section",
+   "fieldtype": "Section Break",
+   "label": "Data"
+  },
+  {
+   "description": "The doctypes this page reads or writes. Deleting the page leaves them and their records.",
+   "fieldname": "doctypes",
+   "fieldtype": "Table MultiSelect",
+   "label": "DocTypes this page uses",
+   "options": "FAC Page DocType"
   },
   {
    "fieldname": "content_section",

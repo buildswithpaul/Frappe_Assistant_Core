@@ -6,6 +6,19 @@ attaches a spreadsheet and says to import it. Follow this workflow every time, h
 is worded. Each tool has its own skill page with the details; this page is the order and the rules
 that hold across them.
 
+## A chart of accounts is not a plain import
+
+The user only says "import this". Look at what each file holds (`start_import_session` gives the
+columns and sample rows). **The client's chart of accounts** (accounts or ledgers with the group
+each is under: an ERPNext Chart of Accounts Importer layout, or a Tally or Zoho export) is never a
+plain import of `Account`, and never a reason to send the user to Desk. Open it and map it to Account
+as usual, then follow `get_skill("import-chart-of-accounts-usage")`: the check
+(`dry_run_import(session, chart={"company": ...})`) places every account and asks only about the ones
+it can't, and `import_chart_of_accounts` or `replace_chart_of_accounts` puts it on the company. It goes
+before every other file, and is not part of a migration plan. Don't mark an old ID column on it and
+don't ask where to keep the IDs: the chart's import keeps each account's name and number as its old
+IDs itself. The other files of the same upload go on as below.
+
 ## Two ways through a migration
 
 - **Several files, or the user wants to approve once**: make a **migration plan** (below). Every
@@ -68,6 +81,13 @@ the normal way, in the same call.
 Steps 3 to 5 repeat until nothing fails: explain each group in its own words, offer only its
 `fixes`, apply the user's choices in one call, and give the new count.
 
+**The company the user names is the company.** When the request names it ("import these projects
+into Acme Traders"), every record goes to that company: don't ask again, and never let a column of
+the file override it. A file's own company column (often called Legal entity or Entity) usually
+holds the old system's code for it, such as "ACME": map that column to Company in step 2, then, in
+the first check's fixes, send a map fix from its value to the company the user named, without
+asking. With no such column, send a fill fix for Company with it.
+
 **Opening balances use their own setup tool in step 2** instead of `set_column_mapping`. They also
 have their own import tool in step 6 instead of `start_import`:
 
@@ -88,10 +108,9 @@ Records must exist before the records that link to them. In a migration plan, `p
 orders the files this way for you. Without one, show this order as the plan, and work through it
 one file at a time:
 
-1. **Chart of accounts.** The accounts must be right before any transaction is posted. Replacing
-   the chart is possible only on a company with no transactions yet, with ERPNext's **Chart of
-   Accounts Importer** in Desk. No import tool does that. Adding missing accounts to an existing
-   chart is a normal import of `Account`.
+1. **Chart of accounts.** The accounts must be right before any transaction is posted. The
+   client's chart goes through its own check and import (see "A chart of accounts is not a plain
+   import" above); replacing the chart is possible only on a company with no transactions yet.
 2. **Setup masters**: Payment Terms, Customer Groups, Supplier Groups, Item Groups, Territories,
    Warehouses, UOMs, Price Lists.
 3. **Parties and items**: Customers, Suppliers, Items.
@@ -104,7 +123,10 @@ one file at a time:
 
 If a file needs records from a later file (for example, Customers whose group is in the Customer
 Group file), import the other file first. Use step 5 only for a few missing masters the file
-doesn't bring itself.
+doesn't bring itself. A file that names its customers or suppliers only in its own rows (projects
+with a customer column, say), with no file of them: check the whole file and ask once, as
+`get_skill("dry-run-import-usage")` says under **Many rows need customers or suppliers that aren't in
+ERPNext yet**. Never leave the user with only map or leave out for them.
 
 ## When an import tool fails
 
@@ -206,8 +228,8 @@ it's Planning it lists the open questions, and once it runs or has ended it repo
 ## Talking to the user
 
 - Plain business words: "412 customers use a group that doesn't exist", not the ERPNext error.
-- One decision at a time, grouped, never row by row. In a migration plan, all the decisions come
-  together, still grouped: one list, so the user answers once.
+- Every decision at once, grouped, never row by row: the check's decisions list holds all of
+  them, the suggested answer first, so the user answers once. In a migration plan too.
 - Say what each step will do before an approval card, and what it did afterwards, with the counts.
 - After each file, say what's next in the order above.
 

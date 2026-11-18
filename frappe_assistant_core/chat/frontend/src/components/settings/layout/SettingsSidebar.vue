@@ -48,6 +48,7 @@ import { useRouter } from "vue-router";
 import { useUserStore } from "@/stores/userStore";
 import { __ } from "@/utils/i18n";
 import { useTourStore } from "@/stores/tourStore";
+import { useDiscoveryStore } from "@/stores/discoveryStore";
 
 const router = useRouter();
 const userStore = useUserStore();
@@ -118,6 +119,14 @@ const PacksIcon = () =>
 		h("polyline", { points: "2.32 6.16 12 11 21.68 6.16" }),
 		h("line", { x1: "12", y1: "22.76", x2: "12", y2: "11" }),
 	]);
+const ToolsIcon = () =>
+	h("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": 2 }, [
+		h("path", {
+			"stroke-linecap": "round",
+			"stroke-linejoin": "round",
+			d: "M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z",
+		}),
+	]);
 const AppearanceIcon = () =>
 	h("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": 2 }, [
 		h("path", {
@@ -180,6 +189,7 @@ const visibleGroups = computed(() => {
 		{ to: "/settings/profile", label: "Profile", icon: ProfileIcon },
 		{ to: "/settings/appearance", label: "Appearance", icon: AppearanceIcon },
 		{ to: "/settings/home", label: __("Home page"), icon: HomeIcon },
+		{ to: "/settings/tools", label: __("Tools"), icon: ToolsIcon },
 		{ to: "/settings/privacy", label: "Privacy & Data", icon: PrivacyIcon },
 	];
 	personalItems.push({ to: "/settings/my-tickets", label: "Support", icon: TicketIcon });
@@ -215,7 +225,18 @@ const visibleGroups = computed(() => {
 	groups.push({
 		id: "help",
 		label: "Help",
-		items: [{ label: "Replay tour", icon: TourIcon, action: () => tourStore.open() }],
+		items: [
+			{ label: "Replay tour", icon: TourIcon, action: () => tourStore.open() },
+			// The 3-stop "where things are" tour runs on Home, so go there first.
+			{
+				label: "Show me around",
+				icon: TourIcon,
+				action: () => {
+					useDiscoveryStore().requestCoach();
+					router.push("/chat");
+				},
+			},
+		],
 	});
 
 	return groups;

@@ -1,5 +1,7 @@
 /* The mockup kit. MockupFrame inlines it in a sandboxed iframe (:root, body); the fac-pages Desk page
-   links it into a shadow root (:host, .fac-page-root). Keep both selector forms on each base rule. */
+   links it into a shadow root (:host, .fac-page-root). Keep both selector forms on each base rule.
+   Every colour is a token below, so a page follows Desk's theme: the host puts data-theme="dark" on
+   the frame's document or on the shadow host. */
 
 :root,
 :host {
@@ -10,8 +12,41 @@
 	--mk-text-muted: #7c7c7c;
 	--mk-primary: #171717;
 	--mk-primary-text: #ffffff;
+	--mk-danger: #b42318;
+	--mk-sev-high-bg: #fee4e2;
+	--mk-sev-high-text: #912018;
+	--mk-sev-med-bg: #fef0c7;
+	--mk-sev-med-text: #7a2e0e;
+	--mk-sev-low-bg: #f2f4f7;
+	--mk-sev-low-text: #344054;
+	--mk-ok: #12b76a;
+	--mk-warn: #f79009;
 	--mk-radius: 8px;
 	--mk-font: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Desk's dark palette (bg #171717, text #d9d9d9). Screen only: a page prints light. */
+@media screen {
+	:root[data-theme="dark"],
+	:host([data-theme="dark"]) {
+		--mk-bg: #171717;
+		--mk-surface: #1f1f1f;
+		--mk-border: #333333;
+		--mk-text: #ededed;
+		--mk-text-muted: #999999;
+		--mk-primary: #f8f8f8;
+		--mk-primary-text: #171717;
+		--mk-danger: #f97066;
+		--mk-sev-high-bg: #55160c;
+		--mk-sev-high-text: #fecdca;
+		--mk-sev-med-bg: #4e1d09;
+		--mk-sev-med-text: #fedf89;
+		--mk-sev-low-bg: #2b2b2b;
+		--mk-sev-low-text: #d0d5dd;
+		--mk-ok: #32d583;
+		--mk-warn: #fdb022;
+		color-scheme: dark;
+	}
 }
 
 * {
@@ -166,4 +201,112 @@ body,
 	.mk-chart svg {
 		height: auto;
 	}
+}
+
+/* Sections and editing, for pages people type into (the page tools in pageBlocks.js). */
+.mk-section {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.mk-section-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+.mk-section-meta {
+	color: var(--mk-text-muted);
+	font-size: 12px;
+}
+
+.mk-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.mk-text {
+	white-space: pre-line;
+}
+
+.mk-edit-row {
+	display: flex;
+	gap: 8px;
+	align-items: flex-start;
+	margin-bottom: 8px;
+}
+
+.mk-edit-row input,
+.mk-edit-row select,
+.mk-edit-row textarea {
+	padding: 6px 10px;
+	border: 1px solid var(--mk-border);
+	border-radius: var(--mk-radius);
+	background: var(--mk-surface);
+	color: var(--mk-text);
+	font: inherit;
+}
+
+.mk-edit-row textarea {
+	flex: 1;
+	min-height: 2.5em;
+}
+
+.mk-edit-error {
+	color: var(--mk-danger);
+	font-size: 12px;
+}
+
+/* Severity badges; each pair keeps AA contrast. */
+.mk-sev-high {
+	background: var(--mk-sev-high-bg);
+	color: var(--mk-sev-high-text);
+}
+
+.mk-sev-med {
+	background: var(--mk-sev-med-bg);
+	color: var(--mk-sev-med-text);
+}
+
+.mk-sev-low {
+	background: var(--mk-sev-low-bg);
+	color: var(--mk-sev-low-text);
+}
+
+/* Filled-in markers: give the dot an aria-label or a text label beside it. */
+.mk-status-done,
+.mk-status-pending {
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	vertical-align: middle;
+}
+
+.mk-status-done {
+	background: var(--mk-ok);
+}
+
+.mk-status-pending {
+	background: var(--mk-warn);
+}
+
+.mk-period {
+	max-width: 220px;
+}
+
+/* Present mode (pagePresent.js): one section per screen, edit controls hidden. */
+.fac-presenting .mk-section.fac-present-off {
+	display: none;
+}
+
+.fac-presenting .mk-edit {
+	display: none !important;
 }

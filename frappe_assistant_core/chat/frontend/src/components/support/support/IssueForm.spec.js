@@ -85,3 +85,21 @@ describe("IssueForm attachments (real composable + child, regression for reactiv
 		vi.unstubAllGlobals();
 	});
 });
+
+describe("IssueForm prefill", () => {
+	const mountForm = (props) =>
+		mount(IssueForm, {
+			props: { environment: { model: "x" }, submitting: false, ...props },
+			global: { stubs: { EnvironmentDisclosure: true, AttachmentPicker: true } },
+		});
+
+	it("seeds the description and leaves the include box unticked", () => {
+		const w = mountForm({ conversationId: "sess-1", prefill: "Error: boom\nCode: X\nTime: t\n\n" });
+		expect(w.find("textarea").element.value).toBe("Error: boom\nCode: X\nTime: t\n\n");
+		expect(w.find('input[type="checkbox"]').element.checked).toBe(false);
+	});
+
+	it("starts empty without a prefill", () => {
+		expect(mountForm({}).find("textarea").element.value).toBe("");
+	});
+});

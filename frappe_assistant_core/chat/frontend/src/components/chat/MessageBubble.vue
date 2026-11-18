@@ -78,10 +78,7 @@
 			</div>
 
 			<!-- Retry: the latest turn ended in an error or an interruption -->
-			<div v-if="canRetry" class="truncation-notice retry-notice">
-				<span>{{ __("This answer did not finish.") }}</span>
-				<button class="continue-btn retry-btn" @click="$emit('retry')">{{ __("Retry") }}</button>
-			</div>
+			<ReportFailedTurn v-if="canRetry" :last-error="message.lastError" @retry="$emit('retry')" />
 
 			<TurnCreditNotices
 				:message="message"
@@ -110,8 +107,8 @@
 							d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-4-7 4V5z" />
 					</svg>
 				</button>
+				<AnswerRating v-if="canRateAnswer(message, userStore.capabilities)" :message-id="message.message_id" />
 			</div>
-
 			<MessageFooter :message="message" :is-user="isUser" />
 		</div>
 	</div>
@@ -122,11 +119,13 @@ import { computed, ref, onMounted } from "vue";
 import { useUserStore } from "@/stores/userStore";
 import MessageBlockRenderer from "./MessageBlockRenderer.vue";
 import MessageFooter from "./MessageFooter.vue";
+import AnswerRating from "./feedback/AnswerRating.vue";
+import ReportFailedTurn from "./feedback/ReportFailedTurn.vue";
 import TurnCreditNotices from "./TurnCreditNotices.vue";
 import FacoRobot from "@/components/common/FacoRobot.vue";
 import { ensureHljs } from "@/utils/markdown.js";
 import { __ } from "@/utils/i18n";
-import { turnLabel, userInitial as deriveInitial } from "./turns.js";
+import { canRateAnswer, turnLabel, userInitial as deriveInitial } from "./turns.js";
 
 const props = defineProps({
 	message: {

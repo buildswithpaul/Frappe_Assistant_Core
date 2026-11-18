@@ -35,7 +35,8 @@ export { fetchTransport, queryArgs } from "./pageFetchTransport";
 // permission. The chat's stand-in frappe uses get_list, get_value and get. query_report.run runs a
 // report's own code and getdoc a controller's onload; both are what the user can already run from
 // Desk, and GET rolls back any database write they make. report_access answers only whether the
-// user may run each report.
+// user may run each report, has_permission whether they may read or change a record, and my_roles
+// only the viewer's own roles.
 export const PAGE_READ_METHODS = new Set([
 	"frappe.client.get",
 	"frappe.client.get_list",
@@ -47,6 +48,8 @@ export const PAGE_READ_METHODS = new Set([
 	"frappe.desk.query_report.run",
 	"frappe.desk.form.load.getdoc",
 	"frappe_assistant_core.api.fac_page.report_access",
+	"frappe.client.has_permission",
+	"frappe_assistant_core.api.fac_page.my_roles",
 ]);
 
 // Per page, in memory only: the content the answers below were given for, the methods the user
@@ -69,7 +72,7 @@ const MAX_QUEUED_READS = 200;
 // After this many refusals on one version of a page, it may only read.
 const MAX_DENIALS = 3;
 // Answers whether a dotless name is a Server Script API method the site has not remapped.
-const PAGE_API_CHECK = "frappe_assistant_core.api.fac_page.is_page_api_method";
+export const PAGE_API_CHECK = "frappe_assistant_core.api.fac_page.is_page_api_method";
 
 const MAX_ARGS_BYTES = 1024 * 1024;
 const MAX_ERRORS = 20;
@@ -81,6 +84,12 @@ const MAX_DIMENSION = 20000;
 // The page's own size, which a picture of a tall page reports beside its smaller one.
 const MAX_PAGE_DIMENSION = 1000000;
 const RESULT_TIMEOUT_MS = 15000;
+// How long Present waits for the frame; an older runtime never answers.
+const PRESENT_TIMEOUT_MS = 3000;
+// The presenting keys the frame may pass on, and the most sections a presented page may report.
+const PRESENT_KEYS = new Set(["next", "prev", "first", "last", "exit"]);
+const MAX_PRESENT_SECTIONS = 200;
+const MAX_PRESENT_TITLE = 120;
 // A print or a picture waits for the script to run and its calls to come back, this long at most,
 // then this long with nothing in flight, so the figures it fetched are drawn.
 const IDLE_TIMEOUT_MS = 8000;
@@ -143,8 +152,26 @@ const errorReply = (error) => ({
  * @param {(name: string) => void} [options.onUnsupported] a Desk member the script reached for
  * @param {(height: number) => void} [options.onHeight] the page's height, as it changes
  * @param {() => void} [options.onReady] the script has run
+ * @param {"dark"|"light"} [options.theme] Desk's theme when the frame is built; setTheme follows a change
  * @returns {{element: HTMLIFrameElement, errors: string[], snapshot: Function, dispose: Function}}
  */
+// A presented page's state as the frame reports it: null after stop, undefined when malformed.
+function presentState(state) {
+	if (state === null) return null;
+	const { index, count, titles } = isPlainObject(state) ? state : {};
+	const valid =
+		Number.isInteger(count) &&
+		count >= 1 &&
+		count <= MAX_PRESENT_SECTIONS &&
+		Number.isInteger(index) &&
+		index >= 0 &&
+		index < count &&
+		Array.isArray(titles) &&
+		titles.length <= count &&
+		titles.every((title) => typeof title === "string");
+	return valid ? { index, count, titles: titles.map((title) => title.slice(0, MAX_PRESENT_TITLE)) } : undefined;
+}
+
 export function createPageFrame({
 	page,
 	kitCss,
@@ -158,6 +185,8 @@ export function createPageFrame({
 	onUnsupported,
 	onHeight,
 	onReady,
+	onPresentKey,
+	theme,
 }) {
 	const element = document.createElement("iframe");
 	element.setAttribute("sandbox", PAGE_FRAME_SANDBOX);
@@ -174,8 +203,11 @@ export function createPageFrame({
 		origin,
 		nonce: makeNonce(),
 		version,
+		theme,
 	});
 
+	const initialTheme = theme === "dark" ? "dark" : "light";
+	let currentTheme = initialTheme;
 	const errors = [];
 	const results = new Map();
 	let nextId = 0;
@@ -401,6 +433,8 @@ export function createPageFrame({
 			case "ready":
 				started = true;
 				ready = true;
+				// A change sent before the page could hear it is sent again.
+				if (currentTheme !== initialTheme) toPage({ op: "theme", theme: currentTheme });
 				checkIdle();
 				onReady?.();
 				return;
@@ -432,18 +466,26 @@ export function createPageFrame({
 				if (!ok) return settle(data.id, new Error(__("The page sent nothing to print.")));
 				return settle(data.id, { html: data.html, wide: data.wide === true });
 			}
+			case "present_result": {
+				const state = presentState(data.state);
+				if (state === undefined) return settle(data.id, new Error(__("This page could not be presented.")));
+				return settle(data.id, state);
+			}
+			case "present_key":
+				if (PRESENT_KEYS.has(data.key)) onPresentKey?.(data.key);
+				return;
 			default:
 		}
 	}
 
-	function request(op, extra = {}) {
+	function request(op, extra = {}, timeoutMs = RESULT_TIMEOUT_MS) {
 		if (startFailure) return Promise.reject(startFailure);
 		const id = ++nextId;
 		return new Promise((resolve, reject) => {
 			const timer = setTimeout(() => {
 				results.delete(id);
 				reject(new Error(__("The page did not answer.")));
-			}, RESULT_TIMEOUT_MS);
+			}, timeoutMs);
 			results.set(id, { resolve, reject, timer });
 			toPage({ op, id, ...extra });
 		});
@@ -470,6 +512,13 @@ export function createPageFrame({
 		capture: async ({ scale = 1, quality = 80 } = {}) => {
 			await whenIdle();
 			return request("capture", { scale, quality });
+		},
+		/** Present mode, run inside the frame: "start", "show" with an index, or "stop". */
+		present: (command, index) => request("present", { command, index }, PRESENT_TIMEOUT_MS),
+		/** Desk's theme changed: the page switches without reloading. */
+		setTheme(next) {
+			currentTheme = next === "dark" ? "dark" : "light";
+			toPage({ op: "theme", theme: currentTheme });
 		},
 		/** The page's rendered markup, for Download PDF: {html, wide}. */
 		snapshot: async () => {

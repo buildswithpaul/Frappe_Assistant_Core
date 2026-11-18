@@ -284,6 +284,27 @@ class TestSetColumnMapping(ImportToolTestCase):
         self.assertIn("gst_hsn_code", [m["field"] for m in inserting["missing_required"]], inserting)
         self.assertNotIn("gst_hsn_code", [m["field"] for m in updating["missing_required"]], updating)
 
+    @unittest.skipUnless("erpnext" in frappe.get_installed_apps(), "needs ERPNext's Project")
+    def test_a_series_with_a_default_is_filled_not_missing(self):
+        # Live, 2026-11-17: "Required, with no column: Series" on a file of projects, whose series
+        # ERPNext fills from its default; users read it as something to fix.
+        result = self._map(
+            self._session("Project\nKolar\n", "projects.csv"), {"Project": "project_name"}, doctype="Project"
+        )
+
+        self.assertNotIn("naming_series", [m["field"] for m in result["missing_required"]], result)
+        self.assertIn("naming_series", [f["field"] for f in result["filled_without_column"]])
+
+    @unittest.skipUnless("erpnext" in frappe.get_installed_apps(), "needs ERPNext's Account")
+    def test_an_accounts_company_comes_from_the_chart_not_a_column(self):
+        result = self._map(
+            self._session("Account,Parent\nCash,Assets\n", "chart.csv"),
+            {"Account": "account_name", "Parent": "parent_account"},
+            doctype="Account",
+        )
+
+        self.assertNotIn("company", [m["field"] for m in result["missing_required"]], result)
+
     def test_a_child_tables_required_fields_count_once_it_is_used(self):
         result = self._map(self._session(), {"Mobile": "phone_nos.is_primary_mobile_no"}, doctype="Contact")
 

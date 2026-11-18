@@ -3,6 +3,7 @@
  * tool's own arguments ("Create Customer “MIGTEST Trader 01”", "Publish the work-planner page").
  */
 
+import { htmlText } from "@/utils/htmlText";
 import { __ } from "@/utils/i18n";
 import { baseToolName } from "@/utils/toolNames";
 import { goesLiveFields, isValidateOnly } from "./customisation";
@@ -33,10 +34,7 @@ const ACTIONS = {
 };
 
 function shorten(text) {
-	const plain = String(text)
-		.replace(/<[^>]*>/g, " ")
-		.replace(/\s+/g, " ")
-		.trim();
+	const plain = htmlText(text).replace(/\s+/g, " ").trim();
 	return plain.length > MAX_LABEL ? `${plain.slice(0, MAX_LABEL - 1)}…` : plain;
 }
 

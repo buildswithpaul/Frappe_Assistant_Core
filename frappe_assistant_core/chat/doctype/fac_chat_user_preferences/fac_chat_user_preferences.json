@@ -18,8 +18,14 @@
   "needs_you_count",
   "hidden_home_signals",
   "show_personalized_suggestions",
+  "show_progress",
+  "discovery_state",
+  "load_tools_as_needed",
   "pinned_prompt_templates",
   "selected_model",
+  "feedback_pulse_next",
+  "feedback_pulse_shown",
+  "feedback_pulse_submitted",
   "section_break_privacy",
   "privacy_consent_complete",
   "processing_restricted"
@@ -109,6 +115,27 @@
    "label": "Show Personalised Suggestions"
   },
   {
+   "default": "1",
+   "description": "The Your FAC progress ring on the FAC bot",
+   "fieldname": "show_progress",
+   "fieldtype": "Check",
+   "label": "Show Your FAC Progress"
+  },
+  {
+   "description": "JSON: features opened and used, powers celebrated, page guides closed",
+   "fieldname": "discovery_state",
+   "fieldtype": "Long Text",
+   "label": "Discovery State",
+   "hidden": 1
+  },
+  {
+   "default": "1",
+   "description": "FACO loads only the tools a conversation needs. Off gives FACO every tool on every message. An unset value counts as on.",
+   "fieldname": "load_tools_as_needed",
+   "fieldtype": "Check",
+   "label": "Load Tools As Needed"
+  },
+  {
    "fieldname": "pinned_prompt_templates",
    "fieldtype": "Small Text",
    "label": "Pinned Prompt Templates",
@@ -122,6 +149,33 @@
    "hidden": 1,
    "label": "Selected Model",
    "length": 140
+  },
+  {
+   "description": "The earliest date the satisfaction pulse card may show again: set when it is shown or dismissed.",
+   "fieldname": "feedback_pulse_next",
+   "fieldtype": "Date",
+   "hidden": 1,
+   "label": "Next Feedback Pulse",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "The day the satisfaction pulse card was last shown: it opens a one-answer window.",
+   "fieldname": "feedback_pulse_shown",
+   "fieldtype": "Date",
+   "hidden": 1,
+   "label": "Feedback Pulse Shown",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "The date the user last sent the satisfaction pulse: one submission per shown card.",
+   "fieldname": "feedback_pulse_submitted",
+   "fieldtype": "Date",
+   "hidden": 1,
+   "label": "Feedback Pulse Submitted",
+   "no_copy": 1,
+   "read_only": 1
   },
   {
    "fieldname": "section_break_privacy",
@@ -148,7 +202,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-13 00:00:00.000000",
+ "modified": "2026-11-17 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Chat",
  "name": "FAC Chat User Preferences",

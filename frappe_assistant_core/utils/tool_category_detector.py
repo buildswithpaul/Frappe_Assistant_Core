@@ -49,6 +49,7 @@ PRIVILEGED_TOOLS = {
     "delete_document",
     "document_action",  # can cancel, which reverses accounting and stock entries
     "run_migration_plan",  # creates masters and imports every file of a plan, submitting opening entries
+    "replace_chart_of_accounts",  # deletes a company's accounts and creates the client's chart
 }
 
 # Tools that are always categorized as read_only (hardcoded list)
@@ -119,6 +120,7 @@ READ_ONLY_TOOLS = {
 WRITE_TOOLS = {
     # Document tools
     "create_document",
+    "import_chart_of_accounts",  # creates accounts under the right parents, or maps onto the existing ones
     "start_import",  # imports the checked file through Data Import
     "stop_migration_plan",  # stops a running plan after its current file
     "import_opening_stock",  # creates and submits Stock Reconciliations

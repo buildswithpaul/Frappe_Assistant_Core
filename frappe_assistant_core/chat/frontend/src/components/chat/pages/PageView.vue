@@ -11,31 +11,36 @@
 	/>
 	<!-- A personal page runs at once, in a frame that reads as the user and asks before a change.
 	     Only a page that says it is Shared runs beside the chat, so a missing flag fails closed. -->
-	<div v-else-if="personal" class="page-view-frame">
+	<div v-else-if="personal" ref="personalBox" class="page-view-frame" :class="{ 'page-view-dark': pageTheme === 'dark' }">
 		<PageFrame
 			ref="personalFrame"
 			:page="page"
 			:user="user"
 			:kit-css="kitCss"
+			:theme="pageTheme"
 			:page-name="pageName"
 			:ask-user="askUser"
 			@unsupported="emit('unsupported', $event)"
 			@error="onError"
+			@present-key="presenting?.key($event)"
 		/>
 	</div>
-	<div v-else class="page-view-frame">
+	<div v-else class="page-view-frame" :class="{ 'page-view-dark': pageTheme === 'dark' }">
 		<div ref="host" class="page-view-host" />
 	</div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { baseCall, getCall } from "@/api/_core";
-import { usePagePanel } from "@/composables/usePagePanel";
-import { fac_page_draft_srcdoc } from "@/utils/facPageDraft";
+import { isNarrow, usePagePanel } from "@/composables/usePagePanel";
+import { deskTheme, followDeskTheme } from "@/utils/deskTheme";
+import { fac_page_draft_srcdoc, fac_page_shown_theme } from "@/utils/facPageDraft";
+import { makeBlocks } from "@/utils/pageBlocks";
 import { chart } from "@/utils/pageCharts";
 import { report } from "@/utils/pageReport";
+import { makePresenter, mountPresentControls, remoteDeck } from "@/utils/pagePresent";
 import { snapshotHtml } from "@/utils/pagePrint";
 import { cleanSnapshot } from "@/utils/pageSnapshotSanitise";
 import { failedCallText, makeFrappeStandIn, runPageScript } from "@/utils/pageRuntime";
@@ -45,7 +50,7 @@ import kitCss from "../../../../../../public/css/mockup_kit.css?raw";
 import PageFrame from "./PageFrame.vue";
 
 const props = defineProps({
-	// get_page's response: {title, html, script, style, draft, visibility, format_settings}.
+	// get_page's response: {title, html, script, style, draft, visibility, format_settings, withheld}.
 	page: { type: Object, required: true },
 	user: { type: String, default: "" },
 	// The FAC Page record name, which a personal page's "Allow for this page" is scoped to.
@@ -62,6 +67,7 @@ const WIDE_PAGE_PX = 900;
 const host = ref(null);
 const draftFrame = ref(null);
 const personalFrame = ref(null);
+const personalBox = ref(null);
 // The charts this render drew; a newer version or a closed panel disposes them.
 const charts = [];
 // What went wrong while this version ran, for FACO's screenshot to report.
@@ -69,8 +75,15 @@ const errors = [];
 const published = computed(() => props.page.draft === false);
 const personal = computed(() => published.value && props.page.visibility !== "Shared");
 
+// The page's theme: Desk's, unless the page sets its own colours. A shared page's shadow host
+// carries it, a draft is redrawn in it, a personal page's frame is told of it. A print is drawn
+// without it, so it stays light.
+const deskThemeNow = ref(deskTheme());
+const stopTheme = followDeskTheme((next) => (deskThemeNow.value = next));
+const pageTheme = computed(() => fac_page_shown_theme(props.page, deskThemeNow.value));
+
 const draftSrcdoc = computed(() =>
-	fac_page_draft_srcdoc({ html: props.page.html, style: props.page.style, kit_css: kitCss }),
+	fac_page_draft_srcdoc({ html: props.page.html, style: props.page.style, kit_css: kitCss, theme: pageTheme.value }),
 );
 
 function onError(error, method) {
@@ -89,6 +102,7 @@ function pageFragment(html) {
 // A Shared page, published through the go-live card that showed its code, runs in the chat as in
 // Desk. The page owns its shadow root: a key on this component, not a re-render, shows a newer version.
 function renderShared() {
+	host.value.setAttribute("data-theme", pageTheme.value);
 	const root = host.value.attachShadow({ mode: "open" });
 	const style = document.createElement("style");
 	style.textContent = `${kitCss}\n${props.page.style || ""}`;
@@ -106,10 +120,13 @@ function renderShared() {
 			return handle;
 		},
 		report: (name, filters) => report(standIn, name, filters),
+		...makeBlocks(standIn),
 	};
 	const result = runPageScript(props.page.script, root, standIn, fac);
 	if (result.error && !result.unsupported) onError(result.error);
 }
+
+watch(pageTheme, (next) => host.value?.setAttribute("data-theme", next));
 
 // FACO's screenshot captures the page shown here; a draft's frame cannot be read.
 let hidePageView = () => {};
@@ -124,11 +141,55 @@ onMounted(() => {
 		draft: !published.value,
 		capture: personal.value ? capturePersonal : null,
 		errors: () => (personal.value ? personalFrame.value?.errors() || [] : errors),
+		// Only a personal page's frame sends every call through its host; a shared page's script runs
+		// in this document, where it could fetch past any watch, so FACO asks before looking at it.
+		shown: () => (personal.value ? (personalFrame.value?.shown() ?? null) : null),
 	});
 });
 
+// Present mode: a shared page's sections are switched in its shadow root here, a personal page's
+// inside its own frame. On a phone it stays in the panel, since phones often refuse full screen.
+// `presenting` is a start token until the controls are up, then their handle, so a second request
+// or an unmount while starting never leaves a second presentation or a stray key listener behind.
+let presenting = null;
+let unmounted = false;
+async function present() {
+	if (presenting || !published.value) return;
+	const token = {};
+	presenting = token;
+	const frame = personal.value ? personalFrame.value : null;
+	const container = frame ? personalBox.value : host.value?.parentElement;
+	const deck = frame ? remoteDeck(frame) : makePresenter(host.value.shadowRoot);
+	let handle = null;
+	try {
+		handle = await mountPresentControls({
+			container,
+			deck,
+			fullscreen: !isNarrow(),
+			theme: () => pageTheme.value,
+			onExit: () => {
+				if (presenting === handle || presenting === token) presenting = null;
+			},
+		});
+	} catch (error) {
+		if (presenting === token) presenting = null;
+		onError(error);
+		return;
+	}
+	if (presenting !== token || unmounted || !handle.active) {
+		handle.stop();
+		if (presenting === token) presenting = null;
+		return;
+	}
+	presenting = handle;
+}
+
 onBeforeUnmount(() => {
+	unmounted = true;
+	presenting?.stop?.();
+	presenting = null;
 	hidePageView();
+	stopTheme();
 	charts.splice(0).forEach((handle) => handle.dispose());
 });
 
@@ -149,7 +210,7 @@ async function printSnapshot() {
 	return { ...base, html: snapshotHtml(root), wide: root.scrollWidth > WIDE_PAGE_PX };
 }
 
-defineExpose({ printSnapshot });
+defineExpose({ printSnapshot, present });
 </script>
 
 <style scoped>
@@ -157,8 +218,8 @@ defineExpose({ printSnapshot });
    element cannot cover the chat. Paint containment makes the box the containing block of fixed
    elements and clips them. It is set here, outside the shadow host, where the page's own :host
    rules cannot undo it. The box scrolls the page, so a wide page still scrolls sideways. A
-   personal page's frame scrolls inside itself. The page is a light document in either theme, on
-   the kit's white, as it prints. */
+   personal page's frame scrolls inside itself. Its background is the kit's, in Desk's theme; a print
+   is always light. */
 .page-view-frame {
 	height: 100%;
 	overflow: auto;
@@ -167,6 +228,9 @@ defineExpose({ printSnapshot });
 	border: 1px solid var(--ql-border);
 	border-radius: var(--ql-radius-lg);
 	background: #fff;
+}
+.page-view-dark {
+	background: #171717;
 }
 .page-view-host {
 	display: block;

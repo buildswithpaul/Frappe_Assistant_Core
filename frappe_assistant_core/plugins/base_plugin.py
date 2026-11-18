@@ -25,6 +25,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import frappe
 from frappe import _
 
+from frappe_assistant_core.core.tool_packs import ToolPack
+
 
 class BasePlugin(ABC):
     """
@@ -92,6 +94,16 @@ class BasePlugin(ABC):
             - error_message: Error details if can_enable is False
         """
         pass
+
+    def get_tool_packs(self) -> List[ToolPack]:
+        """
+        Get the tool packs this plugin declares.
+
+        A pack groups some of the plugin's tools so a client can send the model only
+        the packs a conversation needs. Tools in no pack stay in the always-sent base
+        set. Defaults to no packs.
+        """
+        return []
 
     def is_fac_cloud_only(self) -> bool:
         """

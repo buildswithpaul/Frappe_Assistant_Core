@@ -28,7 +28,7 @@ const fac_page_frappe = new Function(`${WRAPPER}\nreturn fac_page_frappe;`)();
 function deskLikeFrappe(page) {
 	const frappe = {
 		pages: { "fac-pages": {} },
-		ui: { make_app_page: () => ({ main: page.main, set_title: vi.fn() }), Dialog: vi.fn() },
+		ui: { make_app_page: () => ({ main: page.main, set_title: vi.fn(), clear_primary_action: vi.fn(), clear_secondary_action: vi.fn(), set_secondary_action: vi.fn() }), Dialog: vi.fn() },
 		get_route: () => ["fac-pages", "outstanding"],
 		call: vi.fn(({ callback }) => callback({ message: page.data })),
 		create_shadow_element: vi.fn(),
@@ -60,7 +60,8 @@ async function renderInDesk() {
 	frappe.pages["fac-pages"].on_page_show(wrapper);
 	await vi.waitFor(() => expect(frappe.create_shadow_element).toHaveBeenCalledOnce());
 	const [, html, , js] = frappe.create_shadow_element.mock.calls[0];
-	const root = document.createElement("div");
+	// As create_shadow_element gives it: root_element is a shadow root.
+	const root = document.createElement("div").attachShadow({ mode: "open" });
 	root.innerHTML = html;
 	new Function("ROOT", "frappe", `(function () { let root_element = ROOT; ${js} })();`)(root, frappe);
 	await vi.waitFor(() => expect(cells(root)).toHaveLength(EXAMPLE_ROWS.length));
