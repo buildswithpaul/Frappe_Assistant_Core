@@ -395,6 +395,26 @@ class TestImportChart(ChartCase):
         receivable = frappe.db.get_value("Company", self.company, "default_receivable_account")
         self.assertEqual(receivable, self._account("Acme Customers").name)
 
+    def test_replacing_again_with_the_same_chart_changes_nothing(self):
+        # The chat called replace again after the first one had finished (live, 2026-11-18): the
+        # second call deleted the 1,043 accounts the first one made and made them again.
+        session = self._chart()
+        self._replace(session)
+        before = frappe.get_all(
+            "Account", filters={"company": self.company}, fields=["name", "creation"], order_by="name"
+        )
+
+        again = self._replace(session, clear=False)
+
+        self.assertTrue(again["success"], again)
+        self.assertTrue(again["result"]["already_in_place"])
+        self.assertEqual((again["result"]["removed"], again["result"]["created"]), (0, 0))
+        self.assertIsInstance(again["result"]["defaults_left_empty"], list)
+        after = frappe.get_all(
+            "Account", filters={"company": self.company}, fields=["name", "creation"], order_by="name"
+        )
+        self.assertEqual(after, before)
+
     def test_replace_keeps_the_clients_ids(self):
         self._replace(self._chart())
 
