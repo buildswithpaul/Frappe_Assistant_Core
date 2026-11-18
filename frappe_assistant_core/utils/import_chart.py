@@ -846,6 +846,24 @@ def _company_account_fields() -> List[str]:
     ]
 
 
+def defaults_left_empty(company: str) -> List[str]:
+    """The company's default-account fields that hold no account."""
+    return [f for f in _company_account_fields() if not frappe.db.get_value("Company", company, f)]
+
+
+def already_in_place(company: str, nodes) -> bool:
+    """The company's chart is the file's already: as many accounts, and each of the file's (number,
+    name) once. A replace the chat called again after the first had finished (live, 2026-11-18)
+    would otherwise delete the accounts it just made and make them again."""
+    accounts = frappe.get_all(
+        ACCOUNT, filters={"company": company}, fields=["account_name", "account_number"]
+    )
+    if len(accounts) != len(nodes):
+        return False
+    have = sorted((_key(a.account_number), _key(a.account_name)) for a in accounts)
+    return have == sorted((_key(n["number"]), _key(n["name"])) for n in nodes)
+
+
 def forest(nodes: List[Dict[str, Any]], classes: List[Dict[str, Any]]) -> Dict[str, Any]:
     """The tree as ERPNext's create_charts takes it: nested by account name, a node's own keys beside its
     children. Raises ChartProblem for a root account that has no root type. Each node carries its own
@@ -988,7 +1006,7 @@ def replace(company: str, nodes, classes) -> Dict[str, Any]:
             if len(found) == 1:
                 frappe.db.set_value("Company", company, field, found[0], update_modified=False)
         cash_account = _relink_cash(company, moved) if moved else None
-        empty = [f for f in fields if not frappe.db.get_value("Company", company, f)]
+        empty = defaults_left_empty(company)
     except Exception:
         frappe.db.rollback(save_point="fac_chart_replace")
         raise

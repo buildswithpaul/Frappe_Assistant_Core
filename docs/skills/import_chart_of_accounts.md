@@ -38,6 +38,8 @@ finds its accounts by the client's names and numbers.
      A mode of payment on the company's default cash account is not refused: ERPNext sets one up for every
      new company, and the replace moves it to the new chart's cash ledger (`cash_mode_of_payment_account`).
      Afterwards set the default accounts listed in `defaults_left_empty` (Company settings).
+     Replace once. If an answer seems lost, check the company's accounts before calling again: a call
+     on a company that already has this chart answers `already_in_place` and changes nothing.
    - A chart made for ERPNext's own Chart of Accounts Importer may repeat a name under another number (a
      sub-account named like its parent): that is two accounts, not a problem. Its Parent Account Number
      column links each account to its parent; there is nothing to map for it.

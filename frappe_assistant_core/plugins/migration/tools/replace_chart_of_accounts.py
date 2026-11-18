@@ -39,7 +39,8 @@ class ReplaceChartOfAccounts(BaseTool):
             "company's default accounts again and lists the ones the new chart has no account for. Pass "
             "accounts_removed and accounts_created as the check shows them (modes.replace_figures of "
             "dry_run_import with chart), so the one approval card shows the user how many accounts go and "
-            "come; a call without them is refused with the figures. The "
+            "come; a call without them is refused with the figures. A company that already has this "
+            "chart is left as it is (already_in_place), so a repeated call deletes nothing. The "
             "client's account names and numbers are kept as old IDs."
         )
         self.requires_permission = None  # the session, and Account create and delete, are checked
@@ -84,6 +85,19 @@ class ReplaceChartOfAccounts(BaseTool):
         try:
             session = load_session(name)
             nodes, classes = prepared(session, arguments)  # a replaced chart has no outside parents
+            if import_chart.already_in_place(company, nodes):
+                return {
+                    "success": True,
+                    "company": company,
+                    "already_in_place": True,
+                    "removed": 0,
+                    "created": 0,
+                    "defaults_left_empty": import_chart.defaults_left_empty(company),
+                    "message": _(
+                        "{0} already has this chart ({1} accounts): nothing was changed. Set the default "
+                        "accounts listed in defaults_left_empty."
+                    ).format(company, len(nodes)),
+                }
             problem = import_chart.replace_problem(company)
             if problem:
                 return {"success": False, "error": problem, "company": company}
