@@ -380,6 +380,9 @@ class TestFileContentIsFenced(GuardrailCase):
             }
         ).insert()
         self.assertIn(f"Acme {self.tag}", conversation_files_addendum(chat, user))  # shown, and cached
+        # started in this chat, as FAC Cloud's calls set it (fac_endpoint, X-AR-Session-Id)
+        frappe.local.ar_session_id = chat
+        self.addCleanup(setattr, frappe.local, "ar_session_id", None)
         session = self._run("start_import_session", {"file_id": file_doc.name})["result"]["session_id"]
 
         listing = conversation_files_addendum(chat, user)
@@ -531,6 +534,24 @@ class TestAFileIsHeldOnlyWhileItsImportIsOpen(GuardrailCase):
 
         self.assertNotIn(session, listing)
         self.assertNotIn("being imported", listing)
+
+    def test_a_session_of_another_conversation_is_not_named_in_a_new_one(self):
+        # Live, 2026-11-18: the same file attached to a new chat was listed as "being imported in"
+        # a session left open in an earlier chat, and the assistant carried on with that session's
+        # old mapping. As FAC Cloud's calls set it (fac_endpoint, X-AR-Session-Id):
+        from frappe_assistant_core.chat.api.chat import conversation_files
+
+        frappe.local.ar_session_id = f"chat-a-{self.tag}"
+        self.addCleanup(setattr, frappe.local, "ar_session_id", None)
+        file_doc, session = self._started()
+
+        here = conversation_files.files_addendum([file_doc], conversation=f"chat-a-{self.tag}")
+        elsewhere = conversation_files.files_addendum([file_doc], conversation=f"chat-b-{self.tag}")
+
+        self.assertIn(session, here)
+        self.assertNotIn(session, elsewhere)
+        self.assertIn("start_import_session", elsewhere)
+        self.assertNotIn(f"Acme {self.tag}", elsewhere)  # its rows stay out of the prompt still
 
 
 class TestTheRowLimit(GuardrailCase):
