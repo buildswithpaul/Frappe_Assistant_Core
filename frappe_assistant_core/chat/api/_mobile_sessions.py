@@ -14,6 +14,7 @@ sessions minted for that client, never the user's browser sessions.
 from contextlib import suppress
 
 import frappe
+import frappe.sessions
 import redis
 from frappe import _
 from frappe.sessions import delete_session, get_expiry_in_seconds
@@ -69,6 +70,16 @@ def record_web_session(user: str, sid: str, client: str) -> None:
         frappe.cache.expire(frappe.cache.make_key(key), 2 * get_expiry_in_seconds())
 
 
+def stored_sid(sid: str) -> str:
+    """The form a desk ``sid`` takes in the Sessions table.
+
+    Frappe 16.60 stores the SHA-256 of the sid (``frappe.sessions.hash_sid``); earlier
+    releases, v15 included, store the sid itself.
+    """
+    hash_sid = getattr(frappe.sessions, "hash_sid", None)
+    return hash_sid(sid) if hash_sid else sid
+
+
 def end_web_sessions(user: str, client: str) -> int:
     """End the desk sessions minted for ``client``; returns how many were still live.
 
@@ -91,15 +102,17 @@ def end_web_sessions(user: str, client: str) -> int:
     if not minted:
         return 0
 
+    by_stored = {stored_sid(sid): sid for sid in minted}
     sessions = frappe.qb.DocType("Sessions")
     live = (
         frappe.qb.from_(sessions)
         .select(sessions.sid)
-        .where((sessions.user == user) & sessions.sid.isin(minted))
+        .where((sessions.user == user) & sessions.sid.isin(list(by_stored)))
         .run(pluck=True)
     )
-    for sid in live:
-        delete_session(sid, user=user, reason=SIGN_OUT_REASON)
+    # delete_session takes the raw sid on every release; Frappe 16.60 hashes it itself.
+    for stored in live:
+        delete_session(by_stored[stored], user=user, reason=SIGN_OUT_REASON)
     # One field per call: Frappe v15's hdel takes a single key. hdel suppresses only
     # ConnectionError, and a timeout here must not roll back the revocation either.
     for sid in minted:
