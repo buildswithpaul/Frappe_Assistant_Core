@@ -32,14 +32,22 @@ class ReplaceChartOfAccounts(BaseTool):
         self.description = (
             "Replace a company's chart of accounts with the client's (an import session read with "
             "dry_run_import with chart). Only for a company with no general ledger entries and no submitted "
-            "documents, and only while no record outside the chart (a tax template, mode of payment, "
-            "warehouse, customer account, GST Settings...) points at its accounts: otherwise it is refused with the list, and map or add are the way. It "
+            "documents, and only while no record outside the chart (a draft document, a mode of payment, a "
+            "warehouse, a customer's account...) points at its accounts: otherwise it is refused with the "
+            "list, and map or add are the way. The company's own tax setup, made for the chart that goes "
+            "(its sales, purchase and item tax templates, and its rows in the tax withholding categories "
+            "and GST Settings), is removed with it, in the same approval: pass tax_setup_removed as the "
+            "check shows it, and after the replace help the user set them up on the new chart's tax "
+            "accounts. A template something uses (an item, a customer, a tax rule) stops the replace. It "
             "DELETES the company's accounts and creates the client's through ERPNext's own chart code, as "
             "the user (who needs to be allowed to create and delete accounts), all or nothing, then sets the "
             "company's default accounts again and lists the ones the new chart has no account for. Pass "
-            "accounts_removed and accounts_created as the check shows them (modes.replace_figures of "
-            "dry_run_import with chart), so the one approval card shows the user how many accounts go and "
-            "come; a call without them is refused with the figures. The "
+            "accounts_removed, accounts_created and tax_setup_removed as the check shows them "
+            "(modes.replace_figures of dry_run_import with chart), so the one approval card shows the user "
+            "how many accounts and tax setup records go and come; a call without them is refused with the "
+            "figures. Never clear the tax setup, or anything else in the way, yourself first with "
+            "delete_document or update_document. A company that already has this "
+            "chart is left as it is (already_in_place), so a repeated call deletes nothing. The "
             "client's account names and numbers are kept as old IDs."
         )
         self.requires_permission = None  # the session, and Account create and delete, are checked
@@ -63,6 +71,11 @@ class ReplaceChartOfAccounts(BaseTool):
                     "type": "integer",
                     "description": "How many accounts the client's chart creates.",
                 },
+                "tax_setup_removed": {
+                    "type": "integer",
+                    "description": "How many records of the company's tax setup are removed with the chart "
+                    "(modes.replace_figures.tax_setup_removed of the check; 0 when it has none).",
+                },
                 "root_type_column": {
                     "type": "string",
                     "description": "The heading of the column that holds each account's root type (Asset, Liability, Equity, Income, Expense), when the file has one: it can't be mapped, Root Type being read-only on Account.",
@@ -84,17 +97,32 @@ class ReplaceChartOfAccounts(BaseTool):
         try:
             session = load_session(name)
             nodes, classes = prepared(session, arguments)  # a replaced chart has no outside parents
+            if import_chart.already_in_place(company, nodes):
+                return {
+                    "success": True,
+                    "company": company,
+                    "already_in_place": True,
+                    "removed": 0,
+                    "created": 0,
+                    "defaults_left_empty": import_chart.defaults_left_empty(company),
+                    "message": _(
+                        "{0} already has this chart ({1} accounts): nothing was changed. Set the default "
+                        "accounts listed in defaults_left_empty."
+                    ).format(company, len(nodes)),
+                }
             problem = import_chart.replace_problem(company)
             if problem:
                 return {"success": False, "error": problem, "company": company}
             figures = import_chart.replace_figures(company, nodes)
             asked = {k: arguments.get(k) for k in ("accounts_removed", "accounts_created")}
+            asked["tax_setup_removed"] = arguments.get("tax_setup_removed") or 0
             if asked != {k: figures[k] for k in asked}:
                 return {
                     "success": False,
                     "error": _(
-                        "This deletes {accounts_removed} accounts of {company} and creates {accounts_created}. Pass "
-                        "those figures, so the approval card shows the user what goes."
+                        "This deletes {accounts_removed} accounts of {company} and creates {accounts_created}, "
+                        "and removes {tax_setup_removed} records of its tax setup. Pass those figures, so the "
+                        "approval card shows the user what goes."
                     ).format(**figures),
                     "approval": figures,
                 }
@@ -118,7 +146,15 @@ class ReplaceChartOfAccounts(BaseTool):
             "old_ids_kept": len(kept["written"]),
             "message": _(
                 "{0} accounts removed, {1} created. Set the default accounts listed in defaults_left_empty."
-            ).format(done["removed"], done["created"]),
+            ).format(done["removed"], done["created"])
+            + (
+                " "
+                + _(
+                    "The company's tax setup was removed with the old chart (tax_setup_removed): set its tax templates, tax withholding accounts and GST Settings accounts up again on the new chart's tax accounts, asking the user which ones."  # noqa: E501
+                )
+                if done.get("tax_setup_removed")
+                else ""
+            ),
         }
 
     @staticmethod

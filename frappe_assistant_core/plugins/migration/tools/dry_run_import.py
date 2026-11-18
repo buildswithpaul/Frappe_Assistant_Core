@@ -113,6 +113,8 @@ class DryRunImport(BaseTool):
             # a chart check quotes the client's account names
             "outline",
             "unclassified",
+            "doubtful",
+            "modes.replace_refused",  # names the records that point at the accounts
             "parents_not_in_the_file",
             "map",
             "groups",

@@ -56,6 +56,8 @@ class TestImportChart(ChartCase):
         self.assertEqual((hdfc.is_group, hdfc.account_number), (0, "1010"))
         self.assertEqual(self._account("Vendor Pool").account_type, "Payable")
 
+        self._assert_tree_holds()
+
     def test_an_unknown_mode_is_refused_and_writes_nothing(self):
         session = self._chart()
         before = frappe.db.count("Account", {"company": self.company})
@@ -344,6 +346,7 @@ class TestImportChart(ChartCase):
                 "company": self.company,
                 "accounts_removed": figures["accounts_removed"],
                 "accounts_created": figures["accounts_created"],
+                "tax_setup_removed": figures["tax_setup_removed"],
                 "source_system": self.system,
                 **extra,
             },
@@ -394,6 +397,38 @@ class TestImportChart(ChartCase):
         self.assertIsInstance(done["defaults_left_empty"], list)
         receivable = frappe.db.get_value("Company", self.company, "default_receivable_account")
         self.assertEqual(receivable, self._account("Acme Customers").name)
+
+    def test_replacing_again_with_the_same_chart_changes_nothing(self):
+        # The chat called replace again after the first one had finished (live, 2026-11-18): the
+        # second call deleted the 1,043 accounts the first one made and made them again.
+        session = self._chart()
+        self._replace(session)
+        before = frappe.get_all(
+            "Account", filters={"company": self.company}, fields=["name", "creation"], order_by="name"
+        )
+
+        again = self._replace(session, clear=False)
+
+        self.assertTrue(again["success"], again)
+        self.assertTrue(again["result"]["already_in_place"])
+        self.assertEqual((again["result"]["removed"], again["result"]["created"]), (0, 0))
+        self.assertIsInstance(again["result"]["defaults_left_empty"], list)
+        after = frappe.get_all(
+            "Account", filters={"company": self.company}, fields=["name", "creation"], order_by="name"
+        )
+        self.assertEqual(after, before)
+
+    def test_the_check_says_a_company_already_has_this_chart_and_offers_nothing(self):
+        # Live, 2026-11-18: checking a chart the company already had offered replace and add, and
+        # called its accounts "standard".
+        session = self._chart()
+        self._replace(session)
+
+        checked = self._check(session, company=self.company)
+
+        self.assertTrue(checked["already_in_place"])
+        self.assertEqual(checked["modes"]["offered"], [])
+        self.assertIn(self.company, checked["message"])
 
     def test_replace_keeps_the_clients_ids(self):
         self._replace(self._chart())
@@ -583,12 +618,264 @@ class TestImportChart(ChartCase):
         self.assertIn(warehouse.name, refused["error"])
         self.assertEqual(frappe.db.count("Account", {"company": self.company}), before)
 
-    def test_replace_is_refused_while_a_tax_template_points_at_an_account_and_says_which(self):
+    # -- the company's own tax setup goes with its chart (live, 2026-11-18) -----------------------------------
+
+    def _tax_templates(self):
+        return {
+            doctype: frappe.get_all(doctype, filters={"company": self.company}, pluck="name")
+            for doctype, _child, _field in import_chart.TAX_TEMPLATES
+        }
+
+    def test_replace_removes_the_companys_own_tax_templates_with_its_chart(self):
+        # A new company gets tax templates on its standard chart's accounts: they blocked the replace of every
+        # Indian company, and clearing them by hand in chat took 127 approvals and failed.
+        templates = self._tax_templates()
+        self.assertTrue(any(templates.values()), "ERPNext made no tax template for the test company")
+        session = self._chart()
+        figures = import_chart.replace_figures(self.company, import_chart.read_chart(self._doc(session)))
+        self.assertGreater(figures["tax_setup_removed"], 0)
+        self.assertEqual(sum(figures["tax_setup"].values()), figures["tax_setup_removed"])
+
+        done = self._replace(session, clear=False)
+
+        self.assertTrue(done["success"], done)
+        self.assertEqual(sum(done["result"]["tax_setup_removed"].values()), figures["tax_setup_removed"])
+        self.assertEqual(self._tax_templates(), {d: [] for d in templates})
+        self.assertIn("tax", done["result"]["message"])
+        self.assertEqual(frappe.db.count("Account", {"company": self.company}), 13)
+
+    def test_replace_without_the_tax_setup_figure_is_refused_with_it(self):
+        session = self._chart()
+        figures = import_chart.replace_figures(self.company, import_chart.read_chart(self._doc(session)))
+        before = frappe.db.count("Account", {"company": self.company})
+        templates = self._tax_templates()
+
+        refused = self._run(
+            "replace_chart_of_accounts",
+            {
+                "session": session,
+                "company": self.company,
+                "accounts_removed": figures["accounts_removed"],
+                "accounts_created": figures["accounts_created"],
+            },
+        )
+
+        self.assertFalse(refused["success"])
+        self.assertEqual(refused["result"]["approval"]["tax_setup_removed"], figures["tax_setup_removed"])
+        self.assertEqual(frappe.db.count("Account", {"company": self.company}), before)
+        self.assertEqual(self._tax_templates(), templates)
+
+    def test_a_tax_template_an_item_uses_stops_the_replace_and_nothing_changes(self):
+        # In use, a template is the user's setup, not the company's starting one: ERPNext's link check stops it
+        name = (
+            next(n for n in self._tax_templates()["Item Tax Template"])
+            if self._tax_templates().get("Item Tax Template")
+            else None
+        )
+        if not name:
+            self.skipTest("ERPNext made no item tax template for the test company")
+        item_group = frappe.get_all("Item Group", filters={"is_group": 0}, pluck="name", limit=1)[0]
+        item = {
+            "doctype": "Item",
+            "item_code": f"Taxed {self.tag}",
+            "item_group": item_group,
+            "stock_uom": "Nos",
+            "taxes": [{"item_tax_template": name}],
+        }
+        if frappe.get_meta("Item").has_field("gst_hsn_code"):
+            # India Compliance wants an HSN code on every item
+            item["gst_hsn_code"] = next(
+                c for c in frappe.get_all("GST HSN Code", pluck="name", limit=50) if len(c) in (6, 8)
+            )
+        frappe.get_doc(item).insert()
         session = self._chart()
         before = frappe.db.count("Account", {"company": self.company})
 
         refused = self._replace(session, clear=False)
 
         self.assertFalse(refused["success"])
-        self.assertIn("tax template", refused["error"])
+        self.assertIn(name, refused["error"])
+        self.assertEqual(frappe.db.count("Account", {"company": self.company}), before)
+        self.assertTrue(frappe.db.exists("Item Tax Template", name))
+
+    def test_replace_removes_only_the_companys_rows_of_a_shared_tax_withholding_category(self):
+        # India Compliance puts one row per company in each of the shared categories: another company's stays
+        if not frappe.db.exists("DocType", "Tax Withholding Category"):
+            self.skipTest("no Tax Withholding Category")
+        other = frappe.get_all("Company", filters={"name": ["!=", self.company]}, pluck="name", limit=1)[0]
+
+        def leaf(company):
+            return frappe.get_all(
+                "Account",
+                filters={"company": company, "is_group": 0, "root_type": "Liability"},
+                pluck="name",
+                limit=1,
+            )[0]
+
+        category = frappe.get_doc(
+            {
+                "doctype": "Tax Withholding Category",
+                "name": f"TDS {self.tag}",
+                "category_name": f"TDS {self.tag}",
+                "rates": [{"from_date": "2020-01-01", "to_date": "2099-12-31", "tax_withholding_rate": 10}],
+                "accounts": [
+                    {"company": self.company, "account": leaf(self.company)},
+                    {"company": other, "account": leaf(other)},
+                ],
+            }
+        )
+        category.insert()
+        session = self._chart()
+
+        done = self._replace(session, clear=False)
+
+        self.assertTrue(done["success"], done)
+        rows = frappe.get_all("Tax Withholding Account", filters={"parent": category.name}, pluck="company")
+        self.assertEqual(rows, [other])
+
+    def test_a_draft_documents_tax_row_still_blocks_the_replace(self):
+        # Only the company's tax templates are its setup: another record's tax row is the user's data
+        account = frappe.get_all(
+            "Account", filters={"company": self.company, "is_group": 0}, pluck="name", limit=1
+        )[0]
+        frappe.get_doc(
+            {
+                "doctype": "Sales Taxes and Charges",
+                "parenttype": "Quotation",
+                "parentfield": "taxes",
+                "parent": f"SAL-QTN-{self.tag}",
+                "charge_type": "Actual",
+                "account_head": account,
+                "description": "Freight",
+            }
+        ).db_insert()
+        before = frappe.db.count("Account", {"company": self.company})
+
+        refused = self._replace(self._chart(), clear=False)
+
+        self.assertFalse(refused["success"])
+        self.assertEqual(frappe.db.count("Account", {"company": self.company}), before)
+
+    def test_the_check_says_replace_is_refused_before_the_user_picks_it(self):
+        # Live, 2026-11-18: replace was offered, picked, and only then refused for what pointed at the chart
+        account = frappe.get_all(
+            "Account",
+            filters={"company": self.company, "is_group": 0, "account_type": "Stock"},
+            pluck="name",
+            limit=1,
+        )[0]
+        frappe.get_doc(
+            {
+                "doctype": "Warehouse",
+                "warehouse_name": f"Linked {self.tag}",
+                "company": self.company,
+                "account": account,
+            }
+        ).insert()
+
+        checked = self._check(self._chart(), company=self.company)
+
+        self.assertNotIn("replace", checked["modes"]["offered"])
+        self.assertIn(f"Linked {self.tag}", checked["modes"]["replace_refused"])
+
+    # -- a company with no top-level account of a root type (live, 2026-11-18) -----------------------------
+
+    def _company_without_equity(self):
+        """A company on a chart with no Equity root, as ERPNext's "India - Chart of Accounts" has."""
+        for root in frappe.get_all(
+            "Account",
+            filters={"company": self.company, "root_type": "Equity"},
+            pluck="name",
+            order_by="lft desc",
+        ):
+            frappe.delete_doc("Account", root, force=True)
+        self.assertFalse(import_chart._root_account(self.company, "Equity"))
+
+    EQUITY_CHART = [
+        "Client Assets,,,,,Yes",
+        "HDFC Current,1010,Client Assets,Bank,,No",
+        "Client Equity,,,,,Yes",
+        "Share Capital,3100,Client Equity,,,No",
+    ]
+    EQUITY_ANSWERS = {
+        "Client Assets": {"root_type": "Asset"},
+        "Client Equity": {"root_type": "Equity"},
+        "Share Capital": {"root_type": "Equity", "account_type": "Equity"},
+    }
+
+    def test_add_makes_the_files_top_group_the_companys_root_of_a_type_it_has_none_of(self):
+        # ERPNext's India chart has no Equity root: the client's Equity had nowhere to go, and the chat put an
+        # "Equity" group under Liabilities by hand
+        self._company_without_equity()
+        session = self._chart(self.EQUITY_CHART)
+
+        checked = self._check(session, company=self.company, classifications=self.EQUITY_ANSWERS)
+        done = self._import(session, "add", classifications=self.EQUITY_ANSWERS)
+
+        self.assertEqual(checked["add_creates_top_level"], ["Equity"])
+        self.assertTrue(done["success"], done)
+        root = self._account("Client Equity")
+        self.assertEqual((root.parent_account, root.root_type, root.is_group), (None, "Equity", 1))
+        self.assertEqual(frappe.db.get_value("Account", root.name, "report_type"), "Balance Sheet")
+        self.assertEqual(self._account("Share Capital").parent_account, root.name)
+        self._assert_tree_holds()
+
+    def _assert_tree_holds(self):
+        """Every account of the company sits inside its parent in the tree's nested set: the accounts are
+        added without ERPNext updating it after each one, and the tree is rebuilt once at the end."""
+        rows = frappe.get_all(
+            "Account", filters={"company": self.company}, fields=["name", "parent_account", "lft", "rgt"]
+        )
+        spans = {r.name: (r.lft, r.rgt) for r in rows}
+        for row in rows:
+            self.assertLess(row.lft, row.rgt, row.name)
+            if row.parent_account:
+                outer = spans[row.parent_account]
+                self.assertTrue(outer[0] < row.lft and row.rgt < outer[1], (row.name, row.parent_account))
+
+    def test_map_adds_what_matched_nothing_under_a_new_root_too(self):
+        self._company_without_equity()
+        session = self._chart(self.EQUITY_CHART)
+
+        done = self._import(session, "map", add_unmatched=True, classifications=self.EQUITY_ANSWERS)
+
+        self.assertTrue(done["success"], done)
+        self.assertIsNone(self._account("Client Equity").parent_account)
+
+    def test_a_group_of_the_file_is_not_taken_for_a_ledger_of_the_same_name(self):
+        # ERPNext's India chart has a ledger "Reserves and Surplus"; the client's is a group with accounts under
+        # it. Taken for the ledger, its accounts went under a ledger and ERPNext refused the whole chart.
+        ledger = frappe.get_all(
+            "Account",
+            filters={"company": self.company, "is_group": 0, "root_type": "Asset"},
+            fields=["name", "account_name"],
+            limit=1,
+        )[0]
+        rows = [
+            "Client Assets,,,,,Yes",
+            f"{ledger.account_name},1500,Client Assets,,,Yes",
+            f"Petty Float,1510,{ledger.account_name},,,No",
+        ]
+        answers = {"Client Assets": {"root_type": "Asset"}}
+
+        done = self._import(self._chart(rows), "add", classifications=answers)
+
+        self.assertTrue(done["success"], done)
+        group = frappe.db.get_value(
+            "Account", {"company": self.company, "account_number": "1500"}, ["name", "is_group"], as_dict=True
+        )
+        self.assertEqual(group.is_group, 1)
+        self.assertNotEqual(group.name, ledger.name)
+        self.assertEqual(self._account("Petty Float").parent_account, group.name)
+        self.assertEqual(frappe.db.get_value("Account", ledger.name, "is_group"), 0)
+
+    def test_a_ledger_at_the_top_with_no_root_of_its_type_is_refused_and_nothing_is_made(self):
+        self._company_without_equity()
+        session = self._chart(["Lone Capital,3100,,,,No"])
+        before = frappe.db.count("Account", {"company": self.company})
+
+        refused = self._import(session, "add", classifications={"Lone Capital": {"root_type": "Equity"}})
+
+        self.assertFalse(refused["success"])
+        self.assertIn("must be a group", refused["error"])
         self.assertEqual(frappe.db.count("Account", {"company": self.company}), before)

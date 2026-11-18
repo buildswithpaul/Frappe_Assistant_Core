@@ -891,8 +891,11 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
                 if not session.get("migration_plan"):
                     raise FixProblem(
                         _(
-                            "Create missing records with create_document (documents from masters_plan, "
-                            "with import_session), then call dry_run_import again without fixes. "
+                            "Create missing records with create_document and import_session: "
+                            "planned_masters {count: masters_plan_total or the masters_plan length} "
+                            "creates every planned one in one approval (ask a party's group and "
+                            "territory once, as shared), or documents from masters_plan for a few. "
+                            "Then call dry_run_import again without fixes. "
                             "create as a fix is for a session in a migration plan."
                         )
                     )
@@ -1743,8 +1746,11 @@ def report(session, summary: Dict[str, Any]) -> Dict[str, Any]:
     message = dry_run.headline(summary) + " " + _("Nothing was written.")
     hidden = len(summary["groups"]) - len(shown_groups)
     if hidden:
+        # decisions covers every group, shown or not: "the next ones show" had the assistant ask round
+        # by round (live, 2026-11-18)
         message += " " + _(
-            "{0} more kinds of failure aren't listed here; fix these, check again, and the next ones show."
+            "{0} more kinds of failure aren't listed here, but decisions covers every one: ask the user "
+            "all of them at once and send every answer in one call."
         ).format(hidden)
     if not summary["failed"]:
         message += " " + ready_message(summary)
