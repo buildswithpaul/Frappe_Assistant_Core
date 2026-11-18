@@ -114,6 +114,7 @@ class DryRunImport(BaseTool):
             "outline",
             "unclassified",
             "doubtful",
+            "modes.replace_refused",  # names the records that point at the accounts
             "parents_not_in_the_file",
             "map",
             "groups",

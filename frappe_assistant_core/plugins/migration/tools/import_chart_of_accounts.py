@@ -107,6 +107,7 @@ class ImportChartOfAccounts(BaseTool):
             "source_system",
             "old_id_conflicts",
             "old_id_systems",
+            "modes.replace_refused",  # names the records that point at the accounts
         )
         self.inputSchema = {
             "type": "object",
