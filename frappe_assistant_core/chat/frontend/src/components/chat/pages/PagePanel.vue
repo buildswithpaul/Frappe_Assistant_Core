@@ -7,10 +7,12 @@
 			:shareable="shareable"
 			:desk-url="deskUrl"
 			:pdf-disabled="!page"
+			:presentable="Boolean(page) && page.draft === false"
 			:back-label="backLabel"
 			@close="emit('close')"
 			@share="share"
 			@pdf="downloadPdf"
+			@present="view?.present()"
 		/>
 
 		<p v-if="shareNote" class="page-panel-note" role="status">{{ shareNote }}</p>

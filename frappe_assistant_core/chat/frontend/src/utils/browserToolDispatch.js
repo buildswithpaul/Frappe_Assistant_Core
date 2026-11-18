@@ -42,6 +42,8 @@ const DEDUPE_WINDOW_MS = 60000;
  *   resolves "approve", "trust", "trust_page" or "deny"; anything else, or a throw, is a refusal.
  * @param {() => string|null} options.getSessionId the conversation this tab holds.
  * @param {Set<string>} [options.confirmTools] tools that need the user's approval before they run.
+ * @param {(toolName: string, params: object) => boolean} [options.needsConfirm] whether this call needs
+ *   the user's approval; by default, whether its tool is in `confirmTools`.
  * @param {(toolName: string, params: object) => string} [options.describe] a short summary for the card.
  * @param {(toolName: string, params: object) => string|null} [options.preflight] an error to answer with
  *   before asking the user, when the tool cannot run at all.
@@ -63,6 +65,7 @@ export function createDispatcher({
 	confirm,
 	getSessionId,
 	confirmTools = new Set(),
+	needsConfirm = (toolName) => confirmTools.has(toolName),
 	describe = () => "",
 	preflight = () => null,
 	ownsCall = () => true,
@@ -163,7 +166,7 @@ export function createDispatcher({
 			const key = trustKey(tool_name, params);
 			const pageKey = pageTrustKey(tool_name, params);
 			const isTrusted = trusted.has(key) || Boolean(pageKey && trustedPages.has(pageKey));
-			if (confirmTools.has(tool_name) && !isTrusted) {
+			if (!isTrusted && needsConfirm(tool_name, params)) {
 				// The server suspends its short delivery deadline while a human decides.
 				reportProgress(call_id, "awaiting_user");
 				if ((await askUser(tool_name, params, key, pageKey)) === "deny") {

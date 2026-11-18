@@ -5,6 +5,7 @@ import { computed, ref, watch } from "vue";
 import { renderNotificationMarkdown } from "@/utils/markdown";
 import SpotlightMedia from "./SpotlightMedia.vue";
 import SpotlightQuotaArt from "./SpotlightQuotaArt.vue";
+import FeaturePreviewArt from "@/components/discover/FeaturePreviewArt.vue";
 
 const props = defineProps({ content: { type: Object, default: null } });
 const emit = defineEmits(["primary", "secondary", "dismiss"]);
@@ -29,6 +30,7 @@ watch(
 	>
 		<div v-if="hasMedia" class="spot-visual">
 			<SpotlightQuotaArt v-if="content.media.art === 'quota'" :percent="content.threshold || 80" />
+			<FeaturePreviewArt v-else-if="content.media.art === 'feature'" :feature="content.media.feature" />
 			<SpotlightMedia v-else :media="content.media" @failed="mediaFailed = true" />
 		</div>
 		<div class="spot-text">

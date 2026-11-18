@@ -1,6 +1,12 @@
 import { baseCall, getCall } from "../_core";
 
 export const tools = {
+	getLoading: () => getCall("frappe_assistant_core.chat.api.get_tool_loading"),
+
+	// false gives the assistant every tool on every message; the server row follows the user everywhere.
+	setLoading: (loadAsNeeded) =>
+		baseCall("frappe_assistant_core.chat.api.set_tool_loading", { load_as_needed: loadAsNeeded }),
+
 	listAvailable: () =>
 		getCall(
 			"frappe_assistant_core.chat.api.tools.list_available_tools"

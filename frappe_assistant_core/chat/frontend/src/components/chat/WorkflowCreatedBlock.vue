@@ -17,8 +17,11 @@
 <script setup>
 import { useRouter } from "vue-router";
 import { __ } from "@/utils/i18n";
+import { noteAgentCreated } from "@/composables/usageSignals";
 
 const props = defineProps({ block: { type: Object, required: true } });
+// This chat made an agent for the user: Your FAC ticks Agents.
+noteAgentCreated();
 const router = useRouter();
 
 function openBuilder() {

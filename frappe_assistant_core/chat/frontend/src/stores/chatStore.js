@@ -25,6 +25,7 @@ import { interruptStaleTurn } from "./chat/interruptedTurn";
 import { __ } from "@/utils/i18n";
 import { isApprovalInteraction } from "./chat/interactionRegime";
 import { getSurface, surfaceClientSignals } from "./chat/surface";
+import { useAnswerRatingStore } from "./answerRatingStore";
 import { useComposerModesStore } from "./composerModesStore";
 import { useModelStore } from "./modelStore";
 import { useSpotlightStore } from "./spotlightStore";
@@ -154,6 +155,19 @@ export const useChatStore = defineStore("chat", () => {
 		return text;
 	}
 
+	// Text a new chat opens with in its ask box, for the user to edit and send themselves.
+	const firstDraft = ref(null);
+	function queueFirstDraft(sessionId, text) {
+		firstDraft.value = { sessionId, text };
+	}
+
+	function takeFirstDraft(sessionId) {
+		if (firstDraft.value?.sessionId !== sessionId) return null;
+		const { text } = firstDraft.value;
+		firstDraft.value = null;
+		return text;
+	}
+
 	const currentProjectId = computed(() =>
 		currentSession.value ? currentSession.value.project || null : pendingProjectFor(currentSessionId.value)
 	);
@@ -167,12 +181,14 @@ export const useChatStore = defineStore("chat", () => {
 
 	// Latest assistant message's unresolved interaction, with the routing
 	// regime: any pending approval forces "approval" for the whole turn.
+	// A card the user already decided stays "pending" until its resume returns,
+	// but no longer waits on the composer: text typed then queues (#34548).
 	const pendingInteractionBlock = computed(() => {
 		for (let i = messages.value.length - 1; i >= 0; i--) {
 			const m = messages.value[i];
 			if (m.role !== "assistant" || !Array.isArray(m.blocks)) continue;
 			const pending = m.blocks.filter(
-				(b) => b.type === "interaction" && b.status === "pending"
+				(b) => b.type === "interaction" && b.status === "pending" && !b.decision
 			);
 			if (pending.length === 0) continue;
 			const hasApproval = pending.some((b) => isApprovalInteraction(b.interactionType));
@@ -254,6 +270,8 @@ export const useChatStore = defineStore("chat", () => {
 	});
 	// sync: a join started right after the switch must not be reset by it.
 	watch(currentSessionId, () => liveSync.reset(), { flush: "sync" });
+	// Ratings are read once per session open, not per message.
+	watch(currentSessionId, (id) => id && useAnswerRatingStore().load(id));
 
 	const turnClaim = createTurnClaim({ claim: (id) => api.chat.claimLiveTurn(id), currentSessionId });
 
@@ -1210,6 +1228,15 @@ export const useChatStore = defineStore("chat", () => {
 		}
 
 		const lastMsg = findActiveMessage(messages.value);
+		// Kept on the answer so Report this outlives the auto-dismissed banner. Only an
+		// answer of this turn qualifies: a user message last means no answer exists yet.
+		if (lastMsg?.role === "assistant") {
+			lastMsg.lastError = {
+				code: errorCode || null,
+				message: errorMessage || "Stream error occurred",
+				at: new Date().toISOString(),
+			};
+		}
 		if (lastMsg && lastMsg.role === "assistant" && lastMsg.isStreaming) {
 			lastMsg.isStreaming = false;
 			if (Array.isArray(payload?.blocks) && payload.blocks.length > 0) {
@@ -1347,6 +1374,8 @@ export const useChatStore = defineStore("chat", () => {
 		setPendingProject,
 		queueFirstMessage,
 		takeFirstMessage,
+		queueFirstDraft,
+		takeFirstDraft,
 		currentProjectId,
 		loadMoreSessions,
 		patchSession,

@@ -48,11 +48,13 @@
 				@dismiss="dismissBanner"
 			/>
 		</div>
+
+		<HomeCoachTour :active="coachActive" @done="onCoachDone" />
 	</div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useUserStore } from "@/stores/userStore";
 import { useSuggestionStore } from "@/stores/suggestionStore";
@@ -60,6 +62,7 @@ import { usePacksStore } from "@/stores/packsStore";
 import { useChatStore } from "@/stores/chatStore";
 import { greetingLineForHour, displayNameFromUser } from "@/components/chat/welcomeGreeting";
 import { selectWelcomeTiles } from "@/components/chat/welcome/welcomeRelevance";
+import { withBringData } from "@/components/chat/welcome/bringDataStarter";
 import { useHomeSignals } from "@/composables/useHomeSignals";
 import { __ } from "@/utils/i18n";
 import HomeHeader from "@/components/chat/welcome/HomeHeader.vue";
@@ -68,6 +71,10 @@ import ContinueList from "@/components/chat/welcome/ContinueList.vue";
 import HomeStarters from "@/components/chat/welcome/HomeStarters.vue";
 import FirstRunStarters from "@/components/chat/welcome/FirstRunStarters.vue";
 import PackNudge from "@/components/chat/welcome/PackNudge.vue";
+import HomeCoachTour from "@/components/discover/HomeCoachTour.vue";
+import { useDiscoveryStore } from "@/stores/discoveryStore";
+import { useSpotlightStore } from "@/stores/spotlightStore";
+import { useTourStore } from "@/stores/tourStore";
 
 defineEmits(["suggestion", "navigate", "open-session"]);
 
@@ -93,6 +100,7 @@ const tiles = computed(() =>
 	selectWelcomeTiles({
 		suggestions: allSuggestions.value,
 		resumePreviews: resumeSessions.value.map((s) => s.preview || ""),
+		bringData: suggestionStore.bringDataIn,
 	})
 );
 
@@ -101,7 +109,8 @@ const tiles = computed(() =>
 // Page asks and blank rows are not starters.
 const firstRunTiles = computed(() => {
 	const starters = allSuggestions.value.filter((s) => s.source !== "page" && s.description);
-	return starters.length ? starters : tiles.value;
+	// The fallback tiles already carry the starter.
+	return starters.length ? withBringData(starters, suggestionStore.bringDataIn) : tiles.value;
 });
 
 // Needs-you signals: post-paint, fail-silent; dismiss belongs to this instance.
@@ -126,7 +135,27 @@ function dismissBanner() {
 	bannerDismissed.value = true;
 }
 
+// Feature discovery: chat stays chat. Day one gets the 3-stop tour, once.
+const discovery = useDiscoveryStore();
+const tourStore = useTourStore();
+const spotlight = useSpotlightStore();
+
+const coachActive = ref(false);
+function maybeStartCoach() {
+	if (coachActive.value || !loaded.value || tourStore.isOpen || spotlight.current) return;
+	if (!discovery.maybeStartCoach({ dayOne: dayOne.value })) return;
+	coachActive.value = true;
+	discovery.setCoachOpen(true);
+}
+function onCoachDone() {
+	coachActive.value = false;
+	discovery.finishCoach();
+}
+// Start once "Needs you" has loaded (it is one of the stops), and not over the reel or a Spotlight.
+watch([loaded, () => tourStore.isOpen, () => spotlight.current, () => discovery.started], maybeStartCoach);
+
 onMounted(() => {
+	maybeStartCoach();
 	if (userStore.isAdmin && !packsStore.items.length && !packsStore.loading) {
 		packsStore.load();
 	}

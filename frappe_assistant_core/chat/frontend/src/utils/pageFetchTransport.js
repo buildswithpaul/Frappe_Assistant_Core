@@ -1,6 +1,7 @@
 /**
  * How a personal page's calls reach Frappe once pageFrameHost.js has decided to send them.
  */
+import { htmlText } from "@/utils/htmlText";
 import { __ } from "@/utils/i18n";
 
 /** Args for a GET query string: Frappe parses JSON-encoded values back on the server. */
@@ -15,7 +16,7 @@ export const queryArgs = (args = {}) =>
 function serverMessage(data) {
 	try {
 		const first = JSON.parse(JSON.parse(data._server_messages)[0]);
-		return String(first.message || first).replace(/<[^>]*>/g, "");
+		return htmlText(first.message || first).trim();
 	} catch {
 		return typeof data?.exception === "string" ? data.exception.split("\n").pop() : "";
 	}

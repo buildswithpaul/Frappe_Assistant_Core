@@ -14,6 +14,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from unittest.mock import patch
+
 import frappe
 
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
@@ -115,3 +117,96 @@ class TestBannerAPI(BaseAssistantTest):
                 dismiss_banner()
         finally:
             frappe.set_user("Administrator")
+
+
+class TestBannerBell(BaseAssistantTest):
+    """banner_shown: the first time the banner shows, one bell notification keeps its link."""
+
+    def setUp(self):
+        super().setUp()
+        from frappe_assistant_core.chat.gate import clear_chat_gate_cache
+
+        frappe.db.set_single_value("Assistant Core Settings", "enable_fac_chat", 0)
+        frappe.db.delete("FAC Chat Banner Dismissal", {"user": "Administrator"})
+        frappe.db.delete("Notification Log", {"for_user": "Administrator", "link": "/app/fac-admin"})
+        frappe.defaults.clear_user_default("fac_chat_banner_bell_sent", "Administrator")
+        clear_chat_gate_cache()
+        frappe.clear_document_cache("Assistant Core Settings", "Assistant Core Settings")
+        frappe.set_user("Administrator")
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        super().tearDown()
+
+    def _bells(self):
+        return frappe.get_all(
+            "Notification Log",
+            filters={"for_user": "Administrator", "link": "/app/fac-admin", "type": "Alert"},
+            pluck="subject",
+        )
+
+    def test_first_showing_leaves_one_bell_and_later_ones_none(self):
+        from frappe_assistant_core.chat.api.discovery import banner_shown
+
+        self.assertEqual(banner_shown(), {"notified": True})
+        self.assertEqual(banner_shown(), {"notified": False})
+        bells = self._bells()
+        self.assertEqual(len(bells), 1)
+        self.assertIn("FAC Chat is installed", bells[0])
+
+    def test_no_bell_once_chat_is_on_or_the_banner_was_dismissed(self):
+        from frappe_assistant_core.chat.api.discovery import banner_shown, dismiss_banner
+        from frappe_assistant_core.chat.gate import clear_chat_gate_cache
+
+        dismiss_banner()
+        self.assertEqual(banner_shown(), {"notified": False})
+        frappe.db.delete("FAC Chat Banner Dismissal", {"user": "Administrator"})
+
+        frappe.db.set_single_value("Assistant Core Settings", "enable_fac_chat", 1)
+        frappe.clear_document_cache("Assistant Core Settings", "Assistant Core Settings")
+        clear_chat_gate_cache()
+        self.assertEqual(banner_shown(), {"notified": False})
+        self.assertEqual(self._bells(), [])
+
+    def test_the_bell_does_not_come_back_after_the_log_cleanup(self):
+        from frappe_assistant_core.chat.api.discovery import banner_shown
+
+        self.assertEqual(banner_shown(), {"notified": True})
+        # Frappe's scheduled log cleanup deletes old Notification Logs; the banner still shows after.
+        frappe.db.delete("Notification Log", {"for_user": "Administrator", "link": "/app/fac-admin"})
+        self.assertEqual(banner_shown(), {"notified": False})
+        self.assertEqual(self._bells(), [])
+
+    def test_switching_chat_on_takes_the_bell_away(self):
+        from frappe_assistant_core.chat.api import discovery
+
+        discovery.banner_shown()
+        self.assertEqual(len(self._bells()), 1)
+        # The FACO plugin toggle commits, which would escape this test's rollback.
+        with patch.object(discovery, "_sync_faco_plugin_state", autospec=True, return_value="unchanged"):
+            discovery.toggle_chat(1)
+        self.assertEqual(self._bells(), [])
+
+    def test_no_bell_for_a_user_who_cannot_switch_chat_on(self):
+        from frappe_assistant_core.chat.api.discovery import banner_shown
+
+        if not frappe.db.exists("User", "test_non_admin@example.com"):
+            frappe.get_doc(
+                {
+                    "doctype": "User",
+                    "email": "test_non_admin@example.com",
+                    "first_name": "Non-admin",
+                    "send_welcome_email": 0,
+                    "roles": [{"role": "Guest"}],
+                }
+            ).insert(ignore_permissions=True)
+        try:
+            frappe.set_user("test_non_admin@example.com")
+            self.assertEqual(banner_shown(), {"notified": False})
+        finally:
+            frappe.set_user("Administrator")
+        self.assertFalse(
+            frappe.db.exists(
+                "Notification Log", {"for_user": "test_non_admin@example.com", "link": "/app/fac-admin"}
+            )
+        )

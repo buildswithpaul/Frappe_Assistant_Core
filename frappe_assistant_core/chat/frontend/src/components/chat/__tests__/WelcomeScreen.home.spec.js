@@ -34,6 +34,8 @@ const ITEM = {
 	detail: "Oldest 14 days",
 	ask: "Which invoices are overdue?",
 };
+const BRING_DATA_PROMPT =
+	"I want to bring my data into ERPNext from my old system (spreadsheets or a Tally export). What do you need from me?";
 const HOME = { lens_label: "Sales", area: "pipeline", company: "Acme Ltd", items: [ITEM] };
 const SESSION = { session_id: "s1", preview: "Q3 revenue", last_activity: "2026-10-16 10:00:00" };
 const TILES = [
@@ -43,7 +45,13 @@ const TILES = [
 	["Four?", "find"],
 ].map(([d, kind]) => ({ name: d, description: d, kind, source: "default" }));
 
-async function mountHome({ sessions = [SESSION], home = HOME, disabled = false, failedRun = false } = {}) {
+async function mountHome({
+	sessions = [SESSION],
+	home = HOME,
+	disabled = false,
+	failedRun = false,
+	bringData = false,
+} = {}) {
 	setActivePinia(createPinia());
 	getHome.mockReset();
 	listRuns.mockReset();
@@ -64,6 +72,7 @@ async function mountHome({ sessions = [SESSION], home = HOME, disabled = false, 
 	const suggestions = useSuggestionStore();
 	suggestions.suggestionsDisabled = disabled;
 	suggestions.allSuggestions = TILES;
+	suggestions.bringDataIn = bringData;
 	const w = mount(WelcomeScreen, { slots: { composer: '<div class="composer-stub" />' } });
 	await flushPromises();
 	return w;
@@ -93,6 +102,40 @@ describe("WelcomeScreen home", () => {
 		expect(w.find(".hs").exists()).toBe(false);
 		await cards[0].trigger("click");
 		expect(w.emitted("suggestion")).toEqual([["Two?"]]);
+	});
+
+	it("day one offers Bring your data in beside the three kinds when the server allows it", async () => {
+		const w = await mountHome({ sessions: [], bringData: true });
+		const cards = w.findAll(".frs-card");
+		expect(cards.map((c) => c.find(".frs-label").text())).toEqual([
+			"See it",
+			"Find it",
+			"Do it",
+			"Bring your data in",
+		]);
+		expect(cards[3].find(".frs-text").text()).toBe(
+			"Import customers, items and opening balances from spreadsheets or Tally."
+		);
+		await cards[3].trigger("click");
+		expect(w.emitted("suggestion")).toEqual([[BRING_DATA_PROMPT]]);
+	});
+
+	it("day one does not show Bring your data in without the flag", async () => {
+		const w = await mountHome({ sessions: [] });
+		expect(w.text()).not.toContain("Bring your data in");
+	});
+
+	it("home tiles offer Bring your data in when the server allows it, and send its prompt", async () => {
+		const w = await mountHome({ bringData: true });
+		const row = w.findAll(".hs-row").find((r) => r.text().includes("Bring your data in"));
+		expect(row).toBeTruthy();
+		await row.trigger("click");
+		expect(w.emitted("suggestion")).toEqual([[BRING_DATA_PROMPT]]);
+	});
+
+	it("home tiles do not show Bring your data in without the flag", async () => {
+		const w = await mountHome();
+		expect(w.text()).not.toContain("Bring your data in");
 	});
 
 	it("day one ignores page asks and blank rows when choosing cards", async () => {

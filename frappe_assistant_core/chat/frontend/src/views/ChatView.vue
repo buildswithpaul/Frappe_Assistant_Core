@@ -266,6 +266,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
 import { useModelStore } from "@/stores/modelStore";
 import { useSuggestionStore } from "@/stores/suggestionStore";
+import { useDiscoveryStore } from "@/stores/discoveryStore";
 import { resolveComposerRoute } from "@/stores/chat/composerRouting";
 import { resolutionFor } from "@/stores/chat/interactionRegime";
 import { useToast } from "@/composables/useToast";
@@ -312,7 +313,7 @@ import { conversationImportSessions } from "@/utils/importSessions";
 import { isPausedTurn, isStoppedTurn } from "@/utils/turnState";
 import ContextRail from "@/components/chat/ContextRail.vue";
 import PageDock from "@/components/chat/pages/PageDock.vue";
-import { usePagePanel } from "@/composables/usePagePanel";
+import { isNarrow, usePagePanel } from "@/composables/usePagePanel";
 import { logger } from "@/utils/logger";
 import { usePreferences } from "@/composables/usePreferences";
 import { resolveReadWidth } from "@/utils/chatWidth";
@@ -403,11 +404,21 @@ const {
 	closeParameterModal,
 } = useTemplateExecution();
 
+// Home's "Prompt templates" card: "Give it a try" opens the same template browser as the + menu.
+watch(
+	() => useDiscoveryStore().templatesRequested,
+	() => openTemplateBrowser()
+);
+
 usePromptFromRoute({
 	route,
 	router,
 	pendingPrompt,
 	isNewChat: () => !route.params.sessionId && messages.value.length === 0,
+	// On a phone the page would cover the composer the prompt waits in, as PagesView's share says.
+	openPage: (name) => {
+		if (!isNarrow()) usePagePanel().open(name);
+	},
 });
 
 useSupportFromRoute({ route, router, supportStore: useSupportStore() });
@@ -588,7 +599,7 @@ useChatViewInit(
 	{ chatStore, userStore, modelStore, suggestionStore },
 	{ route, router },
 	{ registrationStatus, isUserSetupComplete },
-	{ onFirstMessage: (text) => sendOrKeep(text) }
+	{ onFirstMessage: (text) => sendOrKeep(text), onFirstDraft: (text) => prefillComposer(text) }
 );
 
 // Auto-scroll to bottom on new messages / streaming chunks
