@@ -878,8 +878,11 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
                 if not session.get("migration_plan"):
                     raise FixProblem(
                         _(
-                            "Create missing records with create_document (documents from masters_plan, "
-                            "with import_session), then call dry_run_import again without fixes. "
+                            "Create missing records with create_document and import_session: "
+                            "planned_masters {count: masters_plan_total or the masters_plan length} "
+                            "creates every planned one in one approval (ask a party's group and "
+                            "territory once, as shared), or documents from masters_plan for a few. "
+                            "Then call dry_run_import again without fixes. "
                             "create as a fix is for a session in a migration plan."
                         )
                     )

@@ -723,6 +723,9 @@ class TestImportFixes(BaseAssistantTest):
         response = self._fix_fails(session, {"group": link["id"], "action": "create"})
 
         self.assertIn("create_document", response["problems"][0]["error"])
+        # Live, 2026-11-18: told to pass masters_plan's documents, the assistant wouldn't create 262
+        # customers (more than one call takes), though planned_masters creates them all at once.
+        self.assertIn("planned_masters", response["problems"][0]["error"])
         self.assertFalse(frappe.db.exists("Customer Group", self.missing))
 
     def test_a_duplicate_can_only_be_left_out(self):
