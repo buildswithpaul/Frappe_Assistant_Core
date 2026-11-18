@@ -1728,8 +1728,11 @@ def report(session, summary: Dict[str, Any]) -> Dict[str, Any]:
     message = dry_run.headline(summary) + " " + _("Nothing was written.")
     hidden = len(summary["groups"]) - len(shown_groups)
     if hidden:
+        # decisions covers every group, shown or not: "the next ones show" had the assistant ask round
+        # by round (live, 2026-11-18)
         message += " " + _(
-            "{0} more kinds of failure aren't listed here; fix these, check again, and the next ones show."
+            "{0} more kinds of failure aren't listed here, but decisions covers every one: ask the user "
+            "all of them at once and send every answer in one call."
         ).format(hidden)
     if not summary["failed"]:
         message += " " + ready_message(summary)
