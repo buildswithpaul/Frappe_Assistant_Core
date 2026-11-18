@@ -33,6 +33,9 @@ from frappe_assistant_core.chat.home_preferences import (
     parse_hidden_signals,
 )
 
+# Written only by the pulse endpoints in chat/api/support.py, through db.set_value.
+PULSE_FIELDS = ("feedback_pulse_next", "feedback_pulse_shown", "feedback_pulse_submitted")
+
 
 class FACChatUserPreferences(Document):
     """FAC Chat User Preferences - Per-user UI settings"""
@@ -41,6 +44,16 @@ class FACChatUserPreferences(Document):
         """Validate preferences"""
         self.validate_keyboard_shortcut()
         self.validate_home_preferences()
+        self.keep_pulse_dates()
+
+    def keep_pulse_dates(self):
+        """The owner may save this doc over REST; the pulse dates must not move that way.
+
+        A changed date is put back silently, so a stale copy still saves its other fields.
+        """
+        before = self.get_doc_before_save()
+        for fieldname in PULSE_FIELDS:
+            self.set(fieldname, before.get(fieldname) if before else None)
 
     def on_update(self):
         """Drop the cached home payload so the next load reflects any preference change."""

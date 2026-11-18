@@ -287,6 +287,8 @@ def validate_preset(preset: Any) -> Optional[str]:
         return "signature.required must be a non-empty list of alias lists"
     if signature.get("optional") is not None and not _alias_groups(signature["optional"], allow_empty=True):
         return "signature.optional must be a list of alias lists"
+    if signature.get("absent") is not None and not _alias_groups(signature["absent"], allow_empty=True):
+        return "signature.absent must be a list of alias lists"
     if signature.get("title") is not None and not _alias_groups([signature["title"]]):
         return "signature.title must be a list of patterns"
     if signature.get("min_optional") is not None and not (
@@ -669,6 +671,9 @@ def match_sheet(rows: List[List[str]], presets: List[Dict[str, Any]]) -> List[Ma
             headers = _header_cells(rows, index, depth)
             names = {normalise(h) for h in headers if h.strip()}
             if not all(_found(g, names) for g in signature["required"]):
+                continue
+            # A column another system's export has and this one never does: not this export.
+            if any(_found(g, names) for g in signature.get("absent") or []):
                 continue
             optional_hits = sum(_found(g, names) for g in optional)
             # A generic signature ("Name, Group") also needs some of the system's own columns.

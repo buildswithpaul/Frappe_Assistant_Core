@@ -28,6 +28,9 @@ import frappe
 from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
+from frappe_assistant_core.core.field_access import FieldAccessError, is_column
+from frappe_assistant_core.core.security_config import get_user_primary_role
+from frappe_assistant_core.utils.permissions import field_reader, hidden_query_fields
 
 
 class CreateDashboardChart(BaseTool):
@@ -126,7 +129,18 @@ class CreateDashboardChart(BaseTool):
 
             # Get DocType metadata for field validation
             meta = frappe.get_meta(doctype)
-            available_fields = {f.fieldname: f for f in meta.fields}
+            hidden = self._unreadable_chart_fields(meta, arguments)
+            if hidden:
+                return {
+                    "success": False,
+                    "error": _("You can't chart {0} by {1}: it is not a field your role can read.").format(
+                        _(doctype), ", ".join(hidden)
+                    ),
+                    "error_type": "field_not_readable",
+                }
+            # Only fields the user may read, so auto-detection never picks a hidden one.
+            can_read = field_reader(meta, get_user_primary_role(frappe.session.user))
+            available_fields = {f.fieldname: f for f in meta.fields if can_read(f.fieldname)}
 
             # Validate required fields based on aggregation function
             field_validation_result = self._validate_required_fields(
@@ -221,6 +235,33 @@ class CreateDashboardChart(BaseTool):
             )
 
             return {"success": False, "error": error_msg}
+
+    @staticmethod
+    def _unreadable_chart_fields(meta, arguments: Dict) -> List[str]:
+        """The chart's fields and filter fields the user may not read (#390).
+
+        A Dashboard Chart counts, sums and groups through frappe.get_all, which skips field
+        permissions, so a chart on a hidden field would show its values or totals.
+        """
+        user_role = get_user_primary_role(frappe.session.user)
+        can_read = field_reader(meta, user_role)
+        named = [
+            arguments.get(key)
+            for key in ("value_based_on", "based_on", "group_by_based_on", "time_series_based_on")
+        ]
+        # Exactly a field, or MariaDB would still group by `DESCRIPTION` as description.
+        hidden = [
+            field
+            for field in named
+            if isinstance(field, str) and field and not (is_column(meta.name, field) and can_read(field))
+        ]
+        filters = arguments.get("filters")
+        if filters:
+            try:
+                hidden += hidden_query_fields(meta.name, filters=filters, user_role=user_role)
+            except FieldAccessError:
+                pass  # a malformed filter is refused by the field validation below
+        return list(dict.fromkeys(hidden))
 
     def _validate_required_fields(
         self, arguments: Dict, available_fields: Dict, chart_type: str, aggregate_function: str

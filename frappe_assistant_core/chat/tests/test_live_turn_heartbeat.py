@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
+from frappe_assistant_core.chat import credit_status_cache
 from frappe_assistant_core.chat.api.block_builder import BlockBuilder
 from frappe_assistant_core.chat.api.chat import live_turn, relay
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
@@ -147,7 +148,14 @@ class TestMarkTurnInterrupted(BaseAssistantTest):
     def test_mark_interrupted_persists_partial_as_errored(self):
         self._dead_streaming_turn()
         result = live_turn.mark_turn_interrupted(self.sid)
-        self.assertEqual(result, {"interrupted": True, "message_id": "m-dead"})
+        self.assertEqual(
+            result,
+            {
+                "interrupted": True,
+                "message_id": "m-dead",
+                "error": "This answer was interrupted by a server restart.",
+            },
+        )
         rows = self._assistant_rows()
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].content, "Half an ans")
@@ -158,6 +166,32 @@ class TestMarkTurnInterrupted(BaseAssistantTest):
         self.assertEqual(error["event"], "stream_error")
         self.assertEqual(error["error_code"], "TURN_INTERRUPTED")
         self.assertEqual(error["message_id"], "m-dead")
+
+    def test_marking_a_stale_turn_interrupted_ends_credit_status_freshness(self):
+        self._dead_streaming_turn()
+        with patch.object(credit_status_cache, "invalidate", autospec=True) as invalidate:
+            live_turn.mark_turn_interrupted(self.sid)
+
+        invalidate.assert_called_once_with(self.owner)
+
+    def test_freshness_is_ended_for_the_turn_owner_not_the_caller(self):
+        self._dead_streaming_turn()
+        # Production: a System Manager's stale check passes the owner gate for someone else's turn.
+        frappe.set_user("Administrator")
+        with patch.object(credit_status_cache, "invalidate", autospec=True) as invalidate:
+            live_turn.mark_turn_interrupted(self.sid)
+
+        invalidate.assert_called_once_with(self.owner)
+
+    def test_freshness_fault_never_blocks_the_interrupt(self):
+        self._dead_streaming_turn()
+        # Production: the cache is Redis, which can fail while the turn is being reconciled.
+        with patch.object(credit_status_cache, "invalidate", autospec=True, side_effect=RuntimeError("down")):
+            result = live_turn.mark_turn_interrupted(self.sid)
+
+        self.assertTrue(result["interrupted"])
+        self.assertEqual(self._assistant_rows()[0].errored, 1)
+        self.assertIsNone(live_turn.get(self.sid))
 
     def test_mark_interrupted_refuses_a_live_turn(self):
         self._dead_streaming_turn(seconds=5)

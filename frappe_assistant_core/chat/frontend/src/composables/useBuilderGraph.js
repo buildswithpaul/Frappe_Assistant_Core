@@ -1,4 +1,5 @@
 import {
+	edgeLabel,
 	generateNodeId,
 	getDefaultLabel,
 	getDefaultConfig,
@@ -108,7 +109,10 @@ export function useBuilderGraph({
 				source: params.source,
 				target: params.target,
 				sourceHandle: params.sourceHandle || undefined,
-				label: params.sourceHandle || "",
+				label: edgeLabel(
+					nodes.value.find((n) => n.id === params.source),
+					params.sourceHandle
+				),
 				type: "smoothstep",
 				// Must match graphJsonToVueFlow, or an edge you just drew looks
 				// different from the same edge after a reload.

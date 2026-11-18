@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
+from frappe_assistant_core.chat import credit_status_cache
 from frappe_assistant_core.chat.api.chat import live_turn, relay, relay_shutdown
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
@@ -142,6 +143,21 @@ class TestRelayShutdown(BaseAssistantTest):
         self.assertEqual(row.content, "Half an ans")
         self.assertEqual(json.loads(row.blocks)[-1]["content"], "Half an ans")
         self.assertIsNone(live_turn.get(self.sid))
+
+    def test_shutdown_interrupt_ends_credit_status_freshness(self):
+        # Production: the turn ran as the asker (relay sets frappe.set_user) and may have spent credits.
+        with patch.object(credit_status_cache, "invalidate", autospec=True) as invalidate:
+            self._run(self._stream(grace=0))
+
+        invalidate.assert_called_once_with("Administrator")
+
+    def test_a_credit_status_fault_never_blocks_the_shutdown_interrupt(self):
+        # Production: the cache is Redis, which can be down while the worker is exiting.
+        with patch.object(credit_status_cache, "invalidate", autospec=True, side_effect=RuntimeError("down")):
+            published = self._run(self._stream(grace=0))
+
+        self.assertEqual(published[-1]["error_code"], "TURN_INTERRUPTED")
+        self.assertEqual(self._row().errored, 1)
 
     def test_relay_finishes_normally_before_the_deadline(self):
         published = self._run(self._stream(grace=GRACE_SECONDS))

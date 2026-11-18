@@ -1,6 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
+import { setActivePinia, createPinia } from "pinia";
+import { useSupportStore } from "@/stores/supportStore";
 import { mount, RouterLinkStub } from "@vue/test-utils";
 import ConnectionBanners from "./ConnectionBanners.vue";
+
+beforeEach(() => setActivePinia(createPinia()));
 
 const AR_TEXT = "Monthly credit quota exceeded. Please upgrade your plan, purchase credits, or wait for the next billing cycle.";
 const mk = (props) => mount(ConnectionBanners, { props: { error: AR_TEXT, ...props }, global: { stubs: { RouterLink: RouterLinkStub } } });
@@ -50,5 +54,33 @@ describe("ConnectionBanners personal limit refusal", () => {
 		const w = mk({ error: REFUSAL, errorCode: "user_limit_reached", isAdmin: true });
 		w.find('[data-test="user-limit-error"] .dismiss-btn').trigger("click");
 		expect(w.emitted("dismiss-error")).toBeTruthy();
+	});
+});
+
+describe("ConnectionBanners Report this", () => {
+	// production: ChatView mounts SupportModal, which registers itself as a host.
+	beforeEach(() => useSupportStore().registerHost());
+
+	it("shows for a turn failure", () => {
+		expect(mk({ error: "Model failed", errorCode: "MODEL_FAILED" }).find("[data-test=report-error]").exists()).toBe(true);
+	});
+
+	it("is absent for quota_exhausted", () => {
+		expect(mk({ errorCode: "quota_exhausted", isAdmin: true }).find("[data-test=report-error]").exists()).toBe(false);
+	});
+
+	it("is absent where no support modal is mounted", () => {
+		// production: the Desk widget renders ConnectionBanners without a SupportModal.
+		useSupportStore().unregisterHost();
+		expect(mk({ error: "x", errorCode: "MODEL_FAILED" }).find("[data-test=report-error]").exists()).toBe(false);
+	});
+
+	it("opens an issue seeded with the error, code and time", async () => {
+		const w = mk({ error: "Model failed", errorCode: "MODEL_FAILED" });
+		await w.find("[data-test=report-error]").trigger("click");
+		const support = useSupportStore();
+		expect(support.isOpen).toBe(true);
+		expect(support.mode).toBe("issue");
+		expect(support.prefill).toMatch(/^Error: Model failed\nCode: MODEL_FAILED\nTime: \d{4}-\d\d-\d\dT/);
 	});
 });

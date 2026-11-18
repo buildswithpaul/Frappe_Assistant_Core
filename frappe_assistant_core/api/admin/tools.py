@@ -16,10 +16,14 @@ def get_tool_configurations() -> dict:
     and role access settings.
     """
     frappe.only_for(["System Manager", "Assistant Admin"])
+    from frappe_assistant_core.assistant_core.doctype.fac_tool_configuration.fac_tool_configuration import (
+        user_access_ready,
+    )
     from frappe_assistant_core.core.tool_registry import get_tool_registry
     from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
     from frappe_assistant_core.utils.tool_category_detector import get_category_info
 
+    users_ready = user_access_ready()
     try:
         plugin_manager = get_plugin_manager()
         tool_registry = get_tool_registry()
@@ -80,6 +84,16 @@ def get_tool_configurations() -> dict:
                 except Exception:
                     pass
 
+            # Users listed on the tool besides its roles (no table until bench migrate adds it)
+            user_access = []
+            if config and users_ready:
+                user_access = frappe.get_all(
+                    "FAC Tool User Access",
+                    filters={"parent": config.get("name")},
+                    fields=["user", "allow_access"],
+                    order_by="idx asc",
+                )
+
             # Get category display info
             category_info = get_category_info(category)
 
@@ -101,6 +115,7 @@ def get_tool_configurations() -> dict:
                     "category_override": bool(category_override),
                     "role_access_mode": role_access_mode,
                     "role_access": role_access,
+                    "user_access": user_access,
                     "has_config": bool(config),
                 }
             )
@@ -388,31 +403,41 @@ def update_tool_category(tool_name: str, category: str, override: bool = True):
 
 
 @frappe.whitelist(methods=["POST"])
-def update_tool_role_access(tool_name: str, role_access_mode: str, roles: list | str = None):
+def update_tool_role_access(
+    tool_name: str, role_access_mode: str, roles: list | str | None = None, users: list | str | None = None
+):
     """
     Update role access settings for a tool.
 
     Args:
         tool_name: The name of the tool
         role_access_mode: "Allow All" or "Restrict to Listed Roles"
-        roles: List of dicts with {role, allow_access} for restricted mode
+        roles: Roles for restricted mode: names, or dicts with {role, allow_access}
+        users: Users who get the tool besides the roles: names, or dicts with {user, allow_access}
 
     Returns:
         Success status and message
     """
     frappe.only_for(["System Manager", "Assistant Admin"])
+    from frappe_assistant_core.assistant_core.doctype.fac_tool_configuration.fac_tool_configuration import (
+        user_access_ready,
+    )
     from frappe_assistant_core.core.tool_registry import get_tool_registry
     from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
     from frappe_assistant_core.utils.tool_category_detector import detect_tool_category
 
     valid_modes = ["Allow All", "Restrict to Listed Roles"]
     if role_access_mode not in valid_modes:
-        return {"success": False, "message": _(f"Invalid mode. Must be one of: {valid_modes}")}
+        return {"success": False, "message": _("Invalid mode. Must be one of: {0}").format(valid_modes)}
 
-    if isinstance(roles, str):
-        import json
+    try:
+        roles = _access_rows(roles, "role")
+        users = _access_rows(users, "user")
+    except ValueError as e:
+        return {"success": False, "message": str(e)}
 
-        roles = json.loads(roles)
+    if users and not user_access_ready():
+        return {"success": False, "message": _("Run bench migrate before listing users on a tool")}
 
     try:
         # Validate tool exists
@@ -425,7 +450,7 @@ def update_tool_role_access(tool_name: str, role_access_mode: str, roles: list |
         all_tools.update(external_tools)
 
         if tool_name not in all_tools:
-            return {"success": False, "message": _(f"Tool '{tool_name}' not found")}
+            return {"success": False, "message": _("Tool '{0}' not found").format(tool_name)}
 
         # Get or create tool configuration
         if frappe.db.exists("FAC Tool Configuration", tool_name):
@@ -446,30 +471,54 @@ def update_tool_role_access(tool_name: str, role_access_mode: str, roles: list |
 
         config.role_access_mode = role_access_mode
 
-        # Update role access table if in restricted mode
-        if role_access_mode == "Restrict to Listed Roles" and roles:
-            # Clear existing role access
-            config.role_access = []
-
-            # Add new role access entries
-            for role_entry in roles:
-                if isinstance(role_entry, dict):
-                    config.append(
-                        "role_access",
-                        {"role": role_entry.get("role"), "allow_access": role_entry.get("allow_access", 1)},
-                    )
+        # Update the role and user lists if in restricted mode. A list that is sent replaces the old
+        # one, so removing every role sticks; a list left out keeps what was there.
+        if role_access_mode == "Restrict to Listed Roles":
+            if roles is not None:
+                config.set("role_access", roles)
+            if users is not None:
+                config.set("user_access", users)
 
         config.save(ignore_permissions=True)
-        frappe.db.commit()
 
         # Clear caches
         tool_registry.clear_cache()
 
-        return {"success": True, "message": _(f"Tool '{tool_name}' role access updated")}
+        return {"success": True, "message": _("Tool '{0}' role access updated").format(tool_name)}
 
+    except frappe.ValidationError as e:
+        # The configuration's own checks (a role or user needed, a user that can't be listed).
+        # frappe.throw also queued the message as a dialog; the card shows it once, as its alert.
+        frappe.clear_messages()
+        return {"success": False, "message": str(e)}
     except Exception as e:
         frappe.log_error(f"Failed to update tool role access for '{tool_name}': {str(e)}")
-        return {"success": False, "message": _(f"Error: {str(e)}")}
+        return {"success": False, "message": _("Error: {0}").format(str(e))}
+
+
+def _access_rows(entries: list | str | None, field: str) -> list | None:
+    """The card's role or user list as table rows. An entry is a name or a dict with ``field`` and
+    ``allow_access``; anything else is refused rather than dropped. None (not sent) stays None."""
+    if isinstance(entries, str):
+        entries = frappe.parse_json(entries)
+    if entries is None:
+        return None
+    if not isinstance(entries, list):
+        raise ValueError(_("{0}s must be a list").format(field.title()))
+
+    rows = []
+    for entry in entries:
+        if isinstance(entry, str) and entry:
+            rows.append({field: entry, "allow_access": 1})
+        elif isinstance(entry, dict) and entry.get(field):
+            rows.append({field: entry[field], "allow_access": entry.get("allow_access", 1)})
+        else:
+            raise ValueError(
+                _("Each {0} must be a name or a dict with a '{0}' key, not {1}").format(
+                    field, frappe.as_json(entry)
+                )
+            )
+    return rows
 
 
 @frappe.whitelist()

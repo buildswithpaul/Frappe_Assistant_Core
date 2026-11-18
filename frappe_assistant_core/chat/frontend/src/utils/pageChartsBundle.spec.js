@@ -50,4 +50,16 @@ describe("the Desk chart bundle", () => {
 		);
 		expect(win.document.querySelector("#c svg")).not.toBeNull();
 	});
+
+	it("gives Desk fac.report next to fac.chart", () => {
+		const win = browserWindow();
+		win.eval(bundle);
+		expect(win.eval("typeof fac_page_charts.report")).toBe("function");
+	});
+
+	it("gives Desk the page tools", () => {
+		const win = browserWindow();
+		win.eval(bundle);
+		expect(win.eval("typeof fac_page_charts.makeBlocks")).toBe("function");
+	});
 });

@@ -63,6 +63,7 @@ FULL_SCAN = 2000  # rank every record when a DocType has at most this many
 WORD_MATCHES = 200  # else only records sharing a word with the value, this many per word
 GROUPS_SHOWN = 30  # the dry run's reply lists this many groups; the results file keeps them all
 MASTERS_SHOWN = 50  # and this many missing masters to create
+DECISION_VALUES = 20  # a decision lists this many of its values, each with its suggested answer
 PLANNED_SHOWN = 10  # planned masters named in an error about one that was not planned
 
 #: Masters simple enough to create that are still never created during an import. Sites add
@@ -239,10 +240,24 @@ def _fill_field(session, group: Dict[str, Any]):
             df = fields[0] if len(fields) == 1 else None
         elif not found:
             df = _field_named_in(meta, message)
+    elif group.get("cause") == dry_run.CAUSE_REJECTED:
+        df = _group_type_field(meta, cstr(group.get("message")))
     # One value for every record can't be what names or titles each, nor one no two records share
     if not df or df.unique or df.fieldname in (dry_run._name_field(session.target_doctype), meta.title_field):
         return None
     return df
+
+
+def _group_type_field(meta, message: str):
+    """The one link field ERPNext's "Cannot select a Group type <DocType>" is about, or None. A Customer
+    with no Customer Group column gets Selling Settings' default, which is the group "All Customer
+    Groups" on many sites, and ERPNext refuses it: one non-group value for every row is the fix."""
+    found = re.search(r"Cannot select a Group type (.+?)\.", message)
+    if not found:
+        return None
+    target = found.group(1).strip()
+    fields = [df for df in meta.fields if df.fieldtype == "Link" and target in (df.options, _(df.options))]
+    return fields[0] if len(fields) == 1 else None
 
 
 def _field_named_in(meta, message: str):
@@ -390,6 +405,26 @@ UOM_WORDS = {
     **dict.fromkeys(("prs", "pairs"), "Pair"),
 }
 WORDS = {"Currency": CURRENCY_WORDS, "UOM": UOM_WORDS}
+
+#: Another system's word for a choice, and the choice it most likely means: suggested only when the
+#: field has that choice, never applied without the user (live: Finished, In process, Created).
+OPTION_WORDS = {
+    "finished": "Completed",
+    "done": "Completed",
+    "closed": "Completed",
+    "complete": "Completed",
+    "in process": "Open",
+    "in progress": "Open",
+    "ongoing": "Open",
+    "active": "Open",
+    "created": "Open",
+    "new": "Open",
+    "hold": "On hold",
+    "on hold": "On hold",
+    "paused": "On hold",
+    "canceled": "Cancelled",
+    "dropped": "Cancelled",
+}
 
 
 def word_for(doctype: str, value: str) -> Optional[str]:
@@ -657,7 +692,13 @@ def advise(session, group: Dict[str, Any]) -> Dict[str, Any]:
             rows, value, label, ", ".join(options)
         )
         closest = rank(value, options) or options[:CLOSEST_LIMIT]
-        return {"explanation": explanation, "fixes": [{"action": MAP, "closest": closest}, leave_out]}
+        fix = {"action": MAP, "closest": closest}
+        meant = OPTION_WORDS.get(cstr(value).strip().casefold())
+        if meant in options:
+            fix["likely"] = meant
+            if meant not in closest:
+                fix["closest"] = [meant, *closest][:CLOSEST_LIMIT]
+        return {"explanation": explanation, "fixes": [fix, leave_out]}
 
     from frappe_assistant_core.utils import import_opening_stock as opening_stock
 
@@ -1023,9 +1064,7 @@ def cannot_create(doctype: str, session=None) -> str:
     """
     if session and doctype == session.target_doctype:
         return _("the file imports {0} records itself, so add it to the file").format(_(doctype))
-    from frappe_assistant_core.utils import import_opening_invoices as opening_invoices
-
-    if opening_invoices.is_party(session, doctype):
+    if is_party(session, doctype):
         if doctype in (frappe.conf.get("fac_import_never_create_doctypes") or []):
             return _("this site doesn't allow creating it during an import")
         # A party may be named by a series: the rows find it by its customer or supplier name.
@@ -1057,6 +1096,24 @@ def cannot_create(doctype: str, session=None) -> str:
     if not _may_use_create_document():
         return _("creating records with FACO is turned off for you")
     return ""
+
+
+def is_party(session, doctype: str) -> bool:
+    """A Customer or Supplier masters_plan proposes with its type, group and territory: an
+    opening-invoices file's party, found by its name whatever ERPNext names it, or one any file
+    links to when Selling or Buying Settings name a new one by its customer or supplier name, so
+    the record created has the name the rows use. Live, 2026-11-17: 262 customers a projects file
+    named were refused as "ERPNext names it itself", and imported as a second file."""
+    from frappe_assistant_core.utils import import_opening_invoices as opening_invoices
+
+    if opening_invoices.is_party(session, doctype):
+        return True
+    if not session:
+        # A migration plan creates its masters with create_master, which sends only the name: a
+        # party needs its group and territory, so an approved plan would refuse to run over it.
+        return False
+    name_field = opening_invoices.PARTY_NAME_FIELDS.get(doctype)
+    return bool(name_field) and dry_run._name_field(doctype) == name_field
 
 
 def _may_use_create_document() -> bool:
@@ -1126,7 +1183,7 @@ def masters_plan(session, groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if group.get("cause") != dry_run.CAUSE_MISSING_LINK or not doctype or cannot_create(doctype, session):
             continue
         choose = {}
-        if opening_invoices.is_party(session, doctype):
+        if is_party(session, doctype):
             parent, data = None, opening_invoices.party_data(doctype, group["value"])
             choose = opening_invoices.party_choices(doctype, data)
         else:
@@ -1151,6 +1208,61 @@ def masters_plan(session, groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             entry["choose"] = choose
         entry["rows"] += group.get("count") or 0
     return list(plan.values())
+
+
+PLANNED_AT_ONCE = 1000  # missing masters planned_masters creates in one call, inside one request
+
+
+def planned_documents(session, planned: Any) -> List[Dict[str, Any]]:
+    """create_document's planned_masters: every missing master the session's latest check planned
+    (masters_plan), as it planned it, with ``shared`` values added to each of a DocType (a
+    party's group or territory). Live, 2026-11-17: 262 planned customers had to be listed one by
+    one, more than a call takes (100) and more than the assistant could copy back reliably, so it
+    asked the user for a separate customer file. ``count`` must be the number planned, so the
+    approval card shows it."""
+    from frappe_assistant_core.utils import import_opening_invoices as opening_invoices
+
+    if not isinstance(planned, dict):
+        raise FixProblem(_("planned_masters is an object: {count, shared}."))
+    plan = masters_plan(session, list(last_groups(session).values()))
+    by_doctype: Dict[str, int] = {}
+    for entry in plan:
+        by_doctype[entry["doctype"]] = by_doctype.get(entry["doctype"], 0) + 1
+    listed = ", ".join(f"{count} {_(doctype)}" for doctype, count in by_doctype.items()) or _("none")
+    if cint(planned.get("count")) != len(plan):
+        raise FixProblem(
+            _(
+                "The last check planned {0} missing masters ({1}). Pass count {0}, so the approval "
+                "card shows how many are created."
+            ).format(len(plan), listed)
+        )
+    if not plan:
+        raise FixProblem(_("The last check planned no missing masters: nothing to create."))
+    if len(plan) > PLANNED_AT_ONCE:
+        raise FixProblem(
+            _("{0} missing masters are more than one call creates ({1}). Map or leave out some.").format(
+                len(plan), PLANNED_AT_ONCE
+            )
+        )
+    shared = planned.get("shared") or {}
+    if not isinstance(shared, dict) or any(not isinstance(v, dict) for v in shared.values()):
+        raise FixProblem(
+            _('shared is {DocType: {field: value}}, e.g. {"Customer": {"customer_group": "Commercial"}}.')
+        )
+    for doctype, values in shared.items():
+        allowed = (
+            set(opening_invoices.PARTY_LINKS.get(doctype) or {}) if is_party(session, doctype) else set()
+        )
+        if doctype not in by_doctype or set(values) - allowed:
+            raise FixProblem(
+                _("shared takes, for {0}, only {1}.").format(
+                    _(doctype), ", ".join(sorted(allowed)) or _("nothing")
+                )
+            )
+    return [
+        {"doctype": entry["doctype"], "data": {**entry["data"], **(shared.get(entry["doctype"]) or {})}}
+        for entry in plan
+    ]
 
 
 def check_masters(session, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -1264,7 +1376,7 @@ def _planned_master(session, plan, entry, listed=frozenset(), named=frozenset())
         )
     from frappe_assistant_core.utils import import_opening_invoices as opening_invoices
 
-    if opening_invoices.is_party(session, doctype):
+    if is_party(session, doctype):
         data = {k: cstr(v).strip() for k, v in (entry.get("data") or {}).items() if cstr(v).strip()}
         problem = opening_invoices.party_problem(doctype, data)
         if problem:
@@ -1398,7 +1510,11 @@ def kept_its_name(entry: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, An
     if not _name_field(frappe.get_meta(doctype)) and doctype in opening_invoices.PARTY_NAME_FIELDS:
         # A party is found by its customer or supplier name, whatever name ERPNext gave it.
         found = opening_invoices.find_party(doctype, _planned_name(entry))
-        if result.get("success") and not (found and found.name == result.get("name")):
+        by_name = dry_run._name_field(doctype) == opening_invoices.PARTY_NAME_FIELDS[doctype]
+        if result.get("success") and (
+            not (found and found.name == result.get("name"))
+            or (by_name and result.get("name") != _planned_name(entry))  # rows link by the name
+        ):
             return {
                 "success": False,
                 "error": _("ERPNext named it '{0}', and the rows wouldn't find it by '{1}'").format(
@@ -1556,6 +1672,60 @@ def ready_message(summary: Dict[str, Any]) -> str:
     return text
 
 
+def decisions(session, groups: List[Dict[str, Any]], masters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Every failure of the check as the questions to ask, all at once: one per field and cause,
+    each with its values (up to DECISION_VALUES), the rows of each, and a suggested answer. The
+    groups shown are the first GROUPS_SHOWN only; live, 2026-11-17, a status value among 276 groups
+    came up four rounds after the others. Fixes reach every group, shown or not."""
+    planned = {(m["doctype"], m["name"]) for m in masters}
+    out: Dict[Tuple[Any, Any, Any], Dict[str, Any]] = {}
+    for group in groups:
+        key = (group.get("cause"), group.get("parent"), group.get("field"))
+        decision = out.setdefault(
+            key,
+            {
+                "cause": group.get("cause"),
+                "field": group.get("field"),
+                "label": group.get("label") or group.get("field"),
+                **({"parent": group["parent"]} if group.get("parent") else {}),
+                "rows": 0,
+                "values_total": 0,
+                "values": [],
+            },
+        )
+        decision["rows"] += group.get("count") or 0
+        decision["values_total"] += 1
+        if len(decision["values"]) >= DECISION_VALUES:
+            continue
+        entry = {"group": group["id"], "value": group.get("value"), "rows": group.get("count") or 0}
+        suggested = _suggested(session, group, planned)
+        if suggested:
+            entry["suggested"] = suggested
+        decision["values"].append(entry)
+    for decision in out.values():
+        answers = {cstr((v.get("suggested") or {}).get("action")) for v in decision["values"]}
+        if decision["values_total"] == len(decision["values"]) and len(answers) == 1 and "" not in answers:
+            decision["suggested_for_all"] = decision["values"][0]["suggested"]["action"]
+        elif answers == {CREATE} and decision["values_total"] > len(decision["values"]):
+            decision["suggested_for_all"] = CREATE  # every planned master: planned_masters
+    return list(out.values())
+
+
+def _suggested(session, group: Dict[str, Any], planned) -> Optional[Dict[str, Any]]:
+    """The answer to suggest for one group: create a planned master, map to the likely name or
+    choice, leave out the later rows of a repeated name; None when only the user can say."""
+    target = _with_target(session, group)
+    if (target.get("link_doctype"), group.get("value")) in planned:
+        return {"action": CREATE}
+    if group.get("cause") == dry_run.CAUSE_DUPLICATE_IN_FILE:
+        return {"action": LEAVE_OUT, "reason": _("Repeated name")}
+    fixes = {fix.get("action"): fix for fix in advise(session, group).get("fixes") or []}
+    likely = (fixes.get(MAP) or {}).get("likely")
+    if likely:
+        return {"action": MAP, "to": likely}
+    return None
+
+
 def report(session, summary: Dict[str, Any]) -> Dict[str, Any]:
     """The dry run's reply to the model: the headline, then each group with its examples,
     a plain explanation and the fixes that fit, and the ready message once nothing fails."""
@@ -1590,6 +1760,8 @@ def report(session, summary: Dict[str, Any]) -> Dict[str, Any]:
     }
     if hidden:
         out["groups_not_shown"] = hidden
+    if summary["groups"]:
+        out["decisions"] = decisions(session, summary["groups"], masters)
     if len(masters) > MASTERS_SHOWN:
         out["masters_plan_total"] = len(masters)
     if summary.get("excluded"):

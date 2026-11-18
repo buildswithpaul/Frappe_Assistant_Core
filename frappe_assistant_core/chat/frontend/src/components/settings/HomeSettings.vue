@@ -76,6 +76,7 @@
 import { computed, onMounted, ref } from "vue";
 import { api } from "@/api/client";
 import { useSuggestionStore } from "@/stores/suggestionStore";
+import { useDiscoveryStore } from "@/stores/discoveryStore";
 import { useToast } from "@/composables/useToast";
 import { __ } from "@/utils/i18n";
 
@@ -84,6 +85,7 @@ const COUNT_OPTIONS = [1, 2, 3];
 const { showError } = useToast();
 const suggestionStore = useSuggestionStore();
 const SUGGESTION_KEYS = ["show_suggested_prompts", "show_personalized_suggestions"];
+const discovery = useDiscoveryStore();
 const prefs = ref(null);
 const loadFailed = ref(false);
 const saveNote = ref("");
@@ -105,6 +107,11 @@ const toggleRows = computed(() => [
 		key: "show_personalized_suggestions",
 		label: __("Personalised suggestions"),
 		description: __("Uses AI about once a day to suggest questions for you. Turn off to save usage."),
+	},
+	{
+		key: "show_progress",
+		label: __("Your FAC progress"),
+		description: __("A ring on the FAC bot showing how much of FAC you have tried."),
 	},
 ]);
 
@@ -128,6 +135,8 @@ async function save(patch) {
 		const saved = await api.home.updatePreferences(patch);
 		if (seq === saveSeq) prefs.value = saved;
 		saveNote.value = __("Saved");
+		// Tips, stories and the ring follow the switch straight away, without a reload.
+		discovery.setSwitches(patch);
 		// The home reads suggestions once per session; make it fetch the new set (signals refetch on mount).
 		if (SUGGESTION_KEYS.some((key) => key in patch)) suggestionStore.loadSuggestions({}, { force: true });
 	} catch (error) {

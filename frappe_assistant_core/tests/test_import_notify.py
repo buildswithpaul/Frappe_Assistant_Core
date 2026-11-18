@@ -112,6 +112,26 @@ class TestTheResultIsPostedInTheChat(BaseAssistantTest):
             (sent["room"], sent["message"]["event"]), (f"task_progress:{self.chat}", "message_posted")
         )
 
+    def test_nothing_is_posted_while_facos_question_waits_for_the_answer(self):
+        # Live, 2026-11-17: FACO asked how to map a status; the check it had started ended ten seconds
+        # later and its message, posted after the question, left the question's buttons doing nothing.
+        session = self._session()
+        from frappe_assistant_core.chat.doctype.fac_chat_message.fac_chat_message import FACChatMessage
+
+        asked = FACChatMessage.create_message(self.chat, "assistant", "How should Finished be mapped?")
+        # the blocks the chat stream saves on the message while the question is open
+        frappe.db.set_value(
+            "FAC Chat Message",
+            asked.name,
+            "blocks",
+            frappe.as_json([{"type": "interaction", "id": "q1", "status": "pending"}]),
+        )
+        self._as_a_job()
+
+        import_dry_run.run_job(session, "Administrator")
+
+        self.assertEqual(self._posted(), ["How should Finished be mapped?"])
+
     def test_a_plans_file_says_the_plan_goes_on_not_to_import_it(self):
         # Live, 2026-11-06: "Say when to import them" for a file in a plan; the user's "import"
         # was then refused, as the plan imports its files after its own approval.

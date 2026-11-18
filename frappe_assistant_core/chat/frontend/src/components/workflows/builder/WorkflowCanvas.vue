@@ -79,9 +79,13 @@ import ConditionNode from "@/components/workflows/nodes/ConditionNode.vue";
 import TransformNode from "@/components/workflows/nodes/TransformNode.vue";
 import ToolNode from "@/components/workflows/nodes/ToolNode.vue";
 import LoopNode from "@/components/workflows/nodes/LoopNode.vue";
+import DecisionNode from "@/components/workflows/nodes/DecisionNode.vue";
+import UnknownNode from "@/components/workflows/nodes/UnknownNode.vue";
 
-// Custom node type registration (markRaw required by Vue Flow)
+// Custom node type registration (markRaw required by Vue Flow). Vue Flow draws
+// "default" for a type it has no component for — a step a newer builder added.
 const nodeComponents = {
+	default: markRaw(UnknownNode),
 	"workflow-input": markRaw(InputNode),
 	"workflow-output": markRaw(OutputNode),
 	agent: markRaw(AgentNode),
@@ -89,6 +93,7 @@ const nodeComponents = {
 	transform: markRaw(TransformNode),
 	tool: markRaw(ToolNode),
 	loop: markRaw(LoopNode),
+	decision: markRaw(DecisionNode),
 };
 
 defineProps({

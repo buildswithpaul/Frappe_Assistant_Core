@@ -358,6 +358,25 @@ def _get_default_prompts(context):
 
 SUGGESTIONS_CAP = 12
 STARTER_SOURCES = ("role", "default")
+MIGRATION_PLUGIN = "migration"
+
+
+def can_bring_data_in() -> bool:
+    """Whether the "Bring your data in" starter is offered to the session user.
+
+    The site must offer migration (the migration plugin is enabled) and the user must be
+    able to import: create permission on Data Import, or System Manager. The starter itself
+    is built in the SPA; the server only says whether it may show.
+    """
+    from frappe_assistant_core.utils.plugin_manager import get_plugin_manager
+
+    try:
+        if MIGRATION_PLUGIN not in get_plugin_manager().get_enabled_plugins():
+            return False
+        return "System Manager" in frappe.get_roles() or bool(frappe.has_permission("Data Import", "create"))
+    except Exception:
+        frappe.log_error(title="Bring-your-data check failed", message=frappe.get_traceback())
+        return False
 
 
 def _cap_prompts(prompts_list: list[dict], cap: int) -> list[dict]:
@@ -394,7 +413,8 @@ def get_suggested_prompts(context: str | None = None):
 
     Each prompt includes a 'source' field: "pinned", "contextual", "personalized", "role" or "default".
     The response also carries `suggestions_disabled` — true when the user has turned off
-    the suggestion grid via FAC Chat User Preferences.
+    the suggestion grid via FAC Chat User Preferences — and `bring_data_in`, whether the SPA
+    may show its "Bring your data in" starter (see can_bring_data_in).
 
     Returns a list of prompt objects with:
     - name: template name or generated ID
@@ -508,6 +528,7 @@ def get_suggested_prompts(context: str | None = None):
         return {
             "suggestions": result if show_grid else [],
             "suggestions_disabled": not show_grid,
+            "bring_data_in": can_bring_data_in(),
             "templates": raw_templates,
         }
 
@@ -523,6 +544,7 @@ def get_suggested_prompts(context: str | None = None):
                 }
             ],
             "suggestions_disabled": False,
+            "bring_data_in": False,
             "templates": {"templates": [], "categories": [], "pinned": []},
         }
 

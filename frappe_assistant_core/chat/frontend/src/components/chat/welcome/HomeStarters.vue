@@ -4,7 +4,11 @@
 		<ul class="hs-list">
 			<li v-for="tile in tiles" :key="tile.name || tile.description">
 				<button type="button" class="hs-row" @click="$emit('pick', tile.description)">
-					<span class="hs-text">{{ tile.description }}</span>
+					<span v-if="tile.title" class="hs-text">
+						<span class="hs-title">{{ tile.title }}</span>
+						<span class="hs-sub">{{ tile.subtext }}</span>
+					</span>
+					<span v-else class="hs-text">{{ tile.description }}</span>
 					<span class="hs-arrow" aria-hidden="true">→</span>
 				</button>
 			</li>
@@ -51,6 +55,9 @@ const areaLabel = computed(() => (AREA_LABELS[props.area] || AREA_LABELS.busines
 	font-family: var(--ql-font-sans); font-size: 13.5px; line-height: 1.35; text-align: left;
 	color: var(--ql-text); cursor: pointer;
 }
+.hs-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hs-title { font-weight: 600; }
+.hs-sub { font-size: 12.5px; color: var(--ql-text-muted); }
 .hs-arrow { color: var(--ql-text-muted); transition: color 0.15s ease, transform 0.15s ease; }
 .hs-row:hover .hs-arrow { color: var(--ql-accent); transform: translateX(2px); }
 .hs-row:focus-visible { outline: 2px solid var(--ql-accent); outline-offset: -2px; }

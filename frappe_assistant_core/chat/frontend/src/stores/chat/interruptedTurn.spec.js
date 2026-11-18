@@ -58,6 +58,25 @@ describe("reconcile with a dead relay", () => {
 		expect(store.messages.filter((m) => m.role === "assistant")).toHaveLength(1);
 	});
 
+	it("shows the server's interruption copy when mark_turn_interrupted sends one", async () => {
+		const copy = "This answer was interrupted before it finished. Retry to run it again.";
+		api.chat.getLiveTurn.mockResolvedValue({ turn: "t-1", status: "streaming", message_id: "m1", stale: true });
+		api.chat.markTurnInterrupted.mockResolvedValue({ interrupted: true, message_id: "m1", error: copy });
+
+		await store.reconcileFromServer("s1");
+
+		expect(store.error).toBe(copy);
+	});
+
+	it("keeps the restart copy when the server sends none", async () => {
+		api.chat.getLiveTurn.mockResolvedValue({ turn: "t-1", status: "streaming", message_id: "m1", stale: true });
+		api.chat.markTurnInterrupted.mockResolvedValue({ interrupted: true, message_id: "m1" });
+
+		await store.reconcileFromServer("s1");
+
+		expect(store.error).toBe("This answer was interrupted by a server restart.");
+	});
+
 	it("a fresh live turn keeps streaming", async () => {
 		api.chat.getLiveTurn.mockResolvedValue({ turn: "t-1", status: "streaming", message_id: "m1", stale: false });
 		// Mid-turn the server holds only the empty shell stream_start wrote.

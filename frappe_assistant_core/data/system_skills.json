@@ -200,6 +200,16 @@
     "content_file": "import_opening_balances.md"
   },
   {
+    "skill_id": "import-chart-of-accounts-usage",
+    "title": "How to Use import_chart_of_accounts and replace_chart_of_accounts",
+    "description": "Put the client's own chart of accounts on a company: read and classify it, then map onto the accounts it has, add under the right parents, or replace the standard chart of a company with no transactions",
+    "skill_type": "Tool Usage",
+    "linked_tool": "import_chart_of_accounts",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "import_chart_of_accounts.md"
+  },
+  {
     "skill_id": "plan-migration-usage",
     "title": "How to Use plan_migration",
     "description": "Grouping the import sessions of a migration of several files into one plan, ordered so each file comes after the files whose records it links to, for one approval at the end.",
@@ -656,6 +666,15 @@
     "status": "Published",
     "visibility": "Public",
     "content_file": "pages_in_chat.md"
+  },
+  {
+    "skill_id": "page-reports",
+    "title": "Pages from Reports",
+    "description": "Use when a FAC Page shows figures a report already computes, such as P&L, Accounts Receivable or a custom report: read it with fac.report, use its totals and summary, and show no-access and preparing states.",
+    "skill_type": "Workflow",
+    "status": "Published",
+    "visibility": "Public",
+    "content_file": "page_reports.md"
   },
   {
     "skill_id": "test-as-user-usage",

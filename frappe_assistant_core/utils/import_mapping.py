@@ -155,9 +155,16 @@ def _linked_tables(meta, provided: Optional[Dict[str, Any]]) -> List[Dict[str, A
 
 
 def _importable_fields(meta, docfields=None) -> List[Dict[str, Any]]:
+    from frappe_assistant_core.utils.permissions import unwritable_meta_fieldnames
+
+    # A new record keeps its default in a field above the user's write permlevel (Frappe's
+    # validate_higher_perm_levels), so a column mapped to one would import as blank (#390).
+    unwritable = set() if meta.istable else unwritable_meta_fieldnames(meta)
     fields = []
     for df in meta.fields if docfields is None else docfields:
         if df.fieldtype in display_fieldtypes + no_value_fields or df.hidden or df.read_only:
+            continue
+        if df.fieldname in unwritable:
             continue
         field: Dict[str, Any] = {
             "fieldname": df.fieldname,
@@ -343,10 +350,16 @@ def describe_mapping(
             parent_rows.append(row)
 
     mapped_tables = {field.split(".", 1)[0] for field in mapped_fields if "." in field}
-    missing_required = []
+    missing_required, filled = [], []
     for field, target in [] if update else targets.items():
         table = target["table"]
         if not target.get("required") or target.get("default") or field in mapped_fields:
+            continue
+        how = None if table else _filled_without_a_column(schema["doctype"], field)
+        if how:
+            # Live, 2026-11-17: "Required, with no column: Series" (and Company on a chart) made users
+            # think something was wrong, though the import fills them.
+            filled.append({"field": field, "label": target["label"], "how": how})
             continue
         # A child table's required fields matter once any of its columns is mapped.
         if table and table["fieldname"] not in mapped_tables:
@@ -366,6 +379,10 @@ def describe_mapping(
     summary = _("{0} columns mapped, {1} not imported, {2} unmapped.").format(
         len(parent_rows) + sum(len(rows) for rows in child_rows.values()), len(not_imported), len(unmapped)
     )
+    if filled:
+        summary += " " + _("Filled without a column: {0}.").format(
+            "; ".join(f"{f['label']} ({f['how']})" for f in filled)
+        )
     if missing_required:
         summary += " " + _("{0} required field(s) have no column: {1}.").format(
             len(missing_required), ", ".join(m["label"] for m in missing_required)
@@ -381,9 +398,24 @@ def describe_mapping(
         "not_imported": not_imported,
         "unmapped_columns": unmapped,
         "missing_required": missing_required,
+        "filled_without_column": filled,
         "required_when": required_when,
         "summary": summary,
     }
+
+
+def _filled_without_a_column(doctype: str, field: str) -> Optional[str]:
+    """How a required field with no column is filled anyway, or None: a naming series from the
+    DocType's default, an account's company from the chart check (import_chart_of_accounts and
+    replace_chart_of_accounts are given the company, never a column)."""
+    if field == "naming_series":
+        from frappe.model.naming import get_default_naming_series
+
+        series = get_default_naming_series(doctype)
+        return _("the default series {0}").format(series) if series else None
+    if doctype == "Account" and field == "company":
+        return _("the company the chart is put on")
+    return None
 
 
 def _required_when(meta, targets, mapped_fields, column_to_field_map, samples) -> List[Dict[str, Any]]:

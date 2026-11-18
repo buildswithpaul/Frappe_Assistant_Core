@@ -83,7 +83,7 @@ The full per-row list is attached to the session (`validation_results`). You get
 
 ## Large files
 
-A large file is checked in the background: one of more than 500 rows, or fewer for a submittable DocType (an invoice, an entry), whose rows count twice, three times when they are submitted too, as an opening import's are. The reply has `"state": "running"`. Tell the user, then read the session later with `get_document` (doctype `FAC Import Session`): `progress` shows how far it got, and `validation_summary` holds the result once `status` changes: the same reply as above, with each group's `explanation` and `fixes`, and the ready message. Examples are given as row numbers (`example_rows`), since the session keeps no values from the file. Calling the tool again while it runs only reports progress.
+A large file is checked in the background: one of more than 3,000 rows of plain records (customers, items, projects), more than 250 of a submittable DocType (an invoice, an entry), or more than 166 when they are submitted too, as an opening import's are. The reply has `"state": "running"`. Tell the user, then read the session later with `get_document` (doctype `FAC Import Session`): `progress` shows how far it got, and `validation_summary` holds the result once `status` changes: the same reply as above, with each group's `explanation` and `fixes`, and the ready message. Examples are given as row numbers (`example_rows`), since the session keeps no values from the file. Calling the tool again while it runs only reports progress.
 
 ## Best Practices
 
@@ -103,22 +103,74 @@ A large file is checked in the background: one of more than 500 rows, or fewer f
 
 ## Fixing the groups
 
-Explain each group with its `explanation`, offer only its `fixes`, then call `dry_run_import` again with the user's choices. Pass all their decisions in one call: they're applied together, then the file is checked once.
+Ask every entry of `decisions` at once, in one message: one question per decision (a field and a cause, e.g. "Status: Finished, In process, Created aren't choices"), each value with its `suggested` answer first (`suggested_for_all` when one answer fits every value; `create` for planned masters, made with `planned_masters`). Then call `dry_run_import` again with every answer as `fixes` (each value's `group`), in one call: they're applied together, then the file is checked once. Use a group's `explanation` and `fixes` for detail.
 
 | `action` | For | What it does |
 |----------|-----|--------------|
 | `map` | Missing link, value that isn't an allowed option | Every row with the group's value gets `to` instead. Stored as a transformation rule on the session; the file isn't changed. |
-| `create` | Missing link, when the record is a simple master | **Not sent in `fixes`.** Create every missing master at once with `create_document`: `documents` from `masters_plan`, with `import_session` (one table, one approval), then call `dry_run_import` again without `fixes`: the rows that needed them now pass. A group without this fix has `cannot_create` saying why. |
+| `create` | Missing link, when the record is a simple master | **Not sent in `fixes`.** Create every missing master at once with `create_document`: `documents` from `masters_plan`, with `import_session` (one table, one approval), then call `dry_run_import` again without `fixes`: the rows that needed them now pass. Customers and suppliers are in `masters_plan` too when Selling or Buying Settings name a new one by its name: each comes with its type and the Settings' default group and territory; when an entry has `choose`, ask the user once which group (or territory) for all of them. With more than a few masters, don't list them: pass `planned_masters` with `count` (how many `masters_plan` has) and `shared` (the group or territory the user chose) instead of `documents`, and the tool creates exactly that list in one approval. Never change a Settings default for an import. A group without this fix has `cannot_create` saying why. |
 | `fill` | A required value the rows leave blank, or that no column of the file has | Every row that starts a record gets `value` for that field (one HSN code for every item, say), where it is blank. A field with no column gets one added to the file's rows; the file isn't changed. A link must be an existing record, or one an earlier file of the plan creates. Only offered when the group's `fixes` has it, with the field. |
 | `leave_out` | Any group | Its rows are skipped by the import and listed in its report, with the reason. |
 
 Any other problem (a bad date, a duplicate, a rule ERPNext enforces) is corrected in the file: tell the user which rows and what to change, then start again with the new file. The group says so with `"fix_in_file": true`.
 
+### Many rows need customers or suppliers that aren't in ERPNext yet
+
+A file of projects, orders or invoices often names its customers or suppliers only inside its rows.
+Don't list them one by one, and don't stop at `map` or `leave_out`.
+
+- **They are in `masters_plan`** (Selling or Buying Settings name a new one by its name): create
+  them with the other missing masters, in the one table and one approval of `masters_plan`, even when
+  the file also has a column of their codes. If an entry has `choose`, ask once which group (or
+  territory) for all of them, with your other questions. Never ask the user to upload a separate
+  customer file for them.
+- **They carry `cannot_create`** (Settings name them by a series) and there are more than a few:
+  take them in a second session on the same file. Before asking the user anything:
+
+1. **Check the whole file, not the groups shown.** Open a second session on the same file and sheet
+   (`start_import_session` with the same file and `sheet`) for Customer or Supplier. Map the party's
+   name column, and its code column as the old ID when the file has one. Run `dry_run_import` on it.
+   - Rows that repeat an earlier party come back as `Duplicate in the file`: leave them out, they are
+     the same party again.
+   - Parties already in ERPNext come back as `Already in ERPNext`: leave them out too. The first file
+     links to them as they are.
+   - What is left is the parties to create.
+2. **Ask once.** One message: "Your file links to N customers: X are already in ERPNext and will be
+   linked as they are, Y are new. Create the Y new ones?" In the same message, ask for anything the new
+   ones need that the file doesn't give, such as a Customer Group, and give it with the group's
+   `fill`. **Never change a Selling or Buying Settings default for an import:** it changes every
+   customer or supplier made afterwards, not just these.
+3. **Import that session, then go back to the first file:** check it again and carry on. Don't ask
+   about the parties again.
+
+Never create the parties one by one with `create_document` for this: the second session keeps their
+old IDs and gives one report.
+
+### Rows that repeat a name
+
+A `Duplicate in the file` group means only the first row of each name can be imported. Never let it
+pass inside a long list. Say it on its own, in plain words, with the count and two or three examples:
+
+> "40 projects have the same name as an earlier project in the file (for example 'Warehouse Fit-out'
+> is both P-0012 and P-0012-01). ERPNext needs each project name to be unique. Should I skip these
+> 40, or will you give them unique names (for example add '-01') and send the file again?"
+
+- **Skip**: `leave_out` with the user's reason. Say in the import's summary how many were skipped
+  and why.
+- **Unique names**: the user corrects the file. Check it in the **same session**: `dry_run_import`
+  with the new file's `file_id` (see **The corrected file**), never a new session. The mapping and
+  the fixes already made are kept.
+
+When the repeated rows are sub-records of the first (a code such as `_01` after the parent's), say so:
+the user may want them under unique names rather than skipped.
+
+### Each fix
+
 Each fix:
 
 | Key | Description |
 |-----|-------------|
-| `group` | The group's id, e.g. `G3fa2c1`. A group keeps its id from check to check; once its rows pass, the id is gone. |
+| `group` | The group's id, e.g. `G3fa2c1`. A group keeps its id from check to check; once its rows pass, the id is gone. After a mapping change, send the fixes straight away: a file checked in the request is checked first in the same call, and the fixes apply to the groups it finds. |
 | `action` | `map`, `fill` or `leave_out` |
 | `to` | For `map`: the existing value to use |
 | `value` | For `fill`: the value every row gets |
@@ -315,7 +367,7 @@ messages and the like) arrive inside those tags too.
 ## How much the reply lists
 
 - `groups` lists at most 30 kinds of failure (`groups_total` counts them all; `groups_not_shown` says
-  how many more). Fix the ones listed and check again; the next ones then show. `masters_plan` lists at
+  how many more), but `decisions` covers every group, so ask about all of them at once. `masters_plan` lists at
   most 50 records (`masters_plan_total` when there are more).
 
 ## A whole migration plan

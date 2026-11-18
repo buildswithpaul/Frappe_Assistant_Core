@@ -30,8 +30,10 @@ from frappe_assistant_core.utils.customisation import (
     customisation_result,
     desk_url,
     script_report_warning,
+    server_script_code_guard,
     server_script_guard,
 )
+from frappe_assistant_core.utils.permissions import field_reader, unwritable_fieldnames
 from frappe_assistant_core.utils.savepoint import (
     open_savepoint,
     release_savepoint,
@@ -63,6 +65,19 @@ def _default_todo_allocation(doc: Any) -> None:
 
     if not doc.has_permission("create"):
         doc.allocated_to = frappe.session.user
+
+
+def _not_applied(doc: Any, data: Dict[str, Any], table_fields: Dict[str, Any]) -> list:
+    """The fields of ``data`` Frappe set to their defaults on insert, being above the user's
+    write permlevel (Document.validate_higher_perm_levels). A new record's child rows keep what
+    they were given, so only the record's own fields are checked (#390)."""
+    return unwritable_fieldnames(doc, [field for field in data if field not in table_fields])
+
+
+def _not_applied_note(not_applied: list) -> str:
+    return _(
+        "Not applied: {0}. You do not have permission to set these fields, so their default values were kept."
+    ).format(", ".join(not_applied))
 
 
 def _prepare_for_insert(doc: Any) -> None:
@@ -149,6 +164,11 @@ class DocumentCreate(BaseTool):
                     "type": "string",
                     "description": "With documents: the import session whose missing masters these are (dry_run_import's masters_plan). They are checked against it and listed on it.",
                 },
+                "planned_masters": {
+                    "type": "object",
+                    "description": 'With import_session, instead of documents: create every missing master the session\'s latest check planned (masters_plan), as planned, in one approval. {count: how many masters_plan has, so the card shows it; shared: {DocType: {field: value}} added to each of that DocType, only a party\'s group or territory, e.g. {"Customer": {"customer_group": "Commercial", "territory": "India"}}}. Use it when there are more than a few.',
+                    "properties": {"count": {"type": "integer"}, "shared": {"type": "object"}},
+                },
             },
             "required": [],
         }
@@ -163,6 +183,15 @@ class DocumentCreate(BaseTool):
         ):
             # A masters batch with nothing missing: say so, not "pass doctype and data".
             return {"success": False, "error": _("documents is empty: nothing to create.")}
+        if document_batch.given(arguments.get("planned_masters")):
+            if document_batch.given(arguments.get("documents")) or not document_batch.given(
+                arguments.get("import_session")
+            ):
+                return {
+                    "success": False,
+                    "error": _("planned_masters goes with import_session, instead of documents."),
+                }
+            return self._execute_many(arguments)
         if document_batch.given(arguments.get("import_session")) and not document_batch.given(
             arguments.get("documents")
         ):
@@ -332,7 +361,7 @@ class DocumentCreate(BaseTool):
                     }
                 child_rows[field] = rows
 
-            refusal = server_script_guard(doctype, data)
+            refusal = server_script_guard(doctype, data) or server_script_code_guard(doctype, data)
             if refusal:
                 return refusal
 
@@ -372,15 +401,20 @@ class DocumentCreate(BaseTool):
                 finally:
                     rollback_to_savepoint(_VALIDATE_SAVEPOINT, marks, doctype, doc.name)
 
-                return {
+                not_applied = _not_applied(doc, data, table_fields)
+                result = {
                     "success": True,
                     "validation_passed": True,
                     "doctype": doctype,
                     "message": f"{doctype} data validation passed successfully",
-                    "fields_validated": list(data.keys()),
+                    "fields_validated": [field for field in data if field not in not_applied],
                     "child_tables": list(table_fields.keys()) if table_fields else [],
                     "next_step": "Use create_document with validate_only=false to actually create the document",
                 }
+                if not_applied:
+                    result["not_applied_fields"] = not_applied
+                    result["message"] = f"{result['message']}. {_not_applied_note(not_applied)}"
+                return result
 
             # Capture input child-table values for post-save comparison (issue #181).
             # The normalized rows, so a Table MultiSelect value compares as its row.
@@ -388,15 +422,23 @@ class DocumentCreate(BaseTool):
 
             # Save document
             doc.insert()
+            # After the insert, so a field a hook let through (ignore_permlevel_for_fields) counts.
+            not_applied = _not_applied(doc, data, table_fields)
             # Check for silently overridden field values
             warnings = []
             for field, input_rows in input_child_values.items():
                 saved_rows = doc.get(field) or []
+                # A value the user may not read is not reported back, nor that it changed (#390).
+                can_read = field_reader(
+                    frappe.get_meta(table_fields[field].options), user_role, parenttype=doctype
+                )
                 for idx, input_row in enumerate(input_rows):
                     if idx >= len(saved_rows):
                         break
                     saved_row = saved_rows[idx]
                     for key, input_val in input_row.items():
+                        if not can_read(key):
+                            continue
                         saved_val = getattr(saved_row, key, None)
                         if saved_val is not None and str(saved_val) != str(input_val):
                             # Skip numeric false positives (1 vs 1.0, 100 vs 100.0)
@@ -495,7 +537,10 @@ class DocumentCreate(BaseTool):
                     "Use document_get to view the submitted document",
                 ]
 
-            # Log successful creation
+            if not_applied:
+                result["not_applied_fields"] = not_applied
+                result["message"] = f"{result['message']}. {_not_applied_note(not_applied)}"
+
             # Add warnings if any fields were silently overridden
             if warnings:
                 result["warnings"] = warnings
@@ -604,13 +649,20 @@ class DocumentCreate(BaseTool):
         session_name = arguments.get("import_session")
         session = None
         try:
-            documents = document_batch.read_documents(arguments, ("doctype", "data"), with_name=False)
+            planned = arguments.get("planned_masters")
+            documents = (
+                None
+                if document_batch.given(planned)
+                else document_batch.read_documents(arguments, ("doctype", "data"), with_name=False)
+            )
             if arguments.get("submit"):
                 raise document_batch.BatchProblem(
                     _("submit is for one document at a time. Create the list as drafts, then submit each.")
                 )
             if document_batch.given(session_name):
                 session = load_session(session_name)
+                if documents is None:
+                    documents = import_fixes.planned_documents(session, planned)
                 documents = import_fixes.check_masters(session, documents)
             document_batch.check_access(documents, "create")
             if arguments.get("validate_only"):

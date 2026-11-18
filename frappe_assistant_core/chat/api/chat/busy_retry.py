@@ -38,7 +38,7 @@ def _busy_retry_after(event: dict) -> float | None:
 
 
 def _wait(seconds: float, cancelled: Callable[[], bool], sleep: Callable[[float], None]) -> bool:
-    """Sleep ``seconds`` in short slices. False when a Stop arrived first."""
+    """Sleep ``seconds`` in short slices. False when ``cancelled`` turned true first."""
     remaining = seconds
     while remaining > 0:
         if cancelled():
@@ -59,8 +59,9 @@ def stream_with_busy_retry(
     """Yield the events of ``open_stream()``, re-opening it while AR reports busy.
 
     Only an attempt whose FIRST event is an AR_BUSY refusal is retried; any other first
-    event passes the whole stream through. A Stop during the wait yields one heartbeat and
-    ends, so the relay's own cancel check runs and finalizes the turn as a Stop.
+    event passes the whole stream through. ``cancelled`` is true on a Stop or when the relay's
+    worker is exiting; either during the wait yields one heartbeat and ends, so the relay's own
+    Stop and shutdown checks run and finalize the turn.
     """
     sleep = sleep or time.sleep
     retries = 0

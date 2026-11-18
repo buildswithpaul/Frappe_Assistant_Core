@@ -68,6 +68,11 @@ export function snapshotSrcdoc({ name, kitCss, style, html, wide, draft, persona
  */
 export function snapshotHtml(element) {
 	const copy = element.cloneNode(true);
+	// A chart drawn in the dark theme prints its light copy (pageCharts.js).
+	const live = [...element.querySelectorAll(".mk-chart")];
+	copy.querySelectorAll(".mk-chart").forEach((chart, i) => {
+		if (typeof live[i]?.facLightSvg === "function") chart.innerHTML = live[i].facLightSvg();
+	});
 	copy.querySelectorAll("svg:not([viewBox])").forEach((svg) => {
 		const width = parseFloat(svg.getAttribute("width"));
 		const height = parseFloat(svg.getAttribute("height"));

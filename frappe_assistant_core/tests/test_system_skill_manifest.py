@@ -503,3 +503,83 @@ class TestSystemSkillManifest(BaseAssistantTest):
         _install_system_prompt_templates()
 
         self.assertFalse(frappe.db.exists("Prompt Template", {"prompt_id": RETIRED_TEMPLATE}))
+
+    def test_pages_from_reports_read_through_fac_report(self):
+        # A page that recomputes a report, or draws 0 for a report its viewer may not run,
+        # shows figures that disagree with ERPNext.
+        entry = next(e for e in _load_manifest("system_skills.json") if e["skill_id"] == "page-reports")
+        self.assertEqual((entry["status"], entry["visibility"]), ("Published", "Public"))
+        text = self._read_skill("page_reports.md")
+        for claim in (
+            "fac.report(",
+            "no_access",
+            "preparing",
+            '"error"',
+            "report_access",
+            "Never recompute",
+            "group_by_party",
+        ):
+            self.assertIn(claim, text)
+        for name in ("pages_in_chat.md", "fac_page.md", "mockup_kit.md"):
+            self.assertIn('get_skill("page-reports")', self._read_skill(name), name)
+
+    def test_pages_are_created_with_a_description(self):
+        # The Desk Pages gallery shows each page's description under its title.
+        self.assertIn("`description`", self._read_skill("pages_in_chat.md"))
+        text = self._read_skill("fac_page.md")
+        self.assertIn('"description":', text)
+        self.assertIn("Pages list", text)
+
+    def test_pages_edit_records_with_the_blocks(self):
+        # Hand-written frappe.ui dialogs break a page beside the chat; the page tools work everywhere.
+        text = self._read_skill("mockup_kit.md")
+        for claim in ("fac.editList(", "fac.editText(", "fac.periodPicker(", "fac.canWrite(", "mk-section"):
+            self.assertIn(claim, text)
+        self.assertIn("fac.editList", self._read_skill("fac_page.md"))
+        self.assertIn("fac.editList", self._read_skill("pages_in_chat.md"))
+
+    def test_pages_people_type_into_keep_each_unit_to_its_team(self):
+        # A unit's record must be editable by its own team only, enforced on the server, without
+        # User Permissions that would hide other units' sections from the meeting.
+        text = self._read_skill("fac_page.md")
+        for claim in (
+            "editor_role",
+            "Before Save",
+            "Track Changes",
+            "doctypes",
+            "fac.hasRole",
+            "User Permissions on Cost Center",
+        ):
+            self.assertIn(claim, text)
+        self.assertIn("fac.hasRole(", self._read_skill("mockup_kit.md"))
+
+    def test_a_unit_record_cannot_change_hands_and_the_rule_is_checked_by_trying_it(self):
+        text = self._read_skill("fac_page.md")
+        # A unit editor could move another unit's record to their own unit by changing business_unit.
+        self.assertIn("set_only_once", text)
+        # Viewers read the Business Unit for its editor_role; without read their sections never render.
+        self.assertIn("Business Unit doctype `read`", text)
+        # test_as_user checks doctype permissions only and never runs the Server Script.
+        self.assertIn("test_as_user` cannot see the Server Script", text)
+
+    def test_pages_are_coloured_with_kit_tokens_so_they_follow_desks_theme(self):
+        # A page follows Desk's light or dark theme only through the kit's tokens.
+        kit = self._read_skill("mockup_kit.md")
+        for token in ("var(--mk-bg)", "var(--mk-surface)", "var(--mk-text)", "var(--mk-border)"):
+            self.assertIn(token, kit)
+        self.assertIn("dark", kit)
+        self.assertIn("var(--mk-", self._read_skill("fac_page.md"))
+
+    def test_pages_for_meetings_are_built_in_sections(self):
+        # Present mode shows one mk-section per screen, titled by data-title.
+        for name in ("mockup_kit.md", "fac_page.md"):
+            text = self._read_skill(name)
+            self.assertIn("Present", text, name)
+            self.assertIn("data-title", text, name)
+
+    def test_page_skills_cover_the_traps_filming_found(self):
+        # FACO subtracted one P&L month from the next, though each column is already that month's
+        # own figure, and a page could not refresh its "Updated by" line after an inline save.
+        self.assertIn("accumulated_values", self._read_skill("page_reports.md"))
+        self.assertIn("never subtract one period column from another", self._read_skill("page_reports.md"))
+        self.assertIn("onSaved", self._read_skill("mockup_kit.md"))

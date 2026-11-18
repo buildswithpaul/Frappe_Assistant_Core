@@ -38,6 +38,14 @@
   --ql-warning: #B8791A;
   --ql-danger: #B4453A;
 
+  /* ---- Your FAC: one colour per power, in AR's order ---- */
+  --ql-power-1: #0F6E5C;
+  --ql-power-2: #3566B0;
+  --ql-power-3: #7357C2;
+  --ql-power-4: #BF4F78;
+  --ql-power-5: #C4662B;
+  --ql-power-6: #1F8AA3;
+
   /* ---- Spacing scale (4px base) ---- */
   --ql-space-1: 4px;
   --ql-space-2: 8px;
@@ -117,6 +125,13 @@
   --ql-warning: #D6A14A;
   --ql-danger: #D66A5E;
 
+  --ql-power-1: #2DAA8F;
+  --ql-power-2: #6E9BE6;
+  --ql-power-3: #A08BEA;
+  --ql-power-4: #E07CA2;
+  --ql-power-5: #E3925A;
+  --ql-power-6: #4FB8CF;
+
   /* data-viz brightened for dark ground */
   --ql-viz-1: #2DAA8F;
   --ql-viz-2: #4FB585;
@@ -155,6 +170,13 @@
   --ql-success: #0E5C39;
   --ql-warning: #8A5A0F;
   --ql-danger: #8A2A22;
+
+  --ql-power-1: #0B5A4B;
+  --ql-power-2: #1F4E94;
+  --ql-power-3: #553A9E;
+  --ql-power-4: #962F58;
+  --ql-power-5: #8F4712;
+  --ql-power-6: #10647A;
 }
 
 /* ============================================================================

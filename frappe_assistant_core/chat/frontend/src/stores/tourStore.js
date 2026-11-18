@@ -34,6 +34,13 @@ function writeSeenVersion(v) {
 // (mounted in App.vue) listens to `isOpen` and renders the reel as an overlay.
 export const useTourStore = defineStore("tour", () => {
 	const isOpen = ref(false);
+	// The 3-stop "where things are" tour on Home (HomeCoachTour). Kept here, not in the discovery
+	// store, so the Spotlight (shared with the Desk widget) can wait for it without pulling that in.
+	const coachOpen = ref(false);
+
+	function setCoachOpen(open) {
+		coachOpen.value = !!open;
+	}
 
 	function open() {
 		isOpen.value = true;
@@ -64,5 +71,5 @@ export const useTourStore = defineStore("tour", () => {
 		}
 	}
 
-	return { isOpen, open, close, init };
+	return { isOpen, coachOpen, setCoachOpen, open, close, init };
 });

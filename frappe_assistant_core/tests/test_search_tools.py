@@ -44,8 +44,20 @@ def stub_meta(search_fields="", title_field=None, fields=None):
     return meta
 
 
+def stub_user_role(test):
+    """Give search a fixed role for the test.
+
+    These tests swap frappe.get_list/get_all for stubs. Looking the role up through
+    frappe.get_roles meanwhile, with the roles cache cold, would cache the stub's answer as
+    Administrator's roles for the rest of the run, so every later admin check fails.
+    """
+    role = patch.object(search_tools, "get_user_primary_role", autospec=True, return_value="System Manager")
+    role.start()
+    test.addCleanup(role.stop)
+
+
 def stub_field(fieldname, fieldtype="Data", hidden=False):
-    return MagicMock(fieldname=fieldname, fieldtype=fieldtype, hidden=hidden)
+    return MagicMock(fieldname=fieldname, fieldtype=fieldtype, hidden=hidden, permlevel=0)
 
 
 class TestSearchToolRegistration(BaseAssistantTest):
@@ -132,6 +144,15 @@ class TestSearchDocumentsRouting(BaseAssistantTest):
 
 class TestGlobalSearch(BaseAssistantTest):
     """Global search reads the full-text index, then re-checks row access."""
+
+    def setUp(self):
+        super().setUp()
+        # These tests stub frappe.get_list/get_all, which loading a DocType's meta also uses. The
+        # permlevel handling of a hit is covered in test_fieldlevel_read_access.
+        blind = patch.object(search_tools, "indexes_unreadable_field", autospec=True, return_value=False)
+        blind.start()
+        self.addCleanup(blind.stop)
+        stub_user_role(self)
 
     def test_indexed_hits_are_filtered_by_row_permissions(self):
         """Regression guard for #189, extended to the full-text index.
@@ -292,6 +313,10 @@ class TestGlobalSearch(BaseAssistantTest):
 class TestDoctypeSearch(BaseAssistantTest):
     """Doctype-scoped search matches the DocType's own declared search fields."""
 
+    def setUp(self):
+        super().setUp()
+        stub_user_role(self)
+
     def test_uses_permission_aware_query(self):
         """Regression guard for #189: never frappe.get_all."""
         with ExitStack() as stack:
@@ -372,7 +397,9 @@ class TestDoctypeSearch(BaseAssistantTest):
             stack.enter_context(patch.object(search_tools.frappe, "has_permission", return_value=True))
             stack.enter_context(
                 patch.object(
-                    search_tools.frappe, "get_meta", return_value=stub_meta(fields=[stub_field("title")])
+                    search_tools.frappe,
+                    "get_meta",
+                    return_value=stub_meta(fields=[stub_field("title"), stub_field("status", "Select")]),
                 )
             )
             get_list = stack.enter_context(patch.object(search_tools.frappe, "get_list"))
@@ -411,6 +438,30 @@ class TestLinkSearch(BaseAssistantTest):
 
         self.assertFalse(result.get("success"))
         self.assertIn("permission", result.get("error", "").lower())
+
+    def test_filters_are_checked_before_frappe_runs_them(self):
+        """A filter on a field the user cannot read narrows the result to its value (#390)."""
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(search_tools.frappe.db, "exists", return_value=True))
+            stack.enter_context(patch.object(search_tools.frappe, "has_permission", return_value=True))
+            stub_user_role(self)
+            check = stack.enter_context(
+                patch.object(
+                    search_tools,
+                    "check_query_fields",
+                    autospec=True,
+                    side_effect=search_tools.FieldAccessError(
+                        "You do not have permission to query the field ctc."
+                    ),
+                )
+            )
+            frappe_search_link = stack.enter_context(patch("frappe.desk.search.search_link"))
+
+            result = SearchTools.search_link(doctype="Employee", query="", filters={"ctc": [">", 100000]})
+
+        self.assertFalse(result.get("success"), result)
+        check.assert_called_once_with("Employee", "System Manager", filters={"ctc": [">", 100000]})
+        frappe_search_link.assert_not_called()
 
     def test_list_documents_link_suggestions_still_work(self):
         """list_documents reads `value` off these results for unresolved_filters."""

@@ -44,6 +44,8 @@ export const useSpotlightStore = defineStore("spotlight", () => {
 	async function evaluate() {
 		const user = useUserStore();
 		if (shownThisLoad || current.value || useTourStore().isOpen || user.registrationStatus !== "ready") return;
+		// Never over the first-login tour; SpotlightHost re-evaluates when it closes.
+		if (useTourStore().coachOpen) return;
 		const who = user.user;
 
 		if (user.isAdmin && quotaState === "pending") return; // the in-flight check decides first

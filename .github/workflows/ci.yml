@@ -90,12 +90,11 @@ jobs:
             ${{ runner.os }}-yarn-
 
       - name: Install MariaDB Client
-        timeout-minutes: 5
+        timeout-minutes: 8
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends mariadb-client
+          .github/scripts/install-mariadb-client.sh
           # The runner's mariadb client now requires TLS by default and the mariadb service
           # container offers none (ERROR 2026), so every client call, Frappe's included,
           # connects without it.
@@ -278,12 +277,11 @@ jobs:
           check-latest: true
 
       - name: Install MariaDB Client
-        timeout-minutes: 5
+        timeout-minutes: 8
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends mariadb-client
+          .github/scripts/install-mariadb-client.sh
           # The runner's mariadb client now requires TLS by default and the mariadb service
           # container offers none (ERROR 2026), so every client call, Frappe's included,
           # connects without it.

@@ -48,13 +48,6 @@
 										type="search"
 										placeholder="Search…"
 									/>
-									<button
-										v-if="knowledgeIncluded"
-										class="ql-primary-action"
-										@click="triggerUpload"
-									>
-										+ Upload
-									</button>
 								</template>
 							</ListHeaderBand>
 						</template>
@@ -136,6 +129,9 @@
 							:cta="knowledgeIncluded ? 'Upload your first document' : ''"
 							@cta="triggerUpload"
 						>
+							<template v-if="knowledgeIncluded" #explain>
+								<KnowledgeHowItWorks />
+							</template>
 							<template v-if="knowledgeIncluded" #footnote>
 								<p class="kb-empty-foot">
 									Supports PDF, Markdown, and Text up to 10 MB — or drag and drop
@@ -169,13 +165,7 @@
 							@preview="openPreview"
 							@delete="confirmDelete"
 							@manage-access="openAccessModal"
-						>
-							<AddSlotCard
-								v-if="knowledgeIncluded"
-								label="Add document"
-								@click="triggerUpload"
-							/>
-						</KnowledgeDocumentGrid>
+						/>
 					</ListPageShell>
 				</template>
 
@@ -226,6 +216,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { storeToRefs } from "pinia";
 import { useUserStore } from "@/stores/userStore";
+import { useDiscoveryStore } from "@/stores/discoveryStore";
 import { useDocumentUpload } from "@/composables/useDocumentUpload";
 import NavigationSidebar from "@/components/layout/NavigationSidebar.vue";
 import KnowledgeTopBar from "@/components/knowledge/KnowledgeTopBar.vue";
@@ -241,8 +232,8 @@ import KnowledgeToolbar from "@/components/knowledge/KnowledgeToolbar.vue";
 import KnowledgeDocumentGrid from "@/components/knowledge/KnowledgeDocumentGrid.vue";
 import ListPageShell from "@/components/common/list/ListPageShell.vue";
 import ListHeaderBand from "@/components/common/list/ListHeaderBand.vue";
-import AddSlotCard from "@/components/common/list/AddSlotCard.vue";
 import EmptyState from "@/components/common/list/EmptyState.vue";
+import KnowledgeHowItWorks from "@/components/knowledge/KnowledgeHowItWorks.vue";
 import UpgradeBanner from "@/components/common/UpgradeBanner.vue";
 import { api } from "@/api/client";
 import { ACCEPT_ATTRIBUTE } from "@/utils/knowledgeUpload";
@@ -343,6 +334,8 @@ async function loadDocuments() {
 		if (result) {
 			documents.value = result.documents || [];
 			storage.value = result.storage || null;
+			// A file the user uploaded counts as "used" for Your FAC; a colleague's shared one does not.
+			useDiscoveryStore().reportKnowledge(documents.value);
 		}
 	} catch (e) {
 		loadError.value = e.message || "Failed to load documents";

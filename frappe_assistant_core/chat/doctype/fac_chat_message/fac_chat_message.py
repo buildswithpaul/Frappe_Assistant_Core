@@ -153,7 +153,9 @@ class FACChatMessage(Document):
         }
 
     @staticmethod
-    def create_message(session_id, role, content, context=None, llm_metadata=None, project=None):
+    def create_message(
+        session_id, role, content, context=None, llm_metadata=None, project=None, client_signals=None
+    ):
         """Helper method to create a new message.
 
         ``content`` is allowed to be empty: streaming creates an assistant
@@ -190,6 +192,10 @@ class FACChatMessage(Document):
             doc.context_doctype = context.get("doctype")
             doc.context_name = context.get("name")
             doc.context_url = context.get("url")
+
+        # Dropped on insert until the column is migrated, like any field the meta lacks.
+        if client_signals:
+            doc.client_signals = client_signals
 
         # Add LLM metadata if provided (for assistant messages). FAC surfaces
         # credits only — token counts are recorded by AR (AR Message), not here.

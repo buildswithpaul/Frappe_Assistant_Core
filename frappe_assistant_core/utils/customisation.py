@@ -53,6 +53,7 @@ from frappe_assistant_core.utils.field_code import (
     resulting_rows,
     rows_field_code,
 )
+from frappe_assistant_core.utils.sandbox_check import sandbox_problems
 
 CUSTOMISATION_DOCTYPES = frozenset(
     {
@@ -181,6 +182,39 @@ def server_script_guard(
             "Save the script with disabled set to 1, or achieve the same result with a "
             "Client Script, a Workflow or a Notification."
         ),
+    }
+
+
+def server_script_code_guard(
+    doctype: str,
+    data: Dict[str, Any],
+    current_script: Optional[str] = None,
+    current_disabled: Optional[int] = None,
+) -> Optional[Dict[str, Any]]:
+    """Refuse a Server Script whose code would fail in Frappe's sandbox.
+
+    Checked when the code changes or the script ends up switched on, so a broken script can
+    still be switched off. Returns None when the write is allowed.
+    """
+    if doctype != "Server Script":
+        return None
+
+    disabled = cint(data["disabled"]) if "disabled" in data else cint(current_disabled)
+    if "script" not in data and disabled:
+        return None
+
+    script = data.get("script", current_script)
+    problems = sandbox_problems(script) if isinstance(script, str) else []
+    if not problems:
+        return None
+
+    return {
+        "success": False,
+        "error": _("This script would fail in the Server Script sandbox, so it was not saved:")
+        + "\n"
+        + "\n".join(problems),
+        "error_type": "server_script_sandbox",
+        "guidance": _("Fix each line named above and save again. Nothing was changed."),
     }
 
 

@@ -105,9 +105,22 @@
 			</p>
 		</div>
 	</template>
+
+	<!-- A step type this builder does not know (saved by a newer one) -->
+	<div v-else class="config-info" data-test="unknown-node-type">
+		<p>
+			{{
+				__(
+					"This version of the builder cannot edit a \"{0}\" step. Its settings are kept as they are.",
+					[nodeType]
+				)
+			}}
+		</p>
+	</div>
 </template>
 
 <script setup>
+import { __ } from "@/utils/i18n";
 import { CONDITION_OPERATORS } from "../graphUtils";
 
 defineProps({

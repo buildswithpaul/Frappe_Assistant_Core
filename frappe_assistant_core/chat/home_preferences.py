@@ -23,7 +23,14 @@ HOME_PREFERENCE_FIELDS = (
     "hidden_home_signals",
     "show_suggested_prompts",
     "show_personalized_suggestions",
+    "show_progress",
 )
+
+# What the SPA may keep in ``discovery_state``: lists of ids, the tour flag and a few dates. Anything
+# else is dropped, so a bad or oversized save can never grow the row.
+DISCOVERY_LIST_KEYS = ("seen", "used", "celebrated", "guides_dismissed")
+DISCOVERY_LIST_MAX = 50
+DISCOVERY_ID_MAX = 140
 
 
 def clamp_needs_you_count(value: int) -> int:
@@ -57,4 +64,42 @@ def load_home_preferences(user: str) -> dict:
         "hidden_signals": parse_hidden_signals(row.get("hidden_home_signals")),
         "show_suggested_prompts": flag("show_suggested_prompts"),
         "show_personalized_suggestions": flag("show_personalized_suggestions"),
+        "show_progress": flag("show_progress"),
     }
+
+
+def parse_discovery_state(raw: dict | str | None) -> dict:
+    """The stored feature-discovery state, keeping only known keys and types; malformed input reads as empty.
+
+    Opened features (``seen``), features really used (``used``), unlocks already celebrated,
+    and whether the tour is done. Losing any of it only means a dot or the tour shows once more.
+    """
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw) if raw.strip() else {}
+        except ValueError:
+            raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    state: dict = {}
+    for key in DISCOVERY_LIST_KEYS:
+        items = raw.get(key)
+        items = items if isinstance(items, list) else []
+        ids = [i for i in items if isinstance(i, str) and 0 < len(i) <= DISCOVERY_ID_MAX]
+        state[key] = list(dict.fromkeys(ids))[-DISCOVERY_LIST_MAX:]
+    state["coach_done"] = raw.get("coach_done") is True
+    return state
+
+
+def merge_discovery_state(stored: dict, incoming: dict) -> dict:
+    """Both parsed states together: every id either one lists, and the tour done if either says so.
+
+    Each open tab posts its whole state, so a tab that loaded earlier must not drop what
+    another tab saved since. Nothing is ever taken out of these lists, so a union is safe.
+    """
+    merged = {
+        key: list(dict.fromkeys(stored[key] + incoming[key]))[-DISCOVERY_LIST_MAX:]
+        for key in DISCOVERY_LIST_KEYS
+    }
+    merged["coach_done"] = stored["coach_done"] or incoming["coach_done"]
+    return merged

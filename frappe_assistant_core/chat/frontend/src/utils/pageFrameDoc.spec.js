@@ -107,4 +107,16 @@ describe("pageFrameDoc", () => {
 		expect(makeNonce()).toMatch(/^[0-9a-f]{32}$/);
 		expect(makeNonce()).not.toBe(makeNonce());
 	});
+
+	it("starts the page in Desk's theme, and anything but dark is light", () => {
+		expect(innerDoc(pageFrameSrcdoc(parts({ theme: "dark" }))).inner.documentElement.getAttribute("data-theme")).toBe("dark");
+		for (const theme of [undefined, "light", '"><script>']) {
+			expect(innerDoc(pageFrameSrcdoc(parts({ theme }))).inner.documentElement.getAttribute("data-theme")).toBe("light");
+		}
+	});
+
+	it("paints the frame with the kit's background, not a fixed white", () => {
+		const css = [...innerDoc(pageFrameSrcdoc(parts())).inner.querySelectorAll("style")].map((el) => el.textContent).join("\n");
+		expect(css).not.toMatch(/background:\s*#fff/);
+	});
 });

@@ -594,6 +594,31 @@ class TestMatch(BaseAssistantTest):
         self.assertEqual(found[0].header_row, 1)  # the row without an optional group is no candidate
         self.assertEqual(len(presets.match_sheet([["Name", "Under"]], [LEDGERS])), 1)  # default 0
 
+    def test_a_column_the_signature_says_is_absent_rules_the_sheet_out(self):
+        picky = {**LEDGERS, "signature": {**LEDGERS["signature"], "absent": [["Parent Number"]]}}
+        self.assertIsNone(presets.validate_preset(picky))
+        self.assertEqual(presets.match_sheet([["Name", "Under", "Parent Number"]], [picky]), [])
+        self.assertEqual(len(presets.match_sheet([["Name", "Under", "GSTIN"]], [picky])), 1)
+
+    def test_erpnexts_own_chart_template_is_not_taken_for_a_zoho_export(self):
+        # A chart made for ERPNext's Chart of Accounts Importer has Account Name, Account Type and
+        # Parent Account like Zoho's export, and Account Number / Parent Account Number Zoho doesn't:
+        # read as Zoho, its numbers were dropped (live test, 2026-11-17).
+        zoho = next(p for p in presets.load_presets() if p["id"] == "zoho_books.chart_of_accounts")
+        erpnext = [
+            "Account Name",
+            "Parent Account",
+            "Account Number",
+            "Parent Account Number",
+            "Is Group",
+            "Account Type",
+            "Root Type",
+            "Currency",
+        ]
+        self.assertEqual(presets.match_sheet([erpnext], [zoho]), [])
+        export = ["Account ID", "Account Name", "Account Code", "Account Type", "Parent Account", "Currency"]
+        self.assertEqual(len(presets.match_sheet([export], [zoho])), 1)
+
     def test_no_match_without_every_required_group(self):
         self.assertEqual(presets.match_sheet([["Name", "GSTIN"], ["A", "B"]], [LEDGERS]), [])
         self.assertEqual(presets.missing_groups([["Name", "GSTIN"]], LEDGERS), [["Under", "Group Name"]])

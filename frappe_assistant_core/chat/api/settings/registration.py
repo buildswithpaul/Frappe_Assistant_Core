@@ -353,6 +353,7 @@ def register_with_ar(
             settings.pending_verification_token = None
             settings.registration_status = "Registered"
             settings.save(ignore_permissions=True)
+            _report_site_to_ar()
 
             # Seed quota cache with initial subscription data
             from frappe_assistant_core.chat.quota_cache import update_from_ar
@@ -652,10 +653,23 @@ def complete_email_verification(verification_token: str) -> dict:
     settings.pending_verification_token = None
     settings.registration_status = "Registered"
     settings.save(ignore_permissions=True)
+    _report_site_to_ar()
     from frappe_assistant_core.chat.quota_cache import clear as clear_quota
 
     clear_quota()
     return {"success": True}
+
+
+def _report_site_to_ar() -> None:
+    """Send the first heartbeat now rather than at the next six-hourly sync.
+
+    It carries the company currency FAC Cloud prices plans in, and the new
+    tenant usually opens Billing straight after registering.
+    """
+    frappe.enqueue(
+        "frappe_assistant_core.chat.api.billing.sync._send_heartbeat",
+        enqueue_after_commit=True,
+    )
 
 
 @frappe.whitelist(methods=["POST"])

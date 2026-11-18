@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import frappe
 from frappe import _
 
+from frappe_assistant_core.core.tool_packs import ToolPack
 from frappe_assistant_core.plugins.base_plugin import BasePlugin
 
 
@@ -56,6 +57,17 @@ class DataSciencePlugin(BasePlugin):
             "run_python_code",
             "run_database_query",
             "extract_file_content",  # File content extraction tool
+        ]
+
+    def get_tool_packs(self) -> List[ToolPack]:
+        # extract_file_content stays in the base set: attachments need it on a plain question.
+        return [
+            ToolPack(
+                id="analysis",
+                title="Analysis",
+                description="Running a custom SQL query or Python over the site's data: counts, statistics, ad-hoc analysis",
+                tools=("run_python_code", "run_database_query"),
+            )
         ]
 
     def validate_environment(self) -> Tuple[bool, Optional[str]]:

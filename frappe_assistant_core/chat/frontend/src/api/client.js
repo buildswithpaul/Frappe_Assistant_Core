@@ -35,6 +35,7 @@ import { sharedKnowledge } from "./domains/sharedKnowledge";
 import { suggestions } from "./domains/suggestions";
 import { home } from "./domains/home";
 import { imports } from "./domains/imports";
+import { feedback } from "./domains/feedback";
 import { support } from "./domains/support";
 import { templates } from "./domains/templates";
 import { tools } from "./domains/tools";
@@ -65,6 +66,7 @@ export const api = {
 	suggestions,
 	home,
 	imports,
+	feedback,
 	support,
 	templates,
 	models,

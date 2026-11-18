@@ -140,7 +140,8 @@ class TestTeamUserEndpoints(BaseAssistantTest):
             fields=["name", "subject"],
         )
         self.assertTrue(len(logs) >= 1, "expected a Desk notification for the invited user")
-        self.assertIn("invite", logs[0]["subject"].lower())
+        # Says who gave them FAC Chat; the ready questions are in the email (test_discovery_engagement).
+        self.assertIn("gave you fac chat", logs[0]["subject"].lower())
 
     def test_invite_notification_skipped_for_nonexistent_user(self):
         # Inviting an email with no enabled User on this site must NOT raise.

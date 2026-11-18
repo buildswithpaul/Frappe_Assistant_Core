@@ -151,7 +151,8 @@ class TestFileContentIsFenced(GuardrailCase):
         payload = self._mcp("dry_run_import", {"session": session})
 
         self.assertIn(INJECTION, json.dumps(payload["groups"]))
-        self.assertOnlyFenced(payload, ("groups", "masters_plan"))
+        self.assertIn(INJECTION, json.dumps(payload["decisions"]))
+        self.assertOnlyFenced(payload, ("groups", "decisions", "masters_plan"))
 
     def test_create_document_names_the_file_content_its_replies_carry(self):
         # With import_session it creates an import's missing masters, named as the file has them.
@@ -599,14 +600,25 @@ class TestTheRowLimit(GuardrailCase):
         self.assertIn("Split it", json.dumps(reply))
 
     def test_a_large_file_is_never_checked_inside_the_request(self):
-        # Over 500 rows a check runs in the background; the recorded count says 2
-        session = self._swapped(600)
+        # Over BACKGROUND_ROWS a check runs in the background; the recorded count says 2
+        rows = import_dry_run.BACKGROUND_ROWS + 1
+        session = self._swapped(rows)
 
         with patch.object(import_dry_run, "enqueue", autospec=True):
             reply = self._run("dry_run_import", {"session": session})
 
         self.assertFalse(reply["success"], reply)
-        self.assertIn("600 rows", json.dumps(reply))
+        self.assertIn(f"{rows} rows", json.dumps(reply))
+
+    def test_a_swapped_files_rows_are_weighed_as_the_check_weighs_them(self):
+        # 300 invoices cost 3,600 plain rows: a file swapped in over the REST API with them is
+        # never checked inside the request, though 300 rows of customers would be.
+        self._limit(50000)
+        import_dry_run._real_size(300, 1, in_background=False)
+
+        with self.assertRaises(import_dry_run.DryRunProblem):
+            import_dry_run._real_size(300, 12, in_background=False)
+        import_dry_run._real_size(300, 12, in_background=True)
 
     def test_a_corrected_file_over_the_limit_is_refused_and_the_session_keeps_its_file(self):
         self._limit(3)

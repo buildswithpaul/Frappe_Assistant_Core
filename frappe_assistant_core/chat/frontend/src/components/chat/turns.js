@@ -31,3 +31,8 @@ export function userInitial(user) {
   }
   return "U";
 }
+
+// Thumbs belong on a finished answer the server can attribute, and only when
+// AR announces feedback_v2.
+export const canRateAnswer = (message, capabilities) =>
+	!!message.message_id && !message.isStreaming && capabilities?.feedback_v2 === true;

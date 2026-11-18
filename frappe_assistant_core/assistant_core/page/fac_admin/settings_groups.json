@@ -5,7 +5,7 @@
             "label": "Chat & Widget",
             "icon": "messages-square",
             "doctype": "FAC Chat Settings",
-            "units": ["ui_settings_tab", "retention_tab"]
+            "units": ["ui_settings_tab", "chat_relay_section", "retention_tab"]
         },
         {
             "key": "other_apps",

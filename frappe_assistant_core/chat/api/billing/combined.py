@@ -157,13 +157,21 @@ def get_billing_details():
         frappe.throw(_not_registered_error())
 
     try:
-        return client.get_billing_details()
+        details = client.get_billing_details()
     except ARBillingUnavailableError:
         return _billing_unavailable_response()
     except Exception as e:
         # Raise a user-facing error so the SPA's try/catch sees the failure
         # instead of treating an error-shaped dict as success.
         frappe.throw(_safe_error(e, "FACO Billing Error"))
+
+    if isinstance(details, dict) and not details.get("billing_country"):
+        from frappe_assistant_core.chat.site_profile import company
+
+        # No country saved yet: start the form on the ERPNext company's country
+        if suggested := company().get("country"):
+            details["suggested_country"] = suggested
+    return details
 
 
 @frappe.whitelist(methods=["GET"])

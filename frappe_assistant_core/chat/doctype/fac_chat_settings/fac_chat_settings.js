@@ -55,10 +55,18 @@ frappe.ui.form.on("FAC Chat Settings", {
 			method: "frappe_assistant_core.chat.server_setup.get_server_setup",
 			type: "GET",
 			callback: ({ message }) => {
+				const reasons = [];
 				if (message?.status === "warning") {
 					frm.dashboard.add_indicator(__("Web server setup needs attention"), "orange");
+					reasons.push(...message.reasons);
+				}
+				if (message?.relay?.status === "warning") {
+					frm.dashboard.add_indicator(__("Chat relay workers need attention"), "orange");
+					reasons.push(...message.relay.reasons);
+				}
+				if (reasons.length) {
 					frm.dashboard.set_headline_alert(
-						message.reasons.map((reason) => frappe.utils.escape_html(reason)).join("<br>"),
+						reasons.map((reason) => frappe.utils.escape_html(reason)).join("<br>"),
 						"orange"
 					);
 				}

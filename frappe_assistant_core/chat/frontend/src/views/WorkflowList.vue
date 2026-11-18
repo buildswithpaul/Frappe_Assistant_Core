@@ -98,7 +98,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { storeToRefs } from "pinia";
 import { useUserStore } from "@/stores/userStore";
 import { useWorkflowStore } from "@/stores/workflowStore";
@@ -124,7 +124,9 @@ const userPublishingEnabled = computed(() => userStore.userPublishingEnabled);
 const { workflows, isLoading, listError, total, statusFilter, currentPage, pageSize } =
 	storeToRefs(workflowStore);
 
-const viewMode = ref("workflows");
+// `?tab=marketplace` opens the templates: Home's Agents card sends people here to start from one.
+const route = useRoute();
+const viewMode = ref(route.query.tab === "marketplace" ? "marketplace" : "workflows");
 
 // Create modal
 const showCreateModal = ref(false);

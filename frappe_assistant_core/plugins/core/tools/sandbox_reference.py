@@ -23,15 +23,13 @@ from typing import Any, Dict, List, Set
 
 import frappe
 from frappe import _
-from frappe.utils.safe_exec import get_safe_globals
 
 from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.utils.sandbox_check import REQUEST_DATA_NAMES, sandbox_globals
 
 DEFAULT_LIMIT = 200
 MAX_LIMIT = 500
 MAX_DEPTH = 8
-# Per-request data: the name is real, the keys under it belong to the current request
-REQUEST_DATA_NAMES = {"form_dict", "args", "response", "session", "request"}
 # Underscore names that are real: translate and frappe._dict. The rest are sandbox guards
 PUBLIC_UNDERSCORE_NAMES = {"_", "_dict"}
 # Removed from frappe.db by Frappe for DocType Event scripts
@@ -65,19 +63,6 @@ def _walk_names(node: Any, prefix: str, depth: int, ancestors: Set[int]) -> List
         else:
             names.append(name)
     return names
-
-
-def _sandbox_globals() -> Any:
-    """get_safe_globals(), leaving the live request's form_dict as it found it."""
-    form_dict = getattr(frappe.local, "form_dict", None)
-    snapshot = dict(form_dict) if form_dict is not None else None
-    try:
-        return get_safe_globals()
-    finally:
-        # Frappe deletes the "_" cache-buster key from the live form_dict while building globals
-        if snapshot is not None:
-            for key, value in snapshot.items():
-                form_dict.setdefault(key, value)
 
 
 def _builtin_names(sandbox: Any) -> List[str]:
@@ -134,7 +119,7 @@ class SandboxReference(BaseTool):
         prefix = (arguments.get("prefix") or "").strip().strip(".")
         limit = max(1, min(int(arguments.get("limit") or DEFAULT_LIMIT), MAX_LIMIT))
 
-        sandbox = _sandbox_globals()
+        sandbox = sandbox_globals()
         found = set(_walk_names(sandbox, "", 0, {id(sandbox)})) | set(_builtin_names(sandbox))
         names = sorted(n for n in found if _matches_prefix(n, prefix))
 

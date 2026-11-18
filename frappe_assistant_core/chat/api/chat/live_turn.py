@@ -32,6 +32,8 @@ HEARTBEAT_SECONDS = 15
 STALE_AFTER_SECONDS = 60
 # A starting entry can wait behind a full relay pool with no heartbeat.
 STARTING_STALE_SECONDS = 180
+# A job turn's entry is written just before its job is enqueued: give the job time to appear.
+JOB_CHECK_GRACE_SECONDS = 10
 
 _clock = time.monotonic
 _bound = threading.local()
@@ -54,12 +56,20 @@ def get(session_id: str) -> dict | None:
     return frappe.cache().get_value(_key(session_id), expires=True)
 
 
-def start(session_id: str, *, message_id: str | None = None, client_turn: str | None = None) -> str:
+def start(
+    session_id: str,
+    *,
+    message_id: str | None = None,
+    client_turn: str | None = None,
+    relay: str | None = None,
+) -> str:
     """Mark a turn as accepted before its relay runs.
 
     ``client_turn`` is the id the requesting surface gave the request
     (``client_turn_id``); every event of the turn carries it, so that surface
     can tell its own turn from one another surface started.
+
+    ``relay`` is ``"job"`` when the relay runs as an RQ job, so ``is_stale`` also reads the job.
 
     ``blocks`` and ``text`` stay None: a joining client keeps what the row shows
     until the relay writes its first snapshot.
@@ -71,6 +81,7 @@ def start(session_id: str, *, message_id: str | None = None, client_turn: str | 
             "turn": turn,
             "message_id": message_id,
             "client_turn": client_turn,
+            "relay": relay,
             "status": "starting",
             "started_at": frappe.utils.now(),
             "seq": 0,
@@ -86,13 +97,29 @@ def start(session_id: str, *, message_id: str | None = None, client_turn: str | 
 def is_stale(entry: dict, *, now: float | None = None) -> bool:
     """Whether the relay writing ``entry`` has stopped: its worker died or was killed.
 
-    An entry from before last_progress_at existed is never stale; its TTL ends it.
+    An entry from before last_progress_at existed is never stale; its TTL ends it. A job turn
+    is also stale once its RQ job is lost, so a dead job shows as Interrupted without the wait.
     """
     written = entry.get("last_progress_at")
     if written is None:
         return False
     bound = STARTING_STALE_SECONDS if entry.get("status") == "starting" else STALE_AFTER_SECONDS
-    return (time.time() if now is None else now) - written > bound
+    age = (time.time() if now is None else now) - written
+    if age > bound:
+        return True
+    return entry.get("relay") == "job" and age > JOB_CHECK_GRACE_SECONDS and _job_lost(entry["turn"])
+
+
+def _job_lost(turn: str) -> bool:
+    """Whether the turn's relay job is gone; an RQ read failure counts as not lost."""
+    # Imported here: relay_dispatch sits under live_turn's import chain.
+    from frappe_assistant_core.chat.api.chat import relay_dispatch
+
+    try:
+        return relay_dispatch.relay_job_lost(relay_dispatch.relay_job_id(turn))
+    except Exception as e:
+        _logger().warning(f"relay job state not read for turn {turn}: {e!s}")
+        return False
 
 
 def holds(session_id: str, turn: str) -> bool:
@@ -131,9 +158,11 @@ class LiveTurn:
         message_id: str | None = None,
         turn: str | None = None,
         client_turn: str | None = None,
+        relay: str | None = None,
     ):
         self.session_id = session_id
         self.client_turn = client_turn
+        self.relay = relay
         self.builder = builder
         self.message_id = message_id
         self.turn = turn or uuid.uuid4().hex
@@ -196,6 +225,7 @@ class LiveTurn:
                 "turn": self.turn,
                 "message_id": self.message_id,
                 "client_turn": self.client_turn,
+                "relay": self.relay,
                 "status": self.status,
                 "started_at": frappe.utils.now(),
                 "seq": self.seq,
@@ -236,7 +266,8 @@ def bind(
             # The turn was ended before its relay ran (mark_turn_interrupted); never revive it.
             return None
         client_turn = starting.get("client_turn") if starting else None
-        live = LiveTurn(session_id, builder, message_id, turn, client_turn)
+        relay = starting.get("relay") if starting else None
+        live = LiveTurn(session_id, builder, message_id, turn, client_turn, relay)
     except Exception as e:
         _logger().warning(f"live turn not started for {session_id}: {e!s}")
         return None
@@ -329,6 +360,12 @@ def mark_turn_interrupted(session_id: str) -> dict:
             fall_back_to_latest=False,
         )
     clear(session_id, entry["turn"])
+    # The turn's asker spent any credits, not whoever ran this check.
+    relay._end_credit_status_freshness(entry.get("user") or frappe.session.user)
+    if entry.get("relay") == "job":
+        error = _("This answer was interrupted before it finished. Retry to run it again.")
+    else:
+        error = _("This answer was interrupted by a server restart.")
     relay._emit_socket_event(
         session_id,
         {
@@ -338,10 +375,10 @@ def mark_turn_interrupted(session_id: str) -> dict:
             "turn": entry["turn"],
             "client_turn": entry.get("client_turn"),
             "error_code": "TURN_INTERRUPTED",
-            "error": _("This answer was interrupted by a server restart."),
+            "error": error,
         },
     )
-    return {"interrupted": True, "message_id": message_id}
+    return {"interrupted": True, "message_id": message_id, "error": error}
 
 
 @frappe.whitelist(methods=["POST"])

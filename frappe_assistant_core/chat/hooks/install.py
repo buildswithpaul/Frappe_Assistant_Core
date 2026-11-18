@@ -32,6 +32,7 @@ def after_install() -> None:
     """Seed FAC Chat Settings defaults on fresh install."""
     _seed_fac_cloud_url()
     _seed_expected_concurrent_chatters()
+    _seed_relay_in_background_job()
 
 
 def _seed_fac_cloud_url() -> None:
@@ -47,6 +48,14 @@ def _seed_expected_concurrent_chatters() -> None:
         frappe.db.set_single_value(
             "FAC Chat Settings", "expected_concurrent_chatters", DEFAULT_EXPECTED_CHATTERS
         )
+    except Exception:
+        # FAC Chat Settings table may not exist yet during a partial migration.
+        pass
+
+
+def _seed_relay_in_background_job() -> None:
+    try:
+        frappe.db.set_single_value("FAC Chat Settings", "relay_in_background_job", 0)
     except Exception:
         # FAC Chat Settings table may not exist yet during a partial migration.
         pass

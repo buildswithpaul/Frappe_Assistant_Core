@@ -24,7 +24,7 @@ from typing import Any, Dict
 import frappe
 from frappe import _
 
-from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.core.base_tool import BaseTool, permission_error_result
 
 
 class RunWorkflow(BaseTool):
@@ -88,12 +88,27 @@ class RunWorkflow(BaseTool):
             action = arguments.get("action")
             workflow_name = arguments.get("workflow")
 
-            # Validate document exists
-            if not frappe.db.exists(doctype, name):
-                return {"success": False, "error": f"Document {doctype} '{name}' not found"}
+            # A user who may read no record of the DocType gets the same refusal for every name,
+            # so a refusal doesn't tell them which records exist.
+            if not frappe.has_permission(doctype, "read"):
+                return permission_error_result(
+                    doctype,
+                    _("You do not have permission to read {0}.").format(_(doctype)),
+                    name=name,
+                )
 
-            # Get the document
+            if not frappe.db.exists(doctype, name):
+                return {"success": False, "error": _("Document {0} '{1}' not found").format(_(doctype), name)}
+
+            # As in Desk, a record the user may not read (a User Permission, say) gives away
+            # nothing more than the refusal: not its workflow state, nor the actions open from it.
             doc = frappe.get_doc(doctype, name)
+            if not doc.has_permission("read"):
+                return permission_error_result(
+                    doctype,
+                    _("You do not have permission to read {0} '{1}'.").format(_(doctype), name),
+                    name=name,
+                )
             original_state = getattr(doc, "workflow_state", None)
 
             # Get workflow name if not provided

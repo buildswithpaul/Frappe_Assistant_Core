@@ -47,8 +47,28 @@ class FACToolConfiguration(Document):
 
     def _validate_role_access(self):
         """Validate role access configuration."""
-        if self.role_access_mode == "Restrict to Listed Roles" and not self.role_access:
-            frappe.throw(_("Please add at least one role when using 'Restrict to Listed Roles' mode"))
+        users = self.get("user_access") or []  # None until bench migrate adds the table
+        if self.role_access_mode == "Restrict to Listed Roles" and not (self.role_access or users):
+            frappe.throw(_("Please add at least one role or user when using 'Restrict to Listed Roles' mode"))
+        self._validate_users(users)
+
+    def _validate_users(self, users):
+        """A user is listed once, and a newly listed one is an enabled desk user. Users listed
+        before are kept as they are, so disabling one later doesn't block every save of the tool."""
+        seen = set()
+        for row in users:
+            if row.user in seen:
+                frappe.throw(_("User {0} is listed twice").format(row.user))
+            seen.add(row.user)
+
+        before = self.get_doc_before_save()
+        kept = {row.user for row in (before.get("user_access") or [])} if before else set()
+        for user in seen - kept:
+            if user in ("Administrator", "Guest"):
+                frappe.throw(_("{0} can't be listed on a tool").format(user))
+            enabled, user_type = frappe.db.get_value("User", user, ["enabled", "user_type"]) or (0, None)
+            if not enabled or user_type != "System User":
+                frappe.throw(_("User {0} must be an enabled System User").format(user))
 
     def on_update(self):
         """Clear caches when tool configuration changes."""
@@ -95,7 +115,13 @@ class FACToolConfiguration(Document):
             if role_access.role in user_roles and role_access.allow_access:
                 return True
 
-        return False
+        # Or the user is listed themselves
+        return any(row.user == user and row.allow_access for row in self.get("user_access") or [])
+
+
+def user_access_ready() -> bool:
+    """Whether bench migrate has added the users table to FAC Tool Configuration yet."""
+    return frappe.get_meta("FAC Tool Configuration").has_field("user_access")
 
 
 @frappe.whitelist(methods=["GET"])

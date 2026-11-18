@@ -326,7 +326,7 @@ def _get_user_context(user_id):
     return {
         "display_name": user.full_name or user_id,
         "locale": user.language or frappe.local.lang,
-        "timezone": user.time_zone or frappe.utils.get_time_zone(),
+        "timezone": user.time_zone or frappe.utils.get_system_timezone(),
         "user_role": user_role,
         "email": user.email or (user_id if "@" in str(user_id) else None),
     }

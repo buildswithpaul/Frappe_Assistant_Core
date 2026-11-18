@@ -114,6 +114,13 @@ It replaces the older `search_documents` / `search_doctype` / `search_link` trio
 
 All three modes enforce both DocType-level and row-level permissions. Global hits from the full-text index are re-checked individually, because that index only knows DocType-level access — a User Permission restricting rows is applied on top before anything is returned.
 
+Field permissions apply too. A field above the user's permission level is never searched, shown or filtered on:
+
+- With a `doctype`, only readable fields are matched, and `search_fields` lists only those.
+- A filter on such a field, in either `doctype` or `link_value` mode, is refused with "You do not have permission to query the field …". Don't retry it under another name; the user can't query that field. A filter key must be the field's exact name: another case (`DESCRIPTION`) or an expression (`ifnull(...)`) is refused too.
+- In `link_value` mode, a DocType whose title or search fields include such a field is matched on the readable ones only, and each result's `description` shows only readable values. A DocType with its own link query (an app's `standard_queries` hook, such as User) also takes the filter keys that query understands, even if they aren't fields.
+- In global mode, a DocType whose index text holds such a field is searched again over its readable fields. Its hits show only readable values in `content`, so a record may be missing that a user with more access would find.
+
 ## Edge Cases
 
 - **Global search needs a synced index.** `__global_search` is populated by Frappe's scheduled sync and only covers DocTypes marked for global search. Where it is empty, the `name_scan` fallback matches document IDs only.

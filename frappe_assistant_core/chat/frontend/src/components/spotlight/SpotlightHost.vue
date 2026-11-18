@@ -18,10 +18,10 @@ const spotlight = useSpotlightStore();
 const { current } = storeToRefs(spotlight);
 const { notifications } = storeToRefs(useNotificationStore());
 const { registrationStatus } = storeToRefs(useUserStore());
-const { isOpen: tourOpen } = storeToRefs(useTourStore());
+const { isOpen: tourOpen, coachOpen } = storeToRefs(useTourStore());
 
 onMounted(() => spotlight.evaluate());
-watch([notifications, registrationStatus, tourOpen], () => spotlight.evaluate());
+watch([notifications, registrationStatus, tourOpen, coachOpen], () => spotlight.evaluate());
 </script>
 
 <template>

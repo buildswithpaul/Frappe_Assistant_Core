@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createPageFrame, fetchTransport, readCall } from "./pageFrameHost";
+import { PAGE_READ_METHODS, createPageFrame, fetchTransport, readCall } from "./pageFrameHost";
 
 const PAGE = { title: "Sales", html: "<p>Sales</p>", style: "", script: "" };
 
@@ -525,7 +525,7 @@ describe("createPageFrame", () => {
 		transport.get.mockRejectedValue(Object.assign(new Error("No permission"), { status: 403 }));
 		fromPage({ op: "call", id: 1, method: "frappe.client.get_list", args: {}, type: "GET" });
 		await settle();
-		expect(frame.errors).toEqual(["x is not defined", "frappe.client.get_list failed: No permission"]);
+		expect(frame.errors).toEqual(["x is not defined", "frappe.client.get_list failed (HTTP 403): No permission"]);
 		expect(onError).toHaveBeenCalledTimes(2);
 	});
 
@@ -626,5 +626,96 @@ describe("fetchTransport", () => {
 		const body = { exc: "x", _server_messages: JSON.stringify([JSON.stringify({ message: "<b>Not permitted</b>" })]) };
 		vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 403, json: async () => body })));
 		await expect(fetchTransport(() => "").get("a.b", {})).rejects.toMatchObject({ message: "Not permitted", status: 403 });
+	});
+
+	it("never leaves a tag from a message's markup, closed or not", async () => {
+		const message = "<b>Denied</b><img src=x onerror=alert(1)//";
+		const body = { exc: "x", _server_messages: JSON.stringify([JSON.stringify({ message })]) };
+		vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 417, json: async () => body })));
+		const error = await fetchTransport(() => "").get("a.b", {}).catch((e) => e);
+		expect(error.message).toBe("Denied");
+	});
+});
+
+describe("PAGE_READ_METHODS", () => {
+	it("lets a page check which reports its viewer may run without asking", () => {
+		expect(PAGE_READ_METHODS.has("frappe_assistant_core.api.fac_page.report_access")).toBe(true);
+	});
+});
+
+describe("PAGE_READ_METHODS for page tools", () => {
+	it("lets a page check whether its viewer may change a record without asking", () => {
+		expect(PAGE_READ_METHODS.has("frappe.client.has_permission")).toBe(true);
+	});
+});
+
+describe("PAGE_READ_METHODS for the viewer's roles", () => {
+	it("lets a page read the viewer's own roles without asking", () => {
+		expect(PAGE_READ_METHODS.has("frappe_assistant_core.api.fac_page.my_roles")).toBe(true);
+	});
+});
+
+describe("Present mode through the frame", () => {
+	it("asks the frame to present and takes back its state", async () => {
+		mountFrame();
+		fromPage({ op: "ready" });
+		const started = frame.present("start");
+		await vi.waitFor(() => expect(replies.find((r) => r.op === "present")).toBeDefined());
+		const { id, command } = replies.find((r) => r.op === "present");
+		expect(command).toBe("start");
+		fromPage({ op: "present_result", id, state: { index: 0, count: 2, titles: ["Company", "Finance"] } });
+		expect(await started).toEqual({ index: 0, count: 2, titles: ["Company", "Finance"] });
+	});
+
+	it("refuses a state the frame should never send", async () => {
+		mountFrame();
+		fromPage({ op: "ready" });
+		const started = frame.present("start");
+		await vi.waitFor(() => expect(replies.find((r) => r.op === "present")).toBeDefined());
+		const { id } = replies.find((r) => r.op === "present");
+		fromPage({ op: "present_result", id, state: { index: 0, count: 10000, titles: [] } });
+		await expect(started).rejects.toThrow();
+	});
+
+	it("passes on only the presenting keys", () => {
+		const onPresentKey = vi.fn();
+		mountFrame({ onPresentKey });
+		fromPage({ op: "present_key", key: "next" });
+		fromPage({ op: "present_key", key: "rm -rf" });
+		expect(onPresentKey.mock.calls).toEqual([["next"]]);
+	});
+
+	it("gives up when the frame never answers", async () => {
+		vi.useFakeTimers();
+		mountFrame();
+		fromPage({ op: "ready" });
+		const started = frame.present("start");
+		const outcome = expect(started).rejects.toThrow();
+		await vi.advanceTimersByTimeAsync(3500);
+		await outcome;
+		vi.useRealTimers();
+	});
+});
+
+describe("Desk's theme through the frame", () => {
+	it("tells the page a new theme, only ever dark or light", () => {
+		mountFrame();
+		fromPage({ op: "ready" });
+		frame.setTheme("dark");
+		frame.setTheme("solarized");
+		expect(replies.filter((r) => r.op === "theme").map((r) => r.theme)).toEqual(["dark", "light"]);
+	});
+
+	it("builds the frame in the theme it is given", () => {
+		mountFrame({ theme: "dark" });
+		expect(frame.element.srcdoc).toMatch(/data-theme=(&quot;|")dark/);
+	});
+
+	it("sends a theme changed before the page was ready once it is", () => {
+		mountFrame({ theme: "light" });
+		frame.setTheme("dark");
+		replies.length = 0;
+		fromPage({ op: "ready" });
+		expect(replies.filter((r) => r.op === "theme").map((r) => r.theme)).toEqual(["dark"]);
 	});
 });

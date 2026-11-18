@@ -17,6 +17,8 @@
   "enable_dom_extraction",
   "enable_browser_diagnostics",
   "expected_concurrent_chatters",
+  "chat_relay_section",
+  "relay_in_background_job",
   "widget_embed_section",
   "widget_embed_apps",
   "enable_raven_bot",
@@ -117,6 +119,18 @@
    "label": "Expected Concurrent Chatters"
   },
   {
+   "fieldname": "chat_relay_section",
+   "fieldtype": "Section Break",
+   "label": "Chat Relay"
+  },
+  {
+   "default": "0",
+   "description": "Run each chat answer's relay as a background job on the faco_relay queue instead of a thread in a web worker. Needs relay workers; the server-setup check shows whether any are listening. With none listening, chat keeps relaying in the web workers.",
+   "fieldname": "relay_in_background_job",
+   "fieldtype": "Check",
+   "label": "Relay Chat Answers in a Background Job"
+  },
+  {
    "description": "Show the FACO widget inside these Frappe apps as well as Desk.",
    "fieldname": "widget_embed_section",
    "fieldtype": "Section Break",
@@ -192,7 +206,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-11 12:00:00.000000",
+ "modified": "2026-11-11 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Chat",
  "name": "FAC Chat Settings",

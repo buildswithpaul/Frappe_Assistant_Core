@@ -19,6 +19,7 @@ Core plugin providing essential Frappe operations.
 This plugin is always enabled and provides fundamental tools.
 """
 
+from frappe_assistant_core.core.tool_packs import ToolPack
 from frappe_assistant_core.plugins.base_plugin import BasePlugin
 
 
@@ -74,6 +75,16 @@ class CorePlugin(BasePlugin):
             # Builder checks
             "sandbox_reference",
             "recent_errors",
+        ]
+
+    def get_tool_packs(self):
+        return [
+            ToolPack(
+                id="builder",
+                title="Builder checks",
+                description="Finding out why something on the site fails or who can see it: a user's access, error logs, failing server scripts",
+                tools=("test_as_user", "sandbox_reference", "recent_errors"),
+            )
         ]
 
     def validate_environment(self):
