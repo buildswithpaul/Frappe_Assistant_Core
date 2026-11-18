@@ -44,18 +44,26 @@ BEING_IMPORTED = (
     "Content: not included, it is being imported in import session {0}. The import tools show its "
     "columns, sample rows and what the check found."
 )
+IMPORTED_ELSEWHERE = (
+    "Content: not included, the file is held by an import of another conversation. To import it "
+    "here, start a new import session for it with start_import_session and this File ID."
+)
 
 
 def conversation_files_addendum(session_id: str, user: str) -> str:
     """The prompt section listing every file attached in the conversation, or "" if none."""
-    return files_addendum(_conversation_files(session_id, user))
+    return files_addendum(_conversation_files(session_id, user), conversation=session_id)
 
 
-def files_addendum(files: list) -> str:
+def files_addendum(files: list, conversation: str | None = None) -> str:
     """The prompt section for these File rows (name, file_name, file_url, file_size), or "".
 
     The Raven bot passes the files of one message here: they belong to a Raven message, not to a
     FAC Chat message, so they are read into the prompt rather than linked to the conversation.
+
+    With ``conversation``, a session another conversation left open is not named: the assistant
+    carried on with one and its old mapping (live, 2026-11-18). start_import_session reuses only a
+    session of the same conversation.
     """
     if not files:
         return ""
@@ -68,7 +76,10 @@ def files_addendum(files: list) -> str:
         holding = _import_session(f.name)
         if holding:
             # Checked before the cache: text cached before the import began stays out too (#34003).
-            blocks.append(_describe(f, BEING_IMPORTED.format(holding)))
+            if conversation and _session_chat(holding) != conversation:
+                blocks.append(_describe(f, IMPORTED_ELSEWHERE))
+            else:
+                blocks.append(_describe(f, BEING_IMPORTED.format(holding)))
             continue
         text = _file_text(f)
         allowance = min(MAX_FILE_CHARS, budget)
@@ -119,6 +130,11 @@ def _import_session(file_name: str):
     from frappe_assistant_core.utils.import_session import holding_session
 
     return holding_session(file_name)
+
+
+def _session_chat(session: str):
+    """The FAC Chat conversation the import session was started in, if any."""
+    return frappe.db.get_value("FAC Import Session", session, "chat_session_id")
 
 
 def text_cache_key(file_name: str, file_url: str) -> str:
