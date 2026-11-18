@@ -75,6 +75,14 @@ class TestTheCheckGivesEveryDecision(BaseAssistantTest):
         kinds = self._decision(result, "project_type")
         self.assertEqual((kinds["values_total"], kinds["rows"]), (35, 35))
 
+    def test_the_message_sends_the_assistant_to_the_decisions_not_round_by_round(self):
+        # Live, 2026-11-18: the message said "fix these, check again, and the next ones show", and
+        # the assistant asked round by round though the decisions listed every value.
+        _session, result = self._checked()
+
+        self.assertIn("decisions", result["message"])
+        self.assertNotIn("check again", result["message"])
+
     def test_each_value_comes_with_the_answer_to_suggest(self):
         _session, result = self._checked()
 
