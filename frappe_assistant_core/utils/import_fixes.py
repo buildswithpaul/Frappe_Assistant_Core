@@ -1385,7 +1385,8 @@ def id_column(session, rows: List[List[str]]) -> Optional[int]:
     for position, heading in enumerate(rows[0] if rows else []):
         if not re.search(r"\b(id|code|no\.?|number)\s*$", cstr(heading).strip().lower()):
             continue
-        values = [cstr(row[position]).strip() for row in rows[1:] if position < len(row)]
+        filled = [row for row in rows[1:] if any(cstr(cell).strip() for cell in row)]
+        values = [cstr(row[position]).strip() if position < len(row) else "" for row in filled]
         if values and all(values) and len(set(values)) == len(values):
             return position
     return None
@@ -1668,6 +1669,38 @@ def parents_first(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return sorted(items, key=lambda item: levels[(item["doctype"], _planned_name(item))])
 
 
+def _planned_company_record(session, plan, doctype: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """A COMPANY_NAMED record from masters_plan (a client's department): its name, its company and its
+    parent, exactly as planned; ERPNext names it "<name> - <abbr>"."""
+    name_field, company_field = COMPANY_NAMED[doctype]
+    parent_field = _parent_field(frappe.get_meta(doctype))
+    others = sorted(set(data) - {name_field, company_field, parent_field})
+    if others:
+        raise FixProblem(
+            _("A missing {0} takes {1} only (as masters_plan's data has them), not {2}.").format(
+                _(doctype), ", ".join(f for f in (name_field, company_field, parent_field) if f), ", ".join(others)
+            )
+        )
+    value, company = cstr(data.get(name_field)).strip(), cstr(data.get(company_field)).strip()
+    abbr = frappe.get_cached_value("Company", company, "abbr") if company else None
+    if not abbr:
+        raise FixProblem(_("{0} needs a company that exists.").format(_(doctype)))
+    name = f"{value} - {abbr}"
+    if (doctype, name) not in plan:
+        raise FixProblem(
+            _("{0} '{1}' isn't one of the masters the last check found missing ({2}).").format(
+                _(doctype), value, _planned_list(plan)
+            )
+        )
+    if frappe.db.exists(doctype, name):
+        raise AlreadyThere(_("{0} '{1}' already exists. Check the file again with dry_run_import.").format(_(doctype), name))
+    planned = {name_field: value, company_field: company}
+    parent = cstr(data.get(parent_field)).strip() if parent_field else ""
+    if parent:
+        planned[parent_field] = parent
+    return {"doctype": doctype, "data": planned}
+
+
 def _planned_master(session, plan, entry, listed=frozenset(), named=frozenset()) -> Dict[str, Any]:
     doctype = cstr(entry.get("doctype")).strip()
     if not frappe.db.exists("DocType", doctype):
@@ -1701,6 +1734,8 @@ def _planned_master(session, plan, entry, listed=frozenset(), named=frozenset())
                 )
             )
         return {"doctype": doctype, "data": data}
+    if doctype in COMPANY_NAMED:
+        return _planned_company_record(session, plan, doctype, entry.get("data") or {})
     meta = frappe.get_meta(doctype)
     name_field, parent_field = _name_field(meta), _parent_field(meta)
     group_field = "is_group" if parent_field and meta.has_field("is_group") else None
@@ -1800,6 +1835,10 @@ def _planned_list(plan) -> str:
 def _planned_name(entry: Dict[str, Any]) -> str:
     from frappe_assistant_core.utils import import_opening_invoices as opening_invoices
 
+    if entry["doctype"] in COMPANY_NAMED:
+        name_field, company_field = COMPANY_NAMED[entry["doctype"]]
+        abbr = frappe.get_cached_value("Company", entry["data"].get(company_field), "abbr")
+        return f"{entry['data'][name_field]} - {abbr}"
     field = _name_field(frappe.get_meta(entry["doctype"])) or opening_invoices.PARTY_NAME_FIELDS.get(
         entry["doctype"]
     )
@@ -2194,9 +2233,8 @@ def _duplicate_question(session, groups, label, rows, skip) -> Dict[str, Any]:
 
     example, heading = "", ""
     try:
-        sample = _unique_names(
-            session, {**_with_target(session, groups[0]), "rows": groups[0]["rows"][:1]}, {}, {}
-        )
+        first = (groups[0].get("rows") or groups[0].get("example_rows") or [])[:1]
+        sample = _unique_names(session, {**_with_target(session, groups[0]), "rows": first}, {}, {})
         example = next(iter(sample.values()))["value"] if sample else ""
         file_rows = apply_value_maps(
             session, read_sheet_rows(readable_session_file(session), session.sheet or None)
