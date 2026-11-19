@@ -121,6 +121,16 @@ class DryRunImport(BaseTool):
             "categories_not_found",
             "names_from_another_company",
             "names_question",
+            # the chart check's one card quotes the client's account names and abbreviation
+            "questions[kind=mode].choices",
+            "questions[kind=mode].why",
+            "questions[kind=doubtful].examples",
+            "questions[kind=clean_names].message",
+            "questions[kind=clean_names].examples",
+            "questions[kind=clean_names].choices",
+            "questions[kind=categories].examples",
+            "add_leaves_beside",
+            "card_title",
             "groups",
             "decisions",  # each value the file has, as the groups quote them
             "masters_plan",

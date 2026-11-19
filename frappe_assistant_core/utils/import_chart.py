@@ -650,7 +650,7 @@ def _long_term(nodes: List[Dict[str, Any]], node: Dict[str, Any]) -> bool:
     current, seen = node, set()
     while current is not None and current["index"] not in seen:
         seen.add(current["index"])
-        name = _key(current["name"])
+        name = _key(current["name"])[:NAME_LENGTH]
         if re.search(LONG_TERM, name):
             return True
         if re.search(SHORT_TERM, name):
@@ -680,6 +680,8 @@ def categorize(
 
     def by_words(node: Dict[str, Any], root: str) -> str:
         name = _key(node["name"])
+        if len(name) > NAME_LENGTH:
+            return ""  # file text no account name is: never run the rules on it
         for pattern, wanted, short, long in CATEGORY_WORDS:
             if wanted == root and re.search(pattern, name):
                 got = usable(long if long and _long_term(nodes, node) else short, root)
