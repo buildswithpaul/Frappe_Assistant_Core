@@ -83,7 +83,12 @@ class ReplaceChartOfAccounts(BaseTool):
                 },
                 "classifications": {
                     "type": "object",
-                    "description": "{account name: {root_type, account_type}}.",
+                    "description": "{account name: {root_type, account_type, account_category}}.",
+                },
+                "clean_names": {
+                    "type": "boolean",
+                    "description": "The user's answer when the check reports names_from_another_company: "
+                    "true removes the other company's account numbers and abbreviation from the names.",
                 },
                 "source_system": {"type": "string", "description": "The system the chart comes from."},
             },

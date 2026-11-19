@@ -13,7 +13,8 @@ finds its accounts by the client's names and numbers.
 
 1. Open the file (`start_import_session`) and map its columns to Account fields with `set_column_mapping`
    (DocType Account): Account Name, Parent Account, and where the file has them Account Number, Root Type,
-   Account Type, Is Group. A Tally export of groups and ledgers is one sheet with the group as the parent.
+   Account Type, Is Group, and on ERPNext v16 Account Category. A Tally export of groups and ledgers is one
+   sheet with the group as the parent.
 2. `dry_run_import(session, chart={"company": ...})`: the chart's check. It writes nothing and asks no approval. Show the tree's top levels, the counts, and what each
    account is proposed to be (root type, account type, and where that came from: the file's own column,
    Tally's primary groups, words in the name, or its parent).
@@ -27,6 +28,20 @@ finds its accounts by the client's names and numbers.
    - `add_creates_top_level` names the root types the company has no top-level account of (ERPNext's
      "India - Chart of Accounts" has no Equity): add and map make the file's top group of that type the
      company's new top-level account. Say so before the user picks.
+   - `names_from_another_company`: the file's names carry another ERPNext company's account numbers
+     and/or abbreviation ("141600 - State Bank of India - CCBF", or "2210100 - Current Assets"). ERPNext
+     adds this company's own to every account, so kept as they are they would be doubled. Show 2-3
+     `examples` and ask the user once: **remove them** (`clean_names: true`; the number taken off becomes
+     the account number) or **keep the names as they are** (`clean_names: false`). Pass the answer inside
+     `chart` on the next check and to the import or replace. Nothing is put on the company until they answer.
+   - **Account Category** (ERPNext v16 only; the check has `by_category` then). It is the line of the
+     Schedule III / IFRS Balance Sheet and P&L each account goes on; ERPNext reads it from ledgers only.
+     Every ledger gets one: the file's own column, then ERPNext's own account of that name, words in the
+     name ("Fixed Deposit" is an investment even if the file types it Fixed Asset), the group above, the
+     account type. Show `by_category` as a short table. `categories_to_check` lists the ledgers that only
+     got their root type's usual category: show them in one list and ask the user to confirm or name the
+     right one, passed as `classifications` ({account name: {account_category}}). `categories_not_found`
+     lists categories in the file the site doesn't have.
    - `already_in_place`: the company has this chart already. Say so and stop; there is nothing to
      offer.
 3. Say which modes the company allows (`modes`). **map** is the default when the company has transactions,
@@ -58,7 +73,10 @@ finds its accounts by the client's names and numbers.
    - A chart made for ERPNext's own Chart of Accounts Importer may repeat a name under another number (a
      sub-account named like its parent): that is two accounts, not a problem. Its Parent Account Number
      column links each account to its parent; there is nothing to map for it.
-5. The client's account names and numbers are kept as old IDs under `source_system`, so the opening trial
+5. A company whose chart came in **before** categories were set (or by hand) has accounts with no Account
+   Category: `import_chart_of_accounts(mode="categories", company=...)` sets the empty ones by the same rules,
+   no session needed; categories already set are kept. Show `by_category` and `categories_to_check` after.
+6. The client's account names and numbers are kept as old IDs under `source_system`, so the opening trial
    balance later resolves its accounts by them without asking.
 
 ## Rules
@@ -67,6 +85,7 @@ finds its accounts by the client's names and numbers.
   you will use before the check; with several, ask which one first. Never guess or pick one yourself.
 
 - Never guess an account's root type: an account the rules can't place is asked about.
+- Never remove or keep another company's numbers and abbreviation in the names without asking the user.
 - Never replace on a company with transactions, whatever the user says: map or add.
 - A chart is not designed in chat: restructuring an existing one is an accountant's job.
 - When a chart tool refuses or fails, tell the user why and stop. Never create, move, rename or delete

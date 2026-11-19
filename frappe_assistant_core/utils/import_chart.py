@@ -111,10 +111,83 @@ def _truthy(value: Any) -> Optional[bool]:
     return None
 
 
-def read_chart(session, root_type_column: Optional[str] = None) -> List[Dict[str, Any]]:
+#: "141600 - State Bank of India": the account number in front of the name, as ERPNext names an account
+NUMBER_PREFIX = re.compile(r"^(\d[\d./-]*)\s+-\s+(\S.*)$")
+#: "State Bank of India - CCBF": the company's abbreviation after the name, as ERPNext names an account
+ABBR_SUFFIX = re.compile(r"^(\S.*?)\s+-\s+([A-Za-z0-9&.]{1,10})$")
+#: Share of the file's names that must end in one abbreviation for it to be the other company's
+ABBR_SHARE = 0.6
+
+
+def _split_name(text: Any, abbr: Optional[str], numbered: bool) -> Tuple[str, str]:
+    """``text`` without the other company's abbreviation at its end and, when ``numbered``, without the
+    account number in front: (name, number)."""
+    text = cstr(text).strip()
+    if abbr and text.endswith(f" - {abbr}"):
+        text = text[: -len(abbr) - 3].strip()
+    found = NUMBER_PREFIX.match(text) if numbered else None
+    if found:
+        return found.group(2).strip(), found.group(1)
+    return text, ""
+
+
+def name_pattern(nodes: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Whether the file's names are as another ERPNext company writes them, "141600 - State Bank of India -
+    CCBF": its account number in front, its abbreviation behind. Put on this company as they are, ERPNext
+    adds this company's number and abbreviation again ("141600 - 141600 - State Bank of India - CCBF - P").
+    None when the names aren't so; else the abbreviation, how many names have it and the number, and three
+    names as they are and as they would be."""
+    names = [n["raw_name"] for n in nodes]
+    tails: Dict[str, int] = {}
+    for name in names:
+        found = ABBR_SUFFIX.match(name)
+        if found:
+            tails[found.group(2)] = tails.get(found.group(2), 0) + 1
+    abbr, with_abbr = max(tails.items(), key=lambda kv: kv[1]) if tails else (None, 0)
+    if with_abbr < max(2, len(names) * ABBR_SHARE):
+        abbr, with_abbr = None, 0
+    with_number = sum(1 for name in names if _split_name(name, abbr, True)[1])
+    if with_number < 2:
+        with_number = 0
+    if not abbr and not with_number:
+        return None
+    return {
+        "abbreviation": abbr,
+        "names_with_abbreviation": with_abbr,
+        "names_with_number": with_number,
+        "examples": [
+            {"in_the_file": n, "cleaned": _split_name(n, abbr, bool(with_number))[0]}
+            for n in names
+            if _split_name(n, abbr, bool(with_number))[0] != n
+        ][:3],
+    }
+
+
+def clean_names(nodes: List[Dict[str, Any]], pattern: Optional[Dict[str, Any]]) -> None:
+    """Take the other company's number and abbreviation off the names and parents (name_pattern); a number
+    taken off becomes the account's number when the file gives none. The nodes are changed."""
+    if not pattern:
+        return
+    abbr, numbered = pattern["abbreviation"], bool(pattern["names_with_number"])
+    for node in nodes:
+        name, number = _split_name(node["raw_name"], abbr, numbered)
+        node["name"] = name
+        if number and not node["number"]:
+            node["number"] = number
+        parent, parent_number = _split_name(node["raw_parent"], abbr, numbered)
+        node["parent_name"] = parent
+        if parent_number and not node["parent_number"]:
+            node["parent_number"] = parent_number
+
+
+def read_chart(
+    session, root_type_column: Optional[str] = None, clean: Optional[bool] = None
+) -> List[Dict[str, Any]]:
     """The accounts of the session's file as nodes, in file order. Raises ChartProblem when the file
     isn't a chart (no column mapped to Account Name) or has too many accounts. Root Type is read-only on
-    Account, so a column that holds it can't be mapped: ``root_type_column`` names it by its heading."""
+    Account, so a column that holds it can't be mapped: ``root_type_column`` names it by its heading.
+    ``clean``: take another ERPNext company's account numbers and abbreviation off the names
+    (name_pattern); the user decides."""
     mapping = {
         field: int(position)
         for position, field in dry_run.column_to_field_map(session).items()
@@ -161,11 +234,14 @@ def read_chart(session, root_type_column: Optional[str] = None) -> List[Dict[str
             {
                 "row": number,
                 "name": name,
+                "raw_name": name,
                 "number": cell(row, "account_number"),
                 "parent_name": cell(row, "parent_account"),
+                "raw_parent": cell(row, "parent_account"),
                 "parent_number": cell(row, "parent_number"),
                 "root_type": cell(row, "root_type"),
                 "account_type": cell(row, "account_type"),
+                "account_category": cell(row, "account_category"),
                 "explicit_group": _truthy(cell(row, "is_group")),
             }
         )
@@ -173,6 +249,8 @@ def read_chart(session, root_type_column: Optional[str] = None) -> List[Dict[str
         raise ChartProblem(_("A chart has at most {0} accounts.").format(MAX_ACCOUNTS))
     if not nodes:
         raise ChartProblem(_("The file has no accounts."))
+    if clean:
+        clean_names(nodes, name_pattern(nodes))
     _link(nodes)
     return nodes
 
@@ -355,7 +433,346 @@ def classify(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         out[node["index"]] = found
         return found
 
-    return [{**resolve(node), "index": node["index"]} for node in nodes]
+    classes = [{**resolve(node), "index": node["index"]} for node in nodes]
+    if categories_supported():
+        categorize(nodes, classes)
+    return classes
+
+
+# -- account categories (ERPNext v16) ----------------------------------------------------------------
+# v16's Schedule III and IFRS statements place an account by its Account Category and read it from
+# ledgers only (financial_report_engine). Live, 2026-11-19: none of a client's 1,043 imported accounts had
+# one. v15 has no categories: nothing here runs there.
+
+#: Categories ERPNext ships without a root type: the root type each belongs under
+CATEGORY_ROOTS = {
+    "Capital Work in Progress": "Asset",
+    "Intangible Assets Under Development": "Asset",
+    "Long-term Loans and Advances": "Asset",
+    "Deferred Tax Assets": "Asset",
+    "Deferred Tax Liabilities": "Liability",
+    "Deferred Tax Expense": "Expense",
+    "Share Application Money Pending Allotment": "Equity",
+    "Money Received Against Share Warrants": "Equity",
+}
+
+#: A name of the account or a group above it saying it is due after a year, or within one
+LONG_TERM = r"\bnon[ -]?current\b|\blong[ -]?term\b|\b(greater|more) than (1|one) years?\b|>\s?1 years?"
+SHORT_TERM = r"\bcurrent\b|\bshort[ -]?term\b"
+
+_TAX = r"\b(gst|igst|cgst|sgst|utgst|tds|tcs|vat|tax|taxes|cenvat|cess|duties)\b"
+
+#: Words in an account's own name: its root type, its category, and the category when due after a year.
+#: The first that fits wins: a fixed deposit is an investment though the file types it "Fixed Asset", and
+#: interest accrued on one is a current asset.
+CATEGORY_WORDS: Tuple[Tuple[str, str, str, Optional[str]], ...] = (
+    (r"\bdeferred tax", "Asset", "Deferred Tax Assets", None),
+    (r"\bcapital work[ -]in[ -]progress\b|\bcwip\b", "Asset", "Capital Work in Progress", None),
+    (r"\bintangible assets? under development\b", "Asset", "Intangible Assets Under Development", None),
+    (
+        r"\bintangible|\bgoodwill\b|\bsoftware\b|\bpatents?\b|\btrade ?marks?\b",
+        "Asset",
+        "Intangible Assets",
+        None,
+    ),
+    (_TAX + r"|\binput credit\b", "Asset", "Other Current Assets", None),
+    (
+        r"\binterest\b|\baccrued\b|\bprepaid\b|\bunbilled\b",
+        "Asset",
+        "Other Current Assets",
+        "Other Non-current Assets",
+    ),
+    (
+        r"\binvestments?\b|\bfixed deposits?\b|\bmutual funds?\b|\bbonds?\b",
+        "Asset",
+        "Short-term Investments",
+        "Long-term Investments",
+    ),
+    (r"\binter[ -]?(company|unit|branch)\b", "Asset", "Other Receivables", None),
+    (r"\b(loans?|advances?)\b", "Asset", "Other Current Assets", "Long-term Loans and Advances"),
+    (r"\b(debtors?|receivables?)\b", "Asset", "Trade Receivables", None),
+    (r"\b(cash|banks?|petty cash)\b", "Asset", "Cash and Cash Equivalents", None),
+    (
+        r"\b(stocks?|inventor(y|ies)|raw materials?|finished goods|work[ -]in[ -]progress)\b",
+        "Asset",
+        "Stock Assets",
+        None,
+    ),
+    (
+        r"\b(fixed assets?|tangible|depreciation|plant|machinery|furniture|fixtures|vehicles?|equipments?|"
+        r"computers?|buildings?|land)\b",
+        "Asset",
+        "Tangible Assets",
+        None,
+    ),
+    (r"\bdeposits?\b", "Asset", "Other Current Assets", "Other Non-current Assets"),
+    (r"\bdeferred tax", "Liability", "Deferred Tax Liabilities", None),
+    (_TAX, "Liability", "Current Tax Liabilities", None),
+    (r"\bprovisions?\b", "Liability", "Short-term Provisions", "Long-term Provisions"),
+    (
+        r"\b(loans?|borrowings?|overdrafts?|od|cash credit|debentures?)\b",
+        "Liability",
+        "Short-term Borrowings",
+        "Long-term Borrowings",
+    ),
+    (r"\binter[ -]?(company|unit|branch)\b", "Liability", "Other Payables", None),
+    (r"\b(creditors?|suppliers?|vendors?|trade payables?)\b", "Liability", "Trade Payables", None),
+    (r"\bpayables?\b", "Liability", "Other Payables", None),
+    (r"\bshare application\b", "Equity", "Share Application Money Pending Allotment", None),
+    (r"\bshare warrants?\b", "Equity", "Money Received Against Share Warrants", None),
+    (
+        r"\b(reserves?|surplus|retained|profit (and|&) loss|drawings?)\b",
+        "Equity",
+        "Reserves and Surplus",
+        None,
+    ),
+    (r"\b(share capital|capital|shares?)\b", "Equity", "Share Capital", None),
+    (r"\b(interest|dividends?|investments?|capital gains?)\b", "Income", "Investment Income", None),
+    (
+        r"\b(other|indirect|misc|miscellaneous|discounts?|commission|scrap|rent)\b",
+        "Income",
+        "Other Operating Income",
+        None,
+    ),
+    (r"\b(sales?|revenue|turnover|operations)\b", "Income", "Revenue from Operations", None),
+    (r"\bdeferred tax", "Expense", "Deferred Tax Expense", None),
+    (r"\b(income tax|current tax|tax expenses?)\b", "Expense", "Tax Expense", None),
+    (r"\b(interest|finance (costs?|charges)|bank charges)\b", "Expense", "Finance Costs", None),
+    (r"\b(cost of (goods|sales)|cogs|purchases?|consum(ed|ption))\b", "Expense", "Cost of Goods Sold", None),
+    (r"\bdirect (expenses?|costs?)\b", "Expense", "Other Direct Costs", None),
+)
+
+#: A ledger's account type: its category, by root type
+CATEGORY_BY_TYPE: Dict[str, Dict[str, str]] = {
+    "Bank": {"Asset": "Cash and Cash Equivalents", "Liability": "Short-term Borrowings"},
+    "Cash": {"Asset": "Cash and Cash Equivalents"},
+    "Receivable": {"Asset": "Trade Receivables"},
+    "Payable": {"Liability": "Trade Payables"},
+    "Stock": {"Asset": "Stock Assets"},
+    "Fixed Asset": {"Asset": "Tangible Assets"},
+    "Accumulated Depreciation": {"Asset": "Tangible Assets"},
+    "Capital Work in Progress": {"Asset": "Capital Work in Progress"},
+    "Tax": {"Asset": "Other Current Assets", "Liability": "Current Tax Liabilities"},
+    "Current Asset": {"Asset": "Other Current Assets"},
+    "Asset Received But Not Billed": {"Asset": "Other Current Assets"},
+    "Current Liability": {"Liability": "Other Current Liabilities"},
+    "Stock Received But Not Billed": {"Liability": "Other Current Liabilities"},
+    "Service Received But Not Billed": {"Liability": "Other Current Liabilities"},
+    "Equity": {"Equity": "Reserves and Surplus"},
+    "Cost of Goods Sold": {"Expense": "Cost of Goods Sold"},
+    "Direct Expense": {"Expense": "Other Direct Costs"},
+    "Indirect Expense": {"Expense": "Operating Expenses"},
+    "Expense Account": {"Expense": "Operating Expenses"},
+    "Chargeable": {"Expense": "Operating Expenses"},
+    "Depreciation": {"Expense": "Operating Expenses"},
+    "Direct Income": {"Income": "Revenue from Operations"},
+    "Income Account": {"Income": "Revenue from Operations"},
+    "Indirect Income": {"Income": "Other Operating Income"},
+}
+
+#: A ledger nothing else places: its root type's usual category (and when due after a year), to be checked
+CATEGORY_FALLBACK: Dict[str, Tuple[str, Optional[str]]] = {
+    "Asset": ("Other Current Assets", "Other Non-current Assets"),
+    "Liability": ("Other Current Liabilities", "Other Non-current Liabilities"),
+    "Equity": ("Reserves and Surplus", None),
+    "Income": ("Revenue from Operations", None),
+    "Expense": ("Operating Expenses", None),
+}
+
+_standard_categories_cache: Optional[Dict[str, str]] = None
+
+
+def categories_supported() -> bool:
+    """Whether this site's Account has a category (ERPNext v16)."""
+    return compat.has_field(ACCOUNT, "account_category") and bool(frappe.db.table_exists("Account Category"))
+
+
+def site_categories() -> Dict[str, Tuple[str, str]]:
+    """{name as _key keeps it: (name, root type)} of the site's Account Categories; "" root type: any."""
+    return {
+        _key(row.name): (row.name, row.root_type or CATEGORY_ROOTS.get(row.name, ""))
+        for row in frappe.get_all("Account Category", fields=["name", "root_type"])
+    }
+
+
+def _standard_categories() -> Dict[str, str]:
+    """{account name as _key keeps it: category} of ERPNext's own charts that carry categories, the way
+    ERPNext's v16 patch maps a company's accounts (update_account_categories_for_existing_accounts)."""
+    global _standard_categories_cache
+    if _standard_categories_cache is not None:
+        return _standard_categories_cache
+    from erpnext.accounts.doctype.account.chart_of_accounts.chart_of_accounts import get_chart
+
+    found: Dict[str, str] = {}
+
+    def walk(tree: Dict[str, Any]) -> None:
+        for name, child in tree.items():
+            if name in compat.CHART_NODE_KEYS or not isinstance(child, dict):
+                continue
+            if child.get("account_category"):
+                found.setdefault(_key(name), child["account_category"])
+            walk(child)
+
+    for template in ("Standard", "Standard with Numbers", "India - Chart of Accounts"):
+        try:
+            walk(get_chart(template) or {})
+        except Exception:
+            continue
+    _standard_categories_cache = found
+    return found
+
+
+def _long_term(nodes: List[Dict[str, Any]], node: Dict[str, Any]) -> bool:
+    """Whether the account's name, or the nearest group above it that says, makes it due after a year."""
+    current, seen = node, set()
+    while current is not None and current["index"] not in seen:
+        seen.add(current["index"])
+        name = _key(current["name"])
+        if re.search(LONG_TERM, name):
+            return True
+        if re.search(SHORT_TERM, name):
+            return False
+        current = nodes[current["parent"]] if current["parent"] is not None else None
+    return False
+
+
+def categorize(
+    nodes: List[Dict[str, Any]], classes: List[Dict[str, Any]], categories: Optional[Dict] = None
+) -> None:
+    """Put each account's Account Category, and where it came from, on its class (``account_category``,
+    ``category_from``). The first that fits the account's root type wins: the file's own category (or the
+    user's answer), ERPNext's own chart's account of that name, words in the name, the group above, the
+    ledger's account type, and for a ledger nothing places its root type's usual category ("fallback": the
+    user checks those). A group gets no fallback: ERPNext reads the category of ledgers only."""
+    categories = site_categories() if categories is None else categories
+    standard = _standard_categories()
+    done: Dict[int, Tuple[str, str]] = {}
+
+    def usable(category: Any, root: str) -> str:
+        found = categories.get(_key(category)) if category else None
+        if not found:
+            return ""
+        name, needs = found
+        return name if not needs or not root or needs == root else ""
+
+    def by_words(node: Dict[str, Any], root: str) -> str:
+        name = _key(node["name"])
+        for pattern, wanted, short, long in CATEGORY_WORDS:
+            if wanted == root and re.search(pattern, name):
+                got = usable(long if long and _long_term(nodes, node) else short, root)
+                if got:
+                    return got
+        return ""
+
+    def resolve(index: int, seen=()) -> Tuple[str, str]:
+        if index in done:
+            return done[index]
+        node, c = nodes[index], classes[index]
+        root = c["root_type"] or ""
+        found = ("", "")
+        if usable(node.get("account_category"), root):
+            found = (usable(node["account_category"], root), "column")
+        if not found[0] and usable(standard.get(_key(node["name"])), root):
+            found = (usable(standard[_key(node["name"])], root), "erpnext name")
+        if not found[0]:
+            words = by_words(node, root)
+            if words:
+                found = (words, "name")
+        if not found[0] and node["parent"] is not None and node["parent"] not in seen:
+            above = resolve(node["parent"], (*seen, index))[0]
+            if usable(above, root):
+                found = (above, "parent")
+        if not found[0] and not node["is_group"]:
+            kind = usable(CATEGORY_BY_TYPE.get(c["account_type"] or "", {}).get(root), root)
+            if kind:
+                found = (kind, "account type")
+        if not found[0] and not node["is_group"] and root in CATEGORY_FALLBACK:
+            short, long = CATEGORY_FALLBACK[root]
+            pick = usable(long if long and _long_term(nodes, node) else short, root)
+            if pick:
+                found = (pick, "fallback")
+        done[index] = found
+        return found
+
+    for node in nodes:
+        category, source = resolve(node["index"])
+        classes[node["index"]]["account_category"] = category
+        classes[node["index"]]["category_from"] = source
+
+
+def categories_not_found(nodes: List[Dict[str, Any]], classes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The file's own categories that weren't used: the site has no such category, or it is of another root
+    type than the account."""
+    return [
+        {"row": n["row"], "account": n["name"], "value": n["account_category"]}
+        for n, c in zip(nodes, classes)
+        if n.get("account_category") and c.get("category_from") != "column"
+    ]
+
+
+def fill_categories(company: str) -> Dict[str, Any]:
+    """Set the Account Category of ``company``'s accounts that have none, by the rules of a chart import,
+    reading the tree from its accounts. An account that has one keeps it, and the accounts under it follow
+    it. For a company whose chart came in before categories were set (live: 1,043 accounts, none)."""
+    rows = frappe.get_all(
+        ACCOUNT,
+        filters={"company": company},
+        fields=[
+            "name",
+            "account_name",
+            "parent_account",
+            "is_group",
+            "root_type",
+            "account_type",
+            "account_category",
+        ],
+        order_by="lft",
+    )
+    position = {r.name: i for i, r in enumerate(rows)}
+    nodes = [
+        {
+            "index": i,
+            "row": None,
+            "name": r.account_name or r.name,
+            "is_group": bool(r.is_group),
+            "parent": position.get(r.parent_account),
+            "account_category": r.account_category or "",
+        }
+        for i, r in enumerate(rows)
+    ]
+    classes = [{"root_type": r.root_type or "", "account_type": r.account_type or ""} for r in rows]
+    categorize(nodes, classes)
+    updates: Dict[str, Dict[str, str]] = {}
+    by_category: Dict[str, int] = {}
+    to_check: List[Dict[str, Any]] = []
+    for r, c in zip(rows, classes):
+        if r.account_category or not c["account_category"]:
+            continue
+        updates[r.name] = {"account_category": c["account_category"]}
+        if not r.is_group:
+            by_category[c["account_category"]] = by_category.get(c["account_category"], 0) + 1
+            if c["category_from"] == "fallback":
+                to_check.append(
+                    {"account": r.name, "root_type": r.root_type, "account_category": c["account_category"]}
+                )
+    if updates:
+        frappe.db.bulk_update(ACCOUNT, updates)
+    return {
+        "categories_set": len(updates),
+        "categories_kept": sum(1 for r in rows if r.account_category),
+        "by_category": by_category,
+        "categories_to_check": to_check[:CATEGORIES_SHOWN],
+        "categories_to_check_count": len(to_check),
+        "ledgers_without_category": [
+            r.name
+            for r, c in zip(rows, classes)
+            if not r.is_group and not (r.account_category or c["account_category"])
+        ][:CATEGORIES_SHOWN],
+    }
+
+
+#: The accounts a check lists whose category is only their root type's usual one, at most
+CATEGORIES_SHOWN = 100
 
 
 def apply_outside_parents(nodes: List[Dict[str, Any]], company: str) -> None:
@@ -398,6 +815,14 @@ def apply_answers(nodes: List[Dict[str, Any]], answers: Optional[Dict[str, Any]]
         if not node:
             raise ChartProblem(_("There is no account {0} in the file.").format(name))
         answer = answer if isinstance(answer, dict) else {"root_type": answer}
+        category = cstr(answer.get("account_category"))
+        if category:
+            found = site_categories().get(_key(category)) if categories_supported() else None
+            if not found:
+                raise ChartProblem(_("{0}: {1} isn't an account category.").format(name, category))
+            node["account_category"] = found[0]
+            if not answer.get("root_type") and not answer.get("account_type"):
+                continue  # the category alone: the account keeps its root and account type
         root = cstr(answer.get("root_type"))
         if root not in ROOT_TYPES:
             raise ChartProblem(_("{0}: root type must be one of {1}.").format(name, ", ".join(ROOT_TYPES)))
@@ -482,10 +907,13 @@ def summary(nodes: List[Dict[str, Any]], classes: List[Dict[str, Any]]) -> Dict[
                     "group": node["is_group"],
                     "root_type": c["root_type"] or None,
                     "account_type": c["account_type"] or None,
+                    **(
+                        {"account_category": c["account_category"] or None} if "account_category" in c else {}
+                    ),
                     "from": c["source"],
                 }
             )
-    return {
+    out = {
         "accounts": len(nodes),
         "groups": sum(1 for n in nodes if n["is_group"]),
         "ledgers": sum(1 for n in nodes if not n["is_group"]),
@@ -501,6 +929,35 @@ def summary(nodes: List[Dict[str, Any]], classes: List[Dict[str, Any]]) -> Dict[
         "doubtful": doubtful(nodes, classes),
         "parents_not_in_the_file": sorted({n["outside_parent"] for n in nodes if n["outside_parent"]}),
     }
+    if classes and "account_category" in classes[0]:
+        # v16: the category each ledger gets (ERPNext reads it from ledgers only), and those only their root
+        # type's usual category placed, for the user to check
+        by_category: Dict[str, int] = {}
+        category_from: Dict[str, int] = {}
+        to_check = []
+        for n, c in zip(nodes, classes):
+            if n["is_group"]:
+                continue
+            if c["account_category"]:
+                by_category[c["account_category"]] = by_category.get(c["account_category"], 0) + 1
+            category_from[c["category_from"] or "none"] = (
+                category_from.get(c["category_from"] or "none", 0) + 1
+            )
+            if c["category_from"] == "fallback":
+                to_check.append(
+                    {
+                        "row": n["row"],
+                        "account": n["name"],
+                        "root_type": c["root_type"],
+                        "account_category": c["account_category"],
+                    }
+                )
+        out["by_category"] = by_category
+        out["category_from"] = category_from
+        out["categories_to_check"] = to_check[:CATEGORIES_SHOWN]
+        out["categories_to_check_count"] = len(to_check)
+        out["categories_not_found"] = categories_not_found(nodes, classes)
+    return out
 
 
 # -- what the company allows (C-D1) ---------------------------------------------------------------------
@@ -651,6 +1108,7 @@ def _insert(company: str, node: Dict[str, Any], c: Dict[str, Any], parent: Optio
             "root_type": c["root_type"],
             "report_type": _report_type(c["root_type"]),
             "account_type": c["account_type"] or None,
+            **({"account_category": c["account_category"]} if c.get("account_category") else {}),
         }
     )
     if parent is None:
@@ -1106,6 +1564,8 @@ def forest(nodes: List[Dict[str, Any]], classes: List[Dict[str, Any]]) -> Dict[s
             out["root_type"] = c["root_type"]
         if c["account_type"]:
             out["account_type"] = c["account_type"]
+        if c.get("account_category"):
+            out["account_category"] = c["account_category"]  # v16 only: classify sets it there only
         taken: set = set()
         for child in node["children"]:
             out[key(child, taken)] = build(child)

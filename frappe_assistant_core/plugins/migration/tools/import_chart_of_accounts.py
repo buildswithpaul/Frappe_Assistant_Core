@@ -36,7 +36,10 @@ def company_refusal(company: str) -> Optional[Dict[str, Any]]:
 def prepared(session, arguments: Dict[str, Any], company: Optional[str] = None):
     """The nodes and classes of the chart with the user's answers, or raises ChartProblem saying what to
     fix first: the tree's problems, and any account no rule could classify (all of them, in one list)."""
-    nodes = import_chart.read_chart(session, arguments.get("root_type_column"))
+    nodes = import_chart.read_chart(session, arguments.get("root_type_column"), arguments.get("clean_names"))
+    pattern = import_chart.name_pattern(nodes)
+    if pattern and arguments.get("clean_names") is None:
+        raise import_chart.ChartProblem(names_question(pattern))
     if company:
         import_chart.apply_outside_parents(nodes, company)
     import_chart.apply_answers(nodes, arguments.get("classifications"))
@@ -57,6 +60,29 @@ def prepared(session, arguments: Dict[str, Any], company: Optional[str] = None):
     return nodes, classes
 
 
+def names_question(pattern: Dict[str, Any]) -> str:
+    """What FACO asks when the file's names carry another ERPNext company's account numbers or abbreviation."""
+    said = []
+    if pattern["names_with_number"]:
+        said.append(_("{0} names start with their account number").format(pattern["names_with_number"]))
+    if pattern["abbreviation"]:
+        said.append(
+            _("{0} names end in another company's abbreviation ({1})").format(
+                pattern["names_with_abbreviation"], pattern["abbreviation"]
+            )
+        )
+    example = pattern["examples"][0] if pattern["examples"] else None
+    return _(
+        "The file's account names look like another ERPNext company's ({0}{1}). ERPNext adds this company's "
+        "number and abbreviation to every account itself, so kept as they are they would be doubled. Ask the "
+        "user once: remove them (clean_names true; a number taken off becomes the account number) or keep "
+        "the names as they are (clean_names false)."
+    ).format(
+        "; ".join(said),
+        _(', e.g. "{0}" becomes "{1}"').format(example["in_the_file"], example["cleaned"]) if example else "",
+    )
+
+
 def source_system(session, arguments: Dict[str, Any]) -> str:
     """The system the client's account names and numbers are kept under as old IDs."""
     given = (arguments.get("source_system") or "").strip()
@@ -74,7 +100,7 @@ class ImportChartOfAccounts(BaseTool):
             "Put the client's own chart of accounts (an import session of a sheet from Tally, Zoho, "
             "QuickBooks or any export, columns mapped to Account fields with set_column_mapping: Account "
             "Name, Parent Account, and where the file has them Account Number, Root Type, Account Type, Is "
-            "Group) on a company. Check it first with dry_run_import(session, chart: {company}), which writes nothing and asks no approval: the tree's top levels with "
+            "Group, and on ERPNext v16 Account Category) on a company. Check it first with dry_run_import(session, chart: {company}), which writes nothing and asks no approval: the tree's top levels with "
             "counts, each account's proposed root type and account type, ALL the accounts it couldn't "
             "classify in one list (ask the user about them together; pass the answers as "
             "classifications), the tree's problems (a cycle, an account under a ledger, an account twice) "
@@ -86,8 +112,14 @@ class ImportChartOfAccounts(BaseTool):
             "an account the company has already is kept as it is. Either way the client's account names and "
             "numbers are kept as old IDs so the opening trial balance finds its accounts by them. To replace "
             "the standard chart of a company with no transactions use replace_chart_of_accounts. Every "
-            "account needs a root type: answer the unclassified list of the check first. A top group of "
-            "the file whose root type the company has no top-level account of (ERPNext's India chart has "
+            "account needs a root type: answer the unclassified list of the check first.  "
+            "On ERPNext v16 each account also gets an Account Category (the line of the Schedule III / IFRS "
+            "statements it goes on): the check shows how many go on each and lists the ledgers that only got "
+            "their root type's usual one (categories_to_check) for the user to confirm or correct with "
+            "classifications. mode 'categories' sets the category of a company's accounts that have none "
+            "(a chart imported before), without a session. When the check reports names_from_another_company "
+            "(names like '141600 - State Bank of India - CCBF'), ask the user and pass clean_names. "
+            "A top group of the file whose root type the company has no top-level account of (ERPNext's India chart has "
             "no Equity) becomes the company's top-level account of that type. If this tool refuses or "
             "fails, tell the user why and stop: never create or move accounts by hand with "
             "create_document or update_document to get round it."
@@ -104,6 +136,10 @@ class ImportChartOfAccounts(BaseTool):
             "problems",
             "parents_not_in_the_file",
             "map",
+            "categories_to_check",
+            "categories_not_found",
+            "ledgers_without_category",
+            "names_from_another_company",
             # named by the user or the file, not by FAC
             "source_system",
             "old_id_conflicts",
@@ -117,8 +153,9 @@ class ImportChartOfAccounts(BaseTool):
                 "company": {"type": "string", "description": "The company to put the chart on."},
                 "mode": {
                     "type": "string",
-                    "enum": ["map", "add"],
-                    "description": "map or add.",
+                    "enum": ["map", "add", "categories"],
+                    "description": "map or add; categories: set the Account Category (ERPNext v16) of the "
+                    "company's accounts that have none, by the same rules, no session needed.",
                 },
                 "root_type_column": {
                     "type": "string",
@@ -126,7 +163,14 @@ class ImportChartOfAccounts(BaseTool):
                 },
                 "classifications": {
                     "type": "object",
-                    "description": "{account name: {root_type, account_type}}.",
+                    "description": "{account name: {root_type, account_type, account_category}}; "
+                    "account_category alone changes only the category.",
+                },
+                "clean_names": {
+                    "type": "boolean",
+                    "description": "When the check says the names carry another ERPNext company's account "
+                    "numbers or abbreviation (names_from_another_company): the user's answer, true to "
+                    "remove them, false to keep the names as they are.",
                 },
                 "add_unmatched": {"type": "boolean", "description": "Map mode: add what matched nothing."},
                 "source_system": {
@@ -134,7 +178,7 @@ class ImportChartOfAccounts(BaseTool):
                     "description": "The system the chart comes from (odoo, tally, ...): the old IDs are kept under it.",
                 },
             },
-            "required": ["session", "mode"],
+            "required": ["mode"],  # map and add need the session; categories doesn't
         }
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -143,11 +187,13 @@ class ImportChartOfAccounts(BaseTool):
             (arguments.get("company") or "").strip(),
             arguments.get("mode"),
         )
-        if mode not in ("map", "add"):
-            return {"success": False, "error": _("mode is map or add.")}
+        if mode not in ("map", "add", "categories"):
+            return {"success": False, "error": _("mode is map, add or categories.")}
         refused = company_refusal(company)
         if refused:
             return refused
+        if mode == "categories":
+            return self._categories(company)
         try:
             session = load_session(name)
             if not frappe.has_permission("Account", "create"):
@@ -178,6 +224,36 @@ class ImportChartOfAccounts(BaseTool):
             "old_id_systems": kept["systems"],
             "message": _repeat_note(company, result) + _old_ids_message(len(result["created"]), system, kept),
         }
+
+    @staticmethod
+    def _categories(company: str) -> Dict[str, Any]:
+        """Set the Account Category of the company's accounts that have none (ERPNext v16)."""
+        if not import_chart.categories_supported():
+            return {
+                "success": False,
+                "error": _(
+                    "This site's ERPNext has no Account Category (it came with v16): there is nothing to set."
+                ),
+            }
+        if not frappe.has_permission("Account", "write"):
+            return {"success": False, "error": _("You can't change accounts.")}
+        try:
+            with one_at_a_time("chart", company):
+                result = import_chart.fill_categories(company)
+        except StillRunning as e:
+            return e.result()
+        except Exception as e:
+            frappe.log_error(title=_("Account Categories Error"), message=frappe.get_traceback())
+            return {"success": False, "error": exception_message(e)}
+        message = _("{0} accounts got an Account Category; {1} kept the one they had.").format(
+            result["categories_set"], result["categories_kept"]
+        )
+        if result["categories_to_check_count"]:
+            message += " " + _(
+                "{0} ledgers only got their root type's usual category (categories_to_check): show them to "
+                "the user to confirm or correct."
+            ).format(result["categories_to_check_count"])
+        return {"success": True, "company": company, "mode": "categories", **result, "message": message}
 
     @staticmethod
     def _apply(name, company, mode, arguments, nodes, classes, system):
@@ -247,12 +323,20 @@ def check_chart(name: str, company: str, arguments: Dict[str, Any]) -> Dict[str,
         return refused
     try:
         session = load_session(name)
-        nodes = import_chart.read_chart(session, arguments.get("root_type_column"))
+        nodes = import_chart.read_chart(
+            session, arguments.get("root_type_column"), arguments.get("clean_names")
+        )
         if company:
             import_chart.apply_outside_parents(nodes, company)
         import_chart.apply_answers(nodes, arguments.get("classifications"))
         classes = import_chart.classify(nodes)
         out: Dict[str, Any] = {"success": True, "session": name, **import_chart.summary(nodes, classes)}
+        pattern = import_chart.name_pattern(nodes)
+        if pattern:
+            # "141600 - State Bank of India - CCBF": the user decides before anything is put on the company
+            out["names_from_another_company"] = {**pattern, "cleaned": bool(arguments.get("clean_names"))}
+            if arguments.get("clean_names") is None:
+                out["names_question"] = names_question(pattern)
         if company and import_chart.already_in_place(company, nodes):
             # Live, 2026-11-18: a chart the company already had was offered replace and add again
             out.update(

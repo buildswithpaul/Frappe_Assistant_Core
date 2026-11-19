@@ -117,6 +117,10 @@ class DryRunImport(BaseTool):
             "modes.replace_refused",  # names the records that point at the accounts
             "parents_not_in_the_file",
             "map",
+            "categories_to_check",
+            "categories_not_found",
+            "names_from_another_company",
+            "names_question",
             "groups",
             "decisions",  # each value the file has, as the groups quote them
             "masters_plan",
@@ -156,8 +160,9 @@ class DryRunImport(BaseTool):
                         "(for the modes it allows and which accounts match; default: the site's only "
                         "company, so ask only on a site of several), classifications ({account "
                         "name: {root_type, account_type}}, the user's answers for the accounts that "
-                        "couldn't be classified) and root_type_column (the heading of a Root Type "
-                        "column, when the file has one)."
+                        "couldn't be classified; account_category too on ERPNext v16), root_type_column (the "
+                        "heading of a Root Type column, when the file has one) and clean_names (the user's "
+                        "answer when names_from_another_company is reported)."
                     ),
                 },
                 "plan": {
