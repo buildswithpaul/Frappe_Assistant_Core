@@ -12,7 +12,7 @@ describe("parseCron", () => {
 		expect(parseCron(cron)).toMatchObject(expected);
 	});
 
-	it.each(["*/30 * * * *", "0 9,17 * * *", "0 9 * 1 *", "0 9 * * 1,3", "", "bad", "0 25 * * *"])(
+	it.each(["*/30 * * * *", "0 9 31 * *", "0 9,17 * * *", "0 9 * 1 *", "0 9 * * 1,3", "", "bad", "0 25 * * *"])(
 		"returns null for %s, which the simple picker cannot express",
 		(cron) => {
 			expect(parseCron(cron)).toBeNull();
@@ -53,6 +53,10 @@ describe("proposedTimezone", () => {
 	it("proposes the browser zone for an imported schedule that is off and in UTC", () => {
 		expect(proposedTimezone({ timezone: "UTC", enabled: false }, "Asia/Kolkata")).toBe("Asia/Kolkata");
 		expect(proposedTimezone({ enabled: false }, "Asia/Kolkata")).toBe("Asia/Kolkata");
+	});
+
+	it("uses the current name for a zone the browser reports by its old one", () => {
+		expect(proposedTimezone({ timezone: "UTC", enabled: false }, "Asia/Calcutta")).toBe("Asia/Kolkata");
 	});
 
 	it("keeps a zone someone chose, and a live UTC schedule", () => {

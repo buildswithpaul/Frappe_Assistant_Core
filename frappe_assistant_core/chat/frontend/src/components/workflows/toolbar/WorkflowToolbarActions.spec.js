@@ -31,18 +31,56 @@ describe("Setup button", () => {
 			.map((b) => b.text());
 
 	it("replaces the Schedule, Triggers and Settings buttons", () => {
-		const text = labels({ setupTodo: 0 });
-		expect(text).toContain("Setup");
+		const text = labels({ setupProgress: { done: 3, total: 3 } });
 		expect(text).not.toContain("Schedule");
 		expect(text).not.toContain("Triggers");
 		expect(text).not.toContain("Settings");
 	});
 
-	it("shows how many items are still to do and emits setup", async () => {
-		const wrapper = mount(WorkflowToolbarActions, { props: { isAdmin: true, setupTodo: 2 } });
-		const btn = wrapper.findAll("button").find((b) => b.text() === "Setup (2)");
+	it("shows progress while items are left and emits setup", async () => {
+		const wrapper = mount(WorkflowToolbarActions, {
+			props: { isAdmin: true, setupProgress: { done: 1, total: 3 } },
+		});
+		const btn = wrapper.findAll("button").find((b) => b.text() === "Setup 1/3");
 		await btn.trigger("click");
 		expect(wrapper.emitted("setup")).toHaveLength(1);
+	});
+
+	it("says Ready once everything is done", () => {
+		expect(labels({ setupProgress: { done: 3, total: 3 } })).toContain("Ready");
+	});
+});
+
+describe("Activate while setup is unfinished", () => {
+	const activate = (props) =>
+		mount(WorkflowToolbarActions, { props: { isAdmin: true, status: "Draft", ...props } })
+			.findAll("button")
+			.find((b) => b.text() === "Activate");
+
+	it("is not the primary action and says what is missing", () => {
+		const btn = activate({ activateBlockReason: "Choose who it runs as" });
+		expect(btn.classes()).not.toContain("primary");
+		expect(btn.attributes("title")).toBe("Choose who it runs as");
+	});
+
+	it("still emits, so a click opens setup instead of doing nothing", async () => {
+		const wrapper = mount(WorkflowToolbarActions, {
+			props: { isAdmin: true, status: "Draft", activateBlockReason: "Choose when it runs" },
+		});
+		await wrapper.findAll("button").find((b) => b.text() === "Activate").trigger("click");
+		expect(wrapper.emitted("toggle-status")).toHaveLength(1);
+	});
+
+	it("is primary once setup allows it", () => {
+		expect(activate({ activateBlockReason: "" }).classes()).toContain("primary");
+	});
+
+	it("never blocks Pause", () => {
+		const wrapper = mount(WorkflowToolbarActions, {
+			props: { isAdmin: true, status: "Active", activateBlockReason: "Choose when it runs" },
+		});
+		const btn = wrapper.findAll("button").find((b) => b.text() === "Pause");
+		expect(btn.classes()).toContain("warning");
 	});
 });
 

@@ -41,10 +41,10 @@
 
 		<ToolbarButton
 			v-if="isAdmin"
-			:class="{ accent: setupTodo > 0 }"
-			:title="__('Setup checklist')"
-			:aria-label="setupTodo ? __('Setup checklist, {0} to do', [setupTodo]) : __('Setup checklist')"
-			:label="setupTodo ? __('Setup ({0})', [setupTodo]) : __('Setup')"
+			:class="{ accent: !setupDone }"
+			:title="__('Agent setup')"
+			:aria-label="setupLabel"
+			:label="setupLabel"
 			@click="$emit('setup')"
 		>
 			<ToolbarIcon name="gear" />
@@ -111,7 +111,9 @@ const props = defineProps({
 	hasVariables: { type: Boolean, default: false },
 	canRun: { type: Boolean, default: true },
 	runBlockReason: { type: String, default: "" },
-	setupTodo: { type: Number, default: 0 },
+	setupProgress: { type: Object, default: () => ({ done: 0, total: 0 }) },
+	/** Set while a required setup item is open; Activate then opens setup instead. */
+	activateBlockReason: { type: String, default: "" },
 	statusBusy: { type: Boolean, default: false },
 });
 
@@ -128,14 +130,22 @@ defineEmits([
 
 // Drives the Activate / Pause / Resume button. Returns null for Archived
 // (no toggle — those workflows are read-only history).
+const setupDone = computed(() => props.setupProgress.done >= props.setupProgress.total);
+const setupLabel = computed(() =>
+	setupDone.value
+		? __("Ready")
+		: __("Setup {0}/{1}", [props.setupProgress.done, props.setupProgress.total])
+);
+
 const statusToggle = computed(() => {
 	const s = props.status?.toLowerCase();
+	const blocked = props.activateBlockReason;
 	if (s === "draft") {
 		return {
 			label: __("Activate"),
 			icon: "play",
-			btnClass: "primary",
-			tooltip: __("Activate: triggers and schedules will start running"),
+			btnClass: blocked ? "" : "primary",
+			tooltip: blocked || __("Activate: triggers and schedules will start running"),
 		};
 	}
 	if (s === "active") {
@@ -150,8 +160,8 @@ const statusToggle = computed(() => {
 		return {
 			label: __("Resume"),
 			icon: "play",
-			btnClass: "primary",
-			tooltip: __("Resume: triggers and schedules will start running again"),
+			btnClass: blocked ? "" : "primary",
+			tooltip: blocked || __("Resume: triggers and schedules will start running again"),
 		};
 	}
 	return null;

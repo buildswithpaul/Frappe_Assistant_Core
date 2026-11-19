@@ -8,8 +8,7 @@ import { __ } from "@/utils/i18n";
  * rather than on the save banner.
  *
  * @param {object} deps - { workflowStore, workflowId, canEdit, isDirty, nodes,
- *                          save, checkBeforeRun, scheduleConfig, showRunsPanel,
- *                          showScheduleModal }
+ *                          save, checkBeforeRun, scheduleConfig, showRunsPanel }
  */
 export function useWorkflowExecution({
 	workflowStore,
@@ -21,7 +20,6 @@ export function useWorkflowExecution({
 	checkBeforeRun,
 	scheduleConfig,
 	showRunsPanel,
-	showScheduleModal,
 }) {
 	const actionError = ref(null);
 	const isSettingSchedule = ref(false);
@@ -65,7 +63,6 @@ export function useWorkflowExecution({
 				config.enabled,
 				config.defaultInput.trim() || null,
 			);
-			showScheduleModal.value = false;
 		} catch (err) {
 			logger.error("Schedule failed:", err);
 			actionError.value = err.message || __("Failed to save the schedule");
