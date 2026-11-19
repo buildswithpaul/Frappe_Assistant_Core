@@ -2125,14 +2125,15 @@ def report(session, summary: Dict[str, Any]) -> Dict[str, Any]:
     choices = card(session, summary, masters)
     if choices:
         out["card"] = choices
+        out["next"] = _(CARD_HOW)  # outside the card: the card quotes the file and is fenced
         if len(json.dumps(out, default=str)) > REPLY_BUDGET:
             # live, 2026-11-19: 130,000 characters were set aside by FAC Cloud and the card never shown
-            out["groups"] = [
+            out["groups"] = out["groups"][:GROUPS_DETAILED] + [
                 {
                     **{k: g.get(k) for k in ("id", "cause", "field", "label", "value", "count")},
                     "examples": [{"row": e["row"]} for e in g.get("examples") or []],
                 }
-                for g in out["groups"]
+                for g in out["groups"][GROUPS_DETAILED:]
             ]
             out["masters_plan"] = []
             out["masters_plan_total"] = len(masters)
@@ -2153,7 +2154,22 @@ def report(session, summary: Dict[str, Any]) -> Dict[str, Any]:
 # recommended one first, with the fixes (and the records to create first) FACO sends when it is picked.
 
 CARD_LISTED = 6  # values named in an option's label
+
+#: How FACO uses the card, in the reply it always reads (live, 2026-11-19: it asked one question of eight,
+#: confirmed three times, printed the mapping table twice and ran 15 calls without a word to the user).
+CARD_HOW = (
+    "Show this card now as ONE ask_user card: every question as a single_select, its recommended option "
+    "pre-selected, its title and result as the description. Don't decide, summarise or leave out any question, "
+    "and don't print the mapping table. When the user answers, don't ask again: tell them in one line what "
+    "you'll do, then do it in this order, with a short line after each step: 1) custom_fields: each with its "
+    "own create_document call (doctype Custom Field; never in documents or records), then set_column_mapping "
+    "for those columns; 2) records to create in one create_document call with import_session (create_all's "
+    "planned_masters with the chosen shared values, or the chosen options' create as documents); 3) one "
+    "dry_run_import with every chosen option's fixes; 4) if it is ready, start_import. An option with "
+    "fix_in_file: tell the user what to correct and stop."
+)
 CARD_CREATE_LISTED = 10  # records an option lists to create; more are created by planned_masters, by count
+GROUPS_DETAILED = 5  # groups a big reply still shows with their example rows
 REPLY_BUDGET = 40000  # a check's reply above it keeps the card and counts, not every group's detail
 CARD_LIKELY = 50  # groups of a question looked up for a clear match
 

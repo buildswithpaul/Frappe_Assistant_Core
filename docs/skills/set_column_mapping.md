@@ -97,7 +97,7 @@ While the session's import is running (**Importing**) the mapping is kept: wait 
 
 ## Best Practices
 
-1. **Show the result as a table**: *Your column → ERPNext field*. Show each child table in its own table under its title. Below, mark the **unmapped columns** and the **required fields with no column** clearly. An unmapped column is not imported, like one mapped to "Don't Import".
+1. **During an import of a file, don't show the mapping table:** the check's card is what the user sees. Show the table only when the user asks for it, or changes the mapping. Then show it as a table: *Your column → ERPNext field*. Show each child table in its own table under its title. Below, mark the **unmapped columns** and the **required fields with no column** clearly. An unmapped column is not imported, like one mapped to "Don't Import".
 2. **Don't ask before the check.** Map what you're sure of yourself and go straight to `dry_run_import`: its `card` is the one question the user answers. Only a column you can't place at all goes on that card's question (or one question with it), offering the likely fields, **"Create a field '<column>' on <DocType>"** (a text field; create every chosen one in one `create_document` call with `documents` of Custom Field, System Manager only, then map them) and "Don't import". Never put another system's columns in Notes. A column that only numbers the rows (S.No, Sr. No., #) needs no question.
    - **Insert or update** is not a question: with no records of the DocType yet, it's always new records.
    - **Use the site's own fields first.** `get_import_schema` lists custom fields too: a code column ("Customer": C000065) goes to a field like "Legacy Customer Code", a "Project ID" to "Legacy Project Reference", when the site has one.

@@ -85,7 +85,7 @@ NEXT = (
     "the ID it is given even where a series numbers new records), and leave out only what fits nowhere. "
     "Never put another system's columns in Notes. Then call dry_run_import: its card is the one question "
     "for the user, with every choice (columns to create fields for, records to create, names to make "
-    "unique, values to map)."
+    "unique, values to map): follow its how. Don't print the mapping table before the check."
 )
 
 class StartImportSession(BaseTool):

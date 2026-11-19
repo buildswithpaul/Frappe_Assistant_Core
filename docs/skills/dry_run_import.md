@@ -114,6 +114,10 @@ and nothing after it until the user answers:
   mark it "(recommended)". Use the user's words: never "session", "mapping", "group", "link" or field names.
 - Never ask the user to type a name or a value the card can offer as a choice.
 
+The reply's `next` says the same in short: follow it. **Keep the user informed:** before you start, one line of
+what you'll do ("Creating 13 fields, then 271 records, then importing 2,084 projects"), and a short line
+after each step ("13 fields created"). Never run a series of calls without a word to the user.
+
 When they answer, do what the chosen options say, in this order, without asking again:
 1. Records to create, in **one** `create_document` call with `import_session`:
    - When the card has `create_all` and the user kept every "create" answer: pass
@@ -123,8 +127,9 @@ When they answer, do what the chosen options say, in this order, without asking 
    - Otherwise: `documents` = every chosen option's `create` records together. They are the client's own
      records (a company's departments are created for that company).
 2. One `dry_run_import` with every chosen option's `fixes` together.
-3. An option with `then` says what to call first (e.g. switch to new records). `custom_fields`: create each
-   (System Manager only), map those columns to the new fields, then check again. An option with
+3. An option with `then` says what to call first (e.g. switch to new records). `custom_fields` come
+   **first**: each with **its own** `create_document` call (doctype Custom Field; a customisation is never
+   in `documents` or `records`, which refuse it), then `set_column_mapping` for those columns. An option with
    `fix_in_file`: tell the user what to correct in the file and stop; they upload it again.
 
 Then show the new check's headline in one line. If it has a `card` again, it holds only what is left.
