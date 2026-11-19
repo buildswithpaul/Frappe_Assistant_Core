@@ -49,6 +49,17 @@ from frappe_assistant_core.utils.import_session import (
     readable_session_file,
 )
 
+#: Columns of a chart of accounts the chart import reads by their heading, not through a field: Root Type
+#: (read-only on Account) and the parent's number (no Account field holds it).
+CHART_READ_COLUMNS = (
+    "root_type",
+    "root type",
+    "parent_account_number",
+    "parent account number",
+    "parent_number",
+    "parent number",
+)
+
 
 class SetColumnMapping(BaseTool):
     """
@@ -222,11 +233,10 @@ class SetColumnMapping(BaseTool):
             existing = session_mapping(doc) if target == current_target else {}
             if target == "Account" and isinstance(mapping, dict):
                 # Root Type is read-only on Account, so it can't be mapped; the chart import reads its
-                # column by its heading. Live, 2026-11-19: FACO mapped it, the call failed and was made again.
+                # column by its heading. Live, 2026-11-19: FACO mapped it (and Parent Account Number to a field
+                # Account doesn't have), the call failed and was made again.
                 mapping = {
-                    column: (
-                        DONT_IMPORT if str(field).strip().lower() in ("root_type", "root type") else field
-                    )
+                    column: (DONT_IMPORT if str(field).strip().lower() in CHART_READ_COLUMNS else field)
                     for column, field in mapping.items()
                 }
             resolved, problems = resolve_mapping(target, schema, headers, mapping)
