@@ -74,6 +74,20 @@ LISTING_UNVERIFIED = (
 )
 
 
+
+#: What FACO does after opening a file, said where it always reads it. Live, 2026-11-19: it asked how to
+#: handle the columns (offering Notes) and said the file's Project ID can't be the ID, before any check,
+#: having never read set_column_mapping's guidance.
+NEXT = (
+    "Ask the user nothing yet. Map the columns yourself with set_column_mapping (get_skill"
+    "('set-column-mapping-usage')): use the site's own custom fields first (get_import_schema lists them), "
+    "a column of all-different IDs (Project ID) to the record's ID (name) on new records (an import keeps "
+    "the ID it is given even where a series numbers new records), and leave out only what fits nowhere. "
+    "Never put another system's columns in Notes. Then call dry_run_import: its card is the one question "
+    "for the user, with every choice (columns to create fields for, records to create, names to make "
+    "unique, values to map)."
+)
+
 class StartImportSession(BaseTool):
     """Open an import session for a spreadsheet the user wants to import."""
 
@@ -323,6 +337,7 @@ class StartImportSession(BaseTool):
                 "target_doctype": reused.target_doctype,
                 "status": reused.status,
                 "note": note,
+                "next": NEXT,
             }
 
         copy = None
@@ -347,6 +362,7 @@ class StartImportSession(BaseTool):
             "sample_rows": chosen.sample_rows,  # for the assistant to show; never stored
             "target_doctype": target_doctype,
             "status": session.status,
+            "next": NEXT,
         }
         notes = []
         if chosen.header_row > 1:

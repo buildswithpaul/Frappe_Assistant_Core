@@ -38,10 +38,10 @@ class TestImportCard(ImportRunCase):
     def _session(self):
         c, t = self.company, self.tag
         lines = [
-            "Project ID,Project,Stage,Department,Company",
-            f"P1{t},Kolar {t},Finished,{self.code},{c}",
-            f"P1{t}_01,Kolar {t},In process,{self.code},{c}",
-            f"P2{t},Hosur {t},Finished,,{c}",
+            "Project ID,Project,Stage,Department,Company,Block",
+            f"P1{t},Kolar {t},Finished,{self.code},{c},BL_A",
+            f"P1{t}_01,Kolar {t},In process,{self.code},{c},BL_A",
+            f"P2{t},Hosur {t},Finished,,{c},BL_B",
         ]
         file_doc = self._file("projects.csv", ("\n".join(lines) + "\n").encode())
         session = self._run("start_import_session", {"file_url": file_doc.file_url})["result"]["session_id"]
@@ -111,7 +111,7 @@ class TestImportCard(ImportRunCase):
             f
             for q in card["questions"]
             if not q["id"].startswith("missing:")
-            for f in self._recommended(q)["fixes"]
+            for f in self._recommended(q).get("fixes", [])
         ]
         drop = next(o for o in self._question(card, "missing:")["options"] if "empty" in o["label"])
 
@@ -165,3 +165,11 @@ class TestImportCard(ImportRunCase):
         question = card["questions"][0]
         self.assertEqual(question["id"], "import_type")
         self.assertTrue(question["options"][0]["recommended"])
+
+    def test_a_column_that_fits_no_field_is_offered_a_new_field_not_notes(self):
+        card = self._check(self._session())["card"]
+
+        columns = self._question(card, "columns")
+        self.assertIn("Block", columns["detail"])
+        create = self._recommended(columns)["custom_fields"]
+        self.assertEqual(create, [{"doctype": "Custom Field", "data": {"dt": "Project", "label": "Block", "fieldtype": "Data"}}])

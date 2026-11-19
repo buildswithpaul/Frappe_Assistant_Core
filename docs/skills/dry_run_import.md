@@ -119,7 +119,8 @@ When they answer, do what the chosen options say, in this order, without asking 
    together) and `import_session`. They are the client's own records (a company's departments are created
    for that company).
 2. One `dry_run_import` with every chosen option's `fixes` together.
-3. An option with `then` says what to call first (e.g. switch to new records). An option with
+3. An option with `then` says what to call first (e.g. switch to new records). `custom_fields`: create each
+   (System Manager only), map those columns to the new fields, then check again. An option with
    `fix_in_file`: tell the user what to correct in the file and stop; they upload it again.
 
 Then show the new check's headline in one line. If it has a `card` again, it holds only what is left.

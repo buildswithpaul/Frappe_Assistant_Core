@@ -2211,6 +2211,9 @@ def card(session, summary: Dict[str, Any], masters: List[Dict[str, Any]]) -> Opt
                     ],
                 }
             )
+    unplaced = _columns_question(session)
+    if unplaced:
+        questions.append(unplaced)
     if not questions:
         return None
     for question in questions:
@@ -2393,4 +2396,64 @@ def _option_question(session, groups, label, rows, skip) -> Dict[str, Any]:
         "title": _("{0} values in the file aren't ERPNext's choices for {1}").format(len(groups), label),
         "detail": _("{0} rows.").format(rows),
         "options": options,
+    }
+
+
+def _columns_question(session) -> Optional[Dict[str, Any]]:
+    """The file's columns with values that go nowhere (unmapped or Don't Import): create a text field for each
+    on the DocType, or leave them out. Not a column of old IDs, nor one that repeats another column. Live,
+    2026-11-19: 17 columns of a client's projects were offered "put in Notes"."""
+    from frappe_assistant_core.utils.import_dry_run import read_sheet_rows
+
+    try:
+        rows = apply_value_maps(session, read_sheet_rows(readable_session_file(session), session.sheet or None))
+    except Exception:
+        return None
+    if not rows:
+        return None
+    mapped = _column_targets(session)
+    key = import_keys.source_key(session)
+    skip = {int(key["position"])} if key else set()
+    ids = id_column(session, rows)
+    if ids is not None:
+        skip.add(ids)  # the file's own IDs: the record's ID, not a field (set-column-mapping-usage)
+    columns = {p: [cstr(r[p]).strip() if p < len(r) else "" for r in rows[1:]] for p in range(len(rows[0]))}
+    meta = frappe.get_meta(session.target_doctype)
+    labels = {cstr(df.label).strip().casefold() for df in meta.fields}
+    left = []
+    for position, values in columns.items():
+        heading = cstr(rows[0][position]).strip()
+        if position in mapped or position in skip or not heading or not any(values):
+            continue
+        if any(values == other for p, other in columns.items() if p != position and (p in mapped or p < position)):
+            continue  # a copy of another column
+        if heading.casefold() in labels:
+            continue  # the DocType has a field of that name: a mapping question, not a new field
+        left.append(heading)
+    if not left:
+        return None
+    doctype = session.target_doctype
+    return {
+        "id": "columns",
+        "title": _("{0} columns of the file have no field on {1}").format(len(left), _(doctype)),
+        "detail": ", ".join(left[:12]) + ("…" if len(left) > 12 else ""),
+        "options": [
+            {
+                "label": _("Create a text field on {0} for each, and import them").format(_(doctype)),
+                "effect": _("{0} new fields on the {1} form; their values come in.").format(len(left), _(doctype)),
+                "recommended": True,
+                "custom_fields": [
+                    {"doctype": "Custom Field", "data": {"dt": doctype, "label": heading, "fieldtype": "Data"}}
+                    for heading in left
+                ],
+                "then": _(
+                    "create each with create_document (a Custom Field is created one at a time), then map every "
+                    "column to its new field with set_column_mapping, then dry_run_import"
+                ),
+            },
+            {
+                "label": _("Don't import these columns"),
+                "effect": _("Their values stay only in the file."),
+            },
+        ],
     }
