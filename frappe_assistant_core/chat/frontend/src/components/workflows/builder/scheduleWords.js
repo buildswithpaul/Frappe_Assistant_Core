@@ -37,7 +37,7 @@ export function parseCron(cron) {
 		const weekday = int(dow, 0, 6);
 		return weekday === null ? null : { freq: "weekly", hour, minute, weekday };
 	}
-	const monthday = int(dom, 1, 31);
+	const monthday = int(dom, 1, 28);
 	if (monthday === null || dow !== "*") return null;
 	return { freq: "monthly", hour, minute, monthday };
 }
@@ -70,12 +70,40 @@ export function describeSchedule(cron, timezone) {
 	return `${words} (${zone})`;
 }
 
+// Browsers still report some zones by their pre-rename names.
+const ZONE_ALIASES = {
+	"Asia/Calcutta": "Asia/Kolkata",
+	"Asia/Saigon": "Asia/Ho_Chi_Minh",
+	"Asia/Katmandu": "Asia/Kathmandu",
+	"Asia/Rangoon": "Asia/Yangon",
+};
+
 /**
  * Imports arrive switched off and in UTC, a zone nobody chose; propose the
  * browser's instead. A zone someone picked, or a live schedule, is kept.
  */
 export function proposedTimezone(schedule, browserZone) {
 	const zone = schedule?.timezone || "UTC";
-	if (zone === "UTC" && !schedule?.enabled && browserZone) return browserZone;
+	if (zone === "UTC" && !schedule?.enabled && browserZone) return ZONE_ALIASES[browserZone] || browserZone;
 	return zone;
+}
+
+const COMMON_ZONES = [
+	"UTC",
+	"US/Eastern",
+	"US/Central",
+	"US/Pacific",
+	"Europe/London",
+	"Europe/Berlin",
+	"Asia/Dubai",
+	"Asia/Kolkata",
+	"Asia/Singapore",
+	"Asia/Tokyo",
+	"Asia/Shanghai",
+	"Australia/Sydney",
+];
+
+/** The zone list, always including the ones in play so a select never opens blank. */
+export function zoneOptions(...inPlay) {
+	return [...new Set([...COMMON_ZONES, ...inPlay.filter(Boolean)])];
 }

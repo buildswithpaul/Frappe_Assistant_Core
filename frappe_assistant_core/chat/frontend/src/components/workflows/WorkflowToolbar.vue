@@ -34,7 +34,8 @@
 			:show-runs="showRuns"
 			:show-audit="showAudit"
 			:has-variables="hasVariables"
-			:setup-todo="setupTodo"
+			:setup-progress="setupProgress"
+			:activate-block-reason="activateBlockReason"
 			:status-busy="statusBusy"
 			@save="$emit('save')"
 			@run="$emit('run')"
@@ -67,7 +68,8 @@ defineProps({
 	hasVariables: { type: Boolean, default: false },
 	canRun: { type: Boolean, default: true },
 	runBlockReason: { type: String, default: "" },
-	setupTodo: { type: Number, default: 0 },
+	setupProgress: { type: Object, default: () => ({ done: 0, total: 0 }) },
+	activateBlockReason: { type: String, default: "" },
 	statusBusy: { type: Boolean, default: false },
 });
 

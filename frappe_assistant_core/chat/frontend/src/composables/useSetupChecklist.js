@@ -1,6 +1,10 @@
 import { ref, computed } from "vue";
 import { api } from "@/api/client";
-import { buildSetupChecklist } from "@/components/workflows/builder/setupChecklist";
+import {
+	buildSetupChecklist,
+	activationBlockReason,
+	setupProgress,
+} from "@/components/workflows/builder/setupChecklist";
 
 export function useSetupChecklist({
 	workflowId,
@@ -23,7 +27,8 @@ export function useSetupChecklist({
 			checkError: preflight.error.value,
 		})
 	);
-	const todoCount = computed(() => items.value.filter((i) => i.state === "todo").length);
+	const blockReason = computed(() => activationBlockReason(items.value));
+	const progress = computed(() => setupProgress(items.value));
 
 	async function refresh() {
 		if (!workflowId.value) return;
@@ -39,5 +44,5 @@ export function useSetupChecklist({
 		}
 	}
 
-	return { items, todoCount, isRefreshing, refresh };
+	return { items, blockReason, progress, triggers, isRefreshing, refresh };
 }
