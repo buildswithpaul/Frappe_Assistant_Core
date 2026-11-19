@@ -2129,19 +2129,17 @@ def report(session, summary: Dict[str, Any]) -> Dict[str, Any]:
         out["card"] = choices
         out["next"] = _(CARD_HOW)  # outside the card: the card quotes the file and is fenced
         if len(json.dumps(out, default=str)) > REPLY_BUDGET:
-            # live, 2026-11-19: 130,000 characters were set aside by FAC Cloud and the card never shown
-            out["groups"] = out["groups"][:GROUPS_DETAILED] + [
-                {
-                    **{k: g.get(k) for k in ("id", "cause", "field", "label", "value", "count")},
-                    "examples": [{"row": e["row"]} for e in g.get("examples") or []],
-                }
-                for g in out["groups"][GROUPS_DETAILED:]
-            ]
+            # live, 2026-11-19: replies set aside by FAC Cloud (130,000, then 20,000 characters): FACO read parts,
+            # missed the card and typed the questions. The card carries every fix: the lists go, counts stay.
+            out["groups"] = out["groups"][:GROUPS_DETAILED]
+            out.pop("decisions", None)
             out["masters_plan"] = []
             out["masters_plan_total"] = len(masters)
             out["message"] += " " + _(
                 "The details are left out to keep this short: card has every choice, with what to send."
             )
+        # the instruction and the card first, so a reply cut or set aside still starts with them
+        out = {"next": out.pop("next"), "card": out.pop("card"), **out}
     if len(masters) > MASTERS_SHOWN:
         out["masters_plan_total"] = len(masters)
     if summary.get("excluded"):
@@ -2172,7 +2170,7 @@ CARD_HOW = (
 )
 CARD_CREATE_LISTED = 10  # records an option lists to create; more are created by planned_masters, by count
 GROUPS_DETAILED = 5  # groups a big reply still shows with their example rows
-REPLY_BUDGET = 20000  # a check's reply above it keeps the card and counts, not every group's detail
+REPLY_BUDGET = 12000  # a check's reply above it keeps the card and counts, not every group's detail
 CARD_LIKELY = 50  # groups of a question looked up for a clear match
 
 
