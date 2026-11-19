@@ -61,6 +61,15 @@ CHART_READ_COLUMNS = (
 )
 
 
+
+#: Said after every mapping (live, 2026-11-19: FACO remapped a column and stopped, the user had to ask for the
+#: check; it had also linked contract codes to Sales Order, which no row could satisfy).
+AFTER_MAPPING = (
+    "Now call dry_run_import and show its card (all questions on one card), unless the user is still "
+    "changing the mapping. Never map a column of the other system's codes to a link (Sales Order, "
+    "Department...) whose records don't exist: leave it for the card's 'create a field' question."
+)
+
 class SetColumnMapping(BaseTool):
     """
     Tool for saving a migration file's column mapping on its import session.
@@ -304,6 +313,7 @@ class SetColumnMapping(BaseTool):
                 }
             save_mapping(doc, target, merged, described["summary"])
             result = {
+                "next": AFTER_MAPPING,
                 "success": True,
                 "session": session_name,
                 "doctype": target,
