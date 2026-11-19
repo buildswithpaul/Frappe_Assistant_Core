@@ -992,6 +992,7 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
     """
     from frappe_assistant_core.utils import import_opening_balances as opening_balances
 
+    fixes = _expanded(fixes)
     maps = value_maps(session)
     filled = fills(session)
     reasons = {str(entry["row"]): entry["reason"] for entry in left_out(session)}
@@ -2124,6 +2125,20 @@ def report(session, summary: Dict[str, Any]) -> Dict[str, Any]:
     choices = card(session, summary, masters)
     if choices:
         out["card"] = choices
+        if len(json.dumps(out, default=str)) > REPLY_BUDGET:
+            # live, 2026-11-19: 130,000 characters were set aside by FAC Cloud and the card never shown
+            out["groups"] = [
+                {
+                    **{k: g.get(k) for k in ("id", "cause", "field", "label", "value", "count")},
+                    "examples": [{"row": e["row"]} for e in g.get("examples") or []],
+                }
+                for g in out["groups"]
+            ]
+            out["masters_plan"] = []
+            out["masters_plan_total"] = len(masters)
+            out["message"] += " " + _(
+                "The details are left out to keep this short: card has every choice, with what to send."
+            )
     if len(masters) > MASTERS_SHOWN:
         out["masters_plan_total"] = len(masters)
     if summary.get("excluded"):
@@ -2138,6 +2153,8 @@ def report(session, summary: Dict[str, Any]) -> Dict[str, Any]:
 # recommended one first, with the fixes (and the records to create first) FACO sends when it is picked.
 
 CARD_LISTED = 6  # values named in an option's label
+CARD_CREATE_LISTED = 10  # records an option lists to create; more are created by planned_masters, by count
+REPLY_BUDGET = 40000  # a check's reply above it keeps the card and counts, not every group's detail
 CARD_LIKELY = 50  # groups of a question looked up for a clear match
 
 
@@ -2186,7 +2203,7 @@ def card(session, summary: Dict[str, Any], masters: List[Dict[str, Any]]) -> Opt
         skip = {
             "label": _("Ignore these for now: skip the {0} rows").format(rows),
             "effect": _("These rows aren't imported; the import report lists them."),
-            "fixes": [{"group": g["id"], "action": LEAVE_OUT} for g in groups],
+            "fixes": _compact([{"group": g["id"], "action": LEAVE_OUT} for g in groups]),
         }
         if cause == dry_run.CAUSE_DUPLICATE_IN_FILE:
             questions.append(_duplicate_question(session, groups, label, rows, skip))
@@ -2214,6 +2231,9 @@ def card(session, summary: Dict[str, Any], masters: List[Dict[str, Any]]) -> Opt
     unplaced = _columns_question(session)
     if unplaced:
         questions.append(unplaced)
+    choose = _shared_question(masters)
+    if choose:
+        questions.append(choose)
     if not questions:
         return None
     for question in questions:
@@ -2229,6 +2249,11 @@ def card(session, summary: Dict[str, Any], masters: List[Dict[str, Any]]) -> Opt
         ),
         "intro": _("I checked the file. These need your choice; the recommended answer is selected."),
         "questions": questions,
+        **(
+            {"create_all": {"planned_masters": {"count": len(masters)}}}
+            if any(o.get("create_planned") for q in questions for o in q["options"])
+            else {}
+        ),
         "result": _("With the recommended answers, up to {0} of {1} rows are imported.").format(
             max(total - lost, 0), total
         ),
@@ -2287,7 +2312,13 @@ def _duplicate_question(session, groups, label, rows, skip) -> Dict[str, Any]:
 def _missing_question(session, groups, label, rows, planned, skip) -> Dict[str, Any]:
     doctype = _with_target(session, groups[0]).get("link_doctype") or label
     create, maps, unplaced = [], [], 0
-    for index, group in enumerate(groups):
+    groups_left = groups
+    if doctype == "Company":
+        # the company the user is importing into, never the closest-sounding one (live: samb → Sambhav Demo)
+        company = import_company(session)
+        if company:
+            maps, groups_left = [(g, company) for g in groups], []
+    for index, group in enumerate(groups_left):
         plan = planned.get((doctype, group.get("value")))
         clear = None
         if index < CARD_LIKELY:
@@ -2318,18 +2349,21 @@ def _missing_question(session, groups, label, rows, planned, skip) -> Dict[str, 
                     ", ".join(f"{_short(to)} for {g.get('value')}" for g, to in maps[:CARD_LISTED])
                 )
             )
-        options.append(
-            {
-                "label": "; ".join(parts),
-                "effect": _("Every row is kept.")
-                if not unplaced
-                else _("{0} rows still need another answer.").format(unplaced),
-                "recommended": True,
-                "create": [{"doctype": c["doctype"], "data": c["data"]} for c in create],
-                "fixes": [{"group": g["id"], "action": MAP, "to": to} for g, to in maps],
-                "rows_lost": unplaced,
-            }
-        )
+        option = {
+            "label": "; ".join(parts),
+            "effect": _("Every row is kept.")
+            if not unplaced
+            else _("{0} rows still need another answer.").format(unplaced),
+            "recommended": True,
+            "fixes": [{"group": g["id"], "action": MAP, "to": to} for g, to in maps],
+            "rows_lost": unplaced,
+        }
+        if len(create) > CARD_CREATE_LISTED:
+            # too many to list: planned_masters creates every planned record, by count (card.create_all)
+            option["create_planned"] = {"doctype": doctype, "count": len(create)}
+        elif create:
+            option["create"] = [{"doctype": c["doctype"], "data": c["data"]} for c in create]
+        options.append(option)
     drop = _drop_fix(session, groups[0])
     if drop:
         options.append(
@@ -2457,3 +2491,55 @@ def _columns_question(session) -> Optional[Dict[str, Any]]:
             },
         ],
     }
+
+
+def _shared_question(masters: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """For new customers or suppliers the site has no default group or territory for: which one, once for
+    all of them (masters_plan's ``choose``), as one question of the card."""
+    wanted: Dict[Tuple[str, str], List[str]] = {}
+    for entry in masters:
+        for field, values in (entry.get("choose") or {}).items():
+            if values:
+                wanted.setdefault((entry["doctype"], field), list(values))
+    if not wanted:
+        return None
+    (doctype, field), values = next(iter(wanted.items()))
+    count = sum(1 for m in masters if m["doctype"] == doctype)
+    label = _(frappe.get_meta(doctype).get_label(field))
+    return {
+        "id": f"shared:{doctype}:{field}",
+        "title": _("{0} for the {1} new {2}").format(label, count, _plural(doctype, count)),
+        "detail": _("The site has no default {0}: one is given to all of them.").format(label),
+        "options": [
+            {
+                "label": value,
+                "effect": _("All {0} get {1}.").format(count, value),
+                "recommended": i == 0,
+                "shared": {doctype: {field: value}},
+            }
+            for i, value in enumerate(values[:CARD_LISTED])
+        ],
+    }
+
+
+def _expanded(fixes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Fixes as the card sends them for many groups at once, ``{"groups": [ids], "action": ...}``, one per
+    group: 262 groups' "leave out" written one by one made the card too long to show (live, 2026-11-19)."""
+    out = []
+    for fix in fixes or []:
+        if isinstance(fix, dict) and isinstance(fix.get("groups"), list) and not fix.get("group"):
+            rest = {k: v for k, v in fix.items() if k != "groups"}
+            out.extend({**rest, "group": group} for group in fix["groups"])
+        else:
+            out.append(fix)
+    return out
+
+
+def _compact(fixes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The same fix for many groups as one entry with their ids (_expanded reads it back)."""
+    if len(fixes) <= 3 or any(set(f) - {"group", "action"} for f in fixes):
+        return fixes
+    actions = {f["action"] for f in fixes}
+    if len(actions) != 1:
+        return fixes
+    return [{"action": actions.pop(), "groups": [f["group"] for f in fixes]}]

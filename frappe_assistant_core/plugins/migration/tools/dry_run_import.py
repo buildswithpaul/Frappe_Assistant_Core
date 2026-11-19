@@ -216,6 +216,15 @@ class DryRunImport(BaseTool):
                         "type": "object",
                         "properties": {
                             "group": {"type": "string", "description": "Group id, e.g. 'G3fa2c1'"},
+                            "groups": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Instead of group: the same fix for several groups, as the card sends it.",
+                            },
+                            "add": {
+                                "type": "string",
+                                "description": "For 'make_unique': 'id' (the row's ID) or 'number'.",
+                            },
                             "action": {"type": "string", "enum": list(import_fixes.ACTIONS)},
                             "to": {
                                 "type": "string",
@@ -234,7 +243,7 @@ class DryRunImport(BaseTool):
                                 "required field it leaves blank (one HSN code for every item, say).",
                             },
                         },
-                        "required": ["group", "action"],
+                        "required": ["action"],  # and group, or groups for the same fix on several
                     },
                 },
             },

@@ -115,9 +115,13 @@ and nothing after it until the user answers:
 - Never ask the user to type a name or a value the card can offer as a choice.
 
 When they answer, do what the chosen options say, in this order, without asking again:
-1. Every chosen option's `create` records: **one** `create_document` call with `documents` (all of them
-   together) and `import_session`. They are the client's own records (a company's departments are created
-   for that company).
+1. Records to create, in **one** `create_document` call with `import_session`:
+   - When the card has `create_all` and the user kept every "create" answer: pass
+     `planned_masters` = `card.create_all.planned_masters`, with `shared` from the chosen answer of a
+     `shared:` question (e.g. the customer group). It creates every planned record (an option with
+     `create_planned` too), so don't send any `create` list besides.
+   - Otherwise: `documents` = every chosen option's `create` records together. They are the client's own
+     records (a company's departments are created for that company).
 2. One `dry_run_import` with every chosen option's `fixes` together.
 3. An option with `then` says what to call first (e.g. switch to new records). `custom_fields`: create each
    (System Manager only), map those columns to the new fields, then check again. An option with
