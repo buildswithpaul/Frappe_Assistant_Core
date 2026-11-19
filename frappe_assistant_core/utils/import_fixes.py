@@ -1695,8 +1695,12 @@ def _planned_company_record(session, plan, doctype: str, data: Dict[str, Any]) -
     if frappe.db.exists(doctype, name):
         raise AlreadyThere(_("{0} '{1}' already exists. Check the file again with dry_run_import.").format(_(doctype), name))
     planned = {name_field: value, company_field: company}
-    parent = cstr(data.get(parent_field)).strip() if parent_field else ""
+    # the parent is checked as for any master (a group the user may read), and is of no other company
+    parent = _parent(doctype, cstr(data.get(parent_field)).strip() if parent_field else "")
     if parent:
+        owner = frappe.db.get_value(doctype, parent, company_field)
+        if owner and owner != company:
+            raise FixProblem(_("'{0}' belongs to another company than {1}.").format(parent, company))
         planned[parent_field] = parent
     return {"doctype": doctype, "data": planned}
 

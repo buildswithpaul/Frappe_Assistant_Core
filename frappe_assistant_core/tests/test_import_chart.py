@@ -345,13 +345,17 @@ class TestReadChart(ChartCase):
         self.assertEqual(modes["replace_figures"], expected)
         self.assertEqual(expected["accounts_created"], 13)
 
-    def test_the_company_must_exist(self):
-        refused = self._run(
+    def test_a_company_that_does_not_exist_is_asked_on_the_card_not_used(self):
+        # live, 2026-11-19: "(site's only company)" was passed as the name and the check failed
+        checked = self._run(
             "dry_run_import",
             {"session": self._chart(), "chart": {"company": "No Such Company"}},
         )
 
-        self.assertFalse(refused["success"])
+        self.assertTrue(checked["success"], checked)
+        self.assertNotEqual(checked["result"].get("company"), "No Such Company")
+        if frappe.db.count("Company") > 1:
+            self.assertEqual(checked["result"]["questions"][0]["kind"], "company")
 
     def test_the_check_lists_accounts_whose_type_does_not_belong_under_their_root(self):
         # Live, 2026-11-18: a client's chart had 13 "Stock" accounts under Equity; ERPNext books stock to them
