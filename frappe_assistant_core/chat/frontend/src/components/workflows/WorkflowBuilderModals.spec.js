@@ -7,7 +7,6 @@ function mountModals() {
 	setActivePinia(createPinia());
 	return mount(WorkflowBuilderModals, {
 		props: {
-			scheduleConfig: {},
 			pendingActivation: true,
 			activationWarnings: [
 				{ tool: "create_document", server: "", user: "ops@example.com", nodes: ["Draft reply"] },
@@ -17,7 +16,6 @@ function mountModals() {
 		global: {
 			stubs: {
 				RunInputModal: true,
-				ScheduleModal: true,
 				VariablesModal: true,
 				ShareTemplateModal: true,
 				TriggersModal: true,

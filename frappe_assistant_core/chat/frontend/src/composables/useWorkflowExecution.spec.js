@@ -14,7 +14,6 @@ function setup(save) {
 		checkBeforeRun: () => true,
 		scheduleConfig: ref({}),
 		showRunsPanel: ref(false),
-		showScheduleModal: ref(false),
 	});
 	return { exec, workflowStore };
 }

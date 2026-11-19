@@ -17,12 +17,13 @@
 				:show-audit="showAuditPanel"
 				:last-saved="hasSaved"
 				:has-variables="hasVariables"
-				:setup-todo="setup.todoCount.value"
+				:setup-progress="setup.progress.value"
+				:activate-block-reason="setup.blockReason.value"
 				:status-busy="isCheckingActivation"
 				@back="handleBack"
 				@save="save"
 				@run="requestRun"
-				@setup="showSetup = !showSetup"
+				@setup="onSetupPill"
 				@toggle-runs="onToggleRuns"
 				@toggle-audit="onToggleAudit"
 				@toggle-status="requestToggleStatus"
@@ -79,6 +80,33 @@
 					@close-runs="showRunsPanel = false"
 					@close-audit="showAuditPanel = false"
 				/>
+
+				<AgentSetupPanel
+					v-if="canEdit && showSetup && !selectedNode && !showRunsPanel && !showAuditPanel"
+					:items="setup.items.value"
+					:progress="setup.progress.value"
+					:block-reason="setup.blockReason.value"
+					:status="currentWorkflow?.status || 'Draft'"
+					:workflow="currentWorkflow"
+					:schedule="scheduleConfig"
+					:triggers="setup.triggers.value"
+					:warnings="preflight.warnings.value"
+					:stuck-tools="stuckTools"
+					:write-note="writeNote || settingsError || ''"
+					:models="availableModels"
+					:current-user="user || ''"
+					:busy="setup.isRefreshing.value"
+					:saving="isSaving || isSettingSchedule"
+					:activating="isCheckingActivation"
+					@close="showSetup = false"
+					@open-advanced="showSettingsDrawer = true"
+					@save-settings="onSetupSettingsSave"
+					@save-schedule="saveSchedule"
+					@open-triggers="showTriggersModal = true"
+					@allow-tool="allowTool"
+					@recheck="setup.refresh()"
+					@activate="requestToggleStatus"
+				/>
 			</div>
 
 			<!-- Status Bar -->
@@ -92,29 +120,21 @@
 				:has-saved="hasSaved"
 			/>
 
-			<!-- Modals (run input, schedule, variables, share template, triggers, setup, activation) -->
+			<!-- Modals (run input, variables, share template, triggers, activation) -->
 			<WorkflowBuilderModals
 				v-model:show-run="showRunModal"
-				v-model:show-schedule="showScheduleModal"
 				v-model:show-variables="showVariablesModal"
 				v-model:show-share="showShareModal"
 				v-model:show-triggers="showTriggersModal"
-				v-model:show-setup="showSetup"
 				:is-running="isRunning"
-				:schedule-config="scheduleConfig"
-				:is-setting-schedule="isSettingSchedule"
 				:variables="globalSettings?.variables || {}"
 				:workflow-id="workflowId"
 				:workflow-display-name="workflowDisplayName"
-				:setup-items="setup.items.value"
-				:setup-busy="setup.isRefreshing.value"
 				:pending-activation="pendingActivation"
 				:activation-warnings="preflight.warnings.value"
-				@setup-action="(key) => panels.onSetupAction(key, setup)"
 				@activation-confirm="confirmActivation"
 				@activation-cancel="cancelActivation"
 				@run-confirm="confirmRun"
-				@schedule-save="saveSchedule"
 				@variables-save="onVariablesSave"
 				@open-run="panels.onOpenRun"
 			/>
@@ -122,8 +142,6 @@
 			<WorkflowSettingsDrawer
 				v-model="showSettingsDrawer"
 				:workflow="currentWorkflow"
-				:models="availableModels"
-				:current-user="user || ''"
 				:is-saving="isSaving"
 				:error="settingsError || ''"
 				@save="onSettingsSave"
@@ -148,6 +166,7 @@ import MobileGate from "@/components/workflows/MobileGate.vue";
 import NodePalette from "@/components/workflows/NodePalette.vue";
 import WorkflowCanvas from "@/components/workflows/builder/WorkflowCanvas.vue";
 import BuilderRightRail from "@/components/workflows/builder/BuilderRightRail.vue";
+import AgentSetupPanel from "@/components/workflows/builder/setup/AgentSetupPanel.vue";
 import { useIsMobile } from "@/composables/useIsMobile";
 import { useUnsavedGuard } from "@/composables/useUnsavedGuard";
 import { useWorkflowLoader } from "@/composables/useWorkflowLoader";
@@ -161,6 +180,7 @@ import { useWorkflowExecution } from "@/composables/useWorkflowExecution";
 import { useBuilderShortcuts } from "@/composables/useBuilderShortcuts";
 import { useBuilderPanels } from "@/composables/useBuilderPanels";
 import { useBuilderSetup } from "@/composables/useBuilderSetup";
+import { useActivationStarts } from "@/composables/useActivationStarts";
 import { vueFlowToGraphJson } from "@/components/workflows/graphUtils";
 import { __ } from "@/utils/i18n";
 
@@ -200,7 +220,6 @@ const panels = useBuilderPanels();
 const {
 	showRunsPanel,
 	showAuditPanel,
-	showScheduleModal,
 	showVariablesModal,
 	showShareModal,
 	showTriggersModal,
@@ -308,7 +327,7 @@ const { onDrop, handleNodeUpdate, handleDeleteNode } = useWorkflowGraphActions({
 	sync: canvasSync,
 });
 
-const { preflight, setup } = useBuilderSetup({
+const { preflight, setup, stuckTools, writeNote, openIfUnfinished, allowTool } = useBuilderSetup({
 	workflowId,
 	workflowDisplayName,
 	currentWorkflow,
@@ -316,6 +335,13 @@ const { preflight, setup } = useBuilderSetup({
 	nodes,
 	isAdmin,
 	panels,
+});
+
+const { enableStarts } = useActivationStarts({
+	workflowStore,
+	workflowId,
+	scheduleConfig,
+	triggers: setup.triggers,
 });
 
 const {
@@ -337,6 +363,9 @@ const {
 	hasSaved,
 	saveError,
 	preflight,
+	blockReason: setup.blockReason,
+	onBlocked: openSetup,
+	beforeActivate: enableStarts,
 });
 
 const { actionError, isSettingSchedule, showRunModal, requestRun, confirmRun, saveSchedule } =
@@ -350,7 +379,6 @@ const { actionError, isSettingSchedule, showRunModal, requestRun, confirmRun, sa
 		checkBeforeRun,
 		scheduleConfig,
 		showRunsPanel,
-		showScheduleModal,
 	});
 
 useBuilderShortcuts({
@@ -373,7 +401,10 @@ onMounted(async () => {
 		fitView({ padding: 0.2 });
 		if (canEdit.value) scheduleAutoSave();
 	}
-	if (canEdit.value) setup.refresh();
+	if (canEdit.value) {
+		await setup.refresh();
+		openIfUnfinished();
+	}
 });
 
 onBeforeUnmount(() => workflowStore.clearCurrentWorkflow());
@@ -381,6 +412,22 @@ onBeforeUnmount(() => workflowStore.clearCurrentWorkflow());
 function onCanvasDrop(event) {
 	if (!canEdit.value) return;
 	onDrop(event);
+}
+
+/** Show setup in the rail, in front of a node's config, Runs or Audit. */
+function openSetup() {
+	selectedNode.value = null;
+	panels.onToggleSetup({ covered: true });
+}
+
+function onSetupPill() {
+	panels.onToggleSetup({ covered: !!selectedNode.value });
+	if (showSetup.value) selectedNode.value = null;
+}
+
+// A new runtime user changes which tools resolve, so the write check re-runs.
+async function onSetupSettingsSave(fields) {
+	if ((await saveSettings(fields)) && "default_user_id" in fields) setup.refresh();
 }
 
 async function onSettingsSave(fields) {

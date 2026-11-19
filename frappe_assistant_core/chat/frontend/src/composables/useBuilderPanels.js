@@ -4,7 +4,6 @@ import { nextTick, ref, watch } from "vue";
 export function useBuilderPanels() {
 	const showRunsPanel = ref(false);
 	const showAuditPanel = ref(false);
-	const showScheduleModal = ref(false);
 	const showVariablesModal = ref(false);
 	const showShareModal = ref(false);
 	const showTriggersModal = ref(false);
@@ -38,15 +37,19 @@ export function useBuilderPanels() {
 		showRunsPanel.value = true;
 	}
 
-	function onSetupAction(key, setup) {
-		if (key === "recheck") return setup.refresh();
-		showSetup.value = false;
-		if (key === "schedule") showScheduleModal.value = true;
-		if (key === "triggers") showTriggersModal.value = true;
-		if (key === "settings") showSettingsDrawer.value = true;
+	/**
+	 * The setup pill: shows setup in the rail, taking it from Runs and Audit,
+	 * or hides it when it is what the rail shows. `covered` is true when a
+	 * node's config is in front of it, so the click brings it forward instead.
+	 */
+	function onToggleSetup({ covered = false } = {}) {
+		const visible = showSetup.value && !covered && !showRunsPanel.value && !showAuditPanel.value;
+		showRunsPanel.value = false;
+		showAuditPanel.value = false;
+		showSetup.value = !visible;
 	}
 
-	/** Escape closes the checklist, then the settings drawer; false when neither was open. */
+	/** Escape closes setup, then the settings drawer; false when neither was open. */
 	function closeOnEscape() {
 		if (showSetup.value) showSetup.value = false;
 		else if (showSettingsDrawer.value) showSettingsDrawer.value = false;
@@ -57,7 +60,6 @@ export function useBuilderPanels() {
 	return {
 		showRunsPanel,
 		showAuditPanel,
-		showScheduleModal,
 		showVariablesModal,
 		showShareModal,
 		showTriggersModal,
@@ -67,7 +69,7 @@ export function useBuilderPanels() {
 		onToggleRuns,
 		onToggleAudit,
 		onOpenRun,
-		onSetupAction,
+		onToggleSetup,
 		closeOnEscape,
 	};
 }

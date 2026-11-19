@@ -5,12 +5,12 @@
 			class="drawer-overlay"
 			role="dialog"
 			aria-modal="true"
-			aria-label="Agent settings"
+			aria-label="Advanced settings"
 			@click.self="close"
 		>
 			<aside class="drawer">
 				<header class="drawer-header">
-					<h2 class="drawer-title">Agent Settings</h2>
+					<h2 class="drawer-title">Advanced settings</h2>
 					<button class="close-btn" title="Close" aria-label="Close" @click="close">
 						<svg
 							width="18"
@@ -30,49 +30,6 @@
 				</header>
 
 				<div class="drawer-body">
-					<!-- Runs as — the single most consequential setting: it decides
-					     whose MCP tools every agent node can reach. -->
-					<section class="runs-as" :class="{ unset: !form.default_user_id }">
-						<span class="runs-as-label">Runs as</span>
-						<strong class="runs-as-value">{{
-							form.default_user_id || "Not set"
-						}}</strong>
-						<p class="runs-as-hint">
-							{{
-								form.default_user_id
-									? "Agent nodes use this user's MCP servers and tools."
-									: "Without a user, agent nodes run with no tools at all."
-							}}
-						</p>
-						<div class="runs-as-controls">
-							<input
-								v-model.trim="form.default_user_id"
-								class="field-input"
-								placeholder="user@example.com"
-							/>
-							<button
-								v-if="canUseMyAccount"
-								class="link-btn"
-								@click="form.default_user_id = currentUser"
-							>
-								Use my account
-							</button>
-						</div>
-					</section>
-
-					<div class="field">
-						<label class="field-label">Default model</label>
-						<select v-model="form.default_model_id" class="field-input">
-							<option value="">Provider default</option>
-							<optgroup v-for="group in modelGroups" :key="group.tier" :label="group.tier">
-								<option v-for="m in group.models" :key="m.model_id" :value="m.model_id">
-									{{ m.display_name || m.model_id }}
-								</option>
-							</optgroup>
-						</select>
-						<p class="field-hint">Used by any agent node that does not pick its own.</p>
-					</div>
-
 					<div class="field">
 						<label class="field-label">On node failure</label>
 						<select v-model="form.error_strategy" class="field-input">
@@ -134,7 +91,7 @@
 </template>
 
 <script setup>
-import { reactive, computed, watch } from "vue";
+import { reactive, watch } from "vue";
 import { useTeleportTarget } from "@/composables/useTeleportTarget";
 
 const teleportTarget = useTeleportTarget();
@@ -143,8 +100,6 @@ const props = defineProps({
 	modelValue: { type: Boolean, default: false },
 	/** The AR Workflow record as returned by get_workflow. */
 	workflow: { type: Object, default: null },
-	models: { type: Array, default: () => [] },
-	currentUser: { type: String, default: "" },
 	isSaving: { type: Boolean, default: false },
 	error: { type: String, default: "" },
 });
@@ -152,8 +107,6 @@ const props = defineProps({
 const emit = defineEmits(["update:modelValue", "save"]);
 
 const DEFAULTS = {
-	default_user_id: "",
-	default_model_id: "",
 	error_strategy: "fail_fast",
 	timeout_seconds: 600,
 	max_retries: 0,
@@ -161,21 +114,6 @@ const DEFAULTS = {
 };
 
 const form = reactive({ ...DEFAULTS });
-
-// AR keys tenant users by email; a Frappe username like "Administrator" would
-// never resolve, so it is not offered as a one-click default.
-const canUseMyAccount = computed(() => props.currentUser.includes("@"));
-
-const modelGroups = computed(() => {
-	const groups = new Map();
-	for (const m of props.models) {
-		if (!m?.model_id) continue;
-		const tier = m.tier || m.tier_name || "Other";
-		if (!groups.has(tier)) groups.set(tier, { tier, rank: m.tier_rank ?? 999, models: [] });
-		groups.get(tier).models.push(m);
-	}
-	return [...groups.values()].sort((a, b) => a.rank - b.rank);
-});
 
 watch(
 	() => props.modelValue,
@@ -199,8 +137,6 @@ function close() {
 
 function save() {
 	emit("save", {
-		default_user_id: form.default_user_id || "",
-		default_model_id: form.default_model_id || "",
 		error_strategy: form.error_strategy,
 		timeout_seconds: Number(form.timeout_seconds) || DEFAULTS.timeout_seconds,
 		max_retries: Number(form.max_retries) || 0,
@@ -267,60 +203,6 @@ function save() {
 	flex: 1;
 	overflow-y: auto;
 	padding: 1.25rem;
-}
-
-.runs-as {
-	border: 1px solid var(--ql-border);
-	border-radius: 0.5rem;
-	padding: 0.75rem;
-	margin-bottom: 1.25rem;
-	background: var(--ql-subtle);
-}
-
-.runs-as.unset {
-	border-color: var(--ql-warning);
-}
-
-.runs-as-label {
-	display: block;
-	font-size: 0.6875rem;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.025em;
-	color: var(--ql-text-muted);
-}
-
-.runs-as-value {
-	display: block;
-	font-size: 0.9375rem;
-	color: var(--ql-text);
-	margin-top: 0.125rem;
-	word-break: break-all;
-}
-
-.runs-as-hint {
-	margin: 0.25rem 0 0.5rem;
-	font-size: 0.6875rem;
-	line-height: 1.4;
-	color: var(--ql-text-muted);
-}
-
-.runs-as-controls {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-}
-
-.link-btn {
-	flex-shrink: 0;
-	font-size: 0.6875rem;
-	font-weight: 600;
-	color: var(--ql-accent);
-	background: transparent;
-	border: none;
-	cursor: pointer;
-	padding: 0;
-	white-space: nowrap;
 }
 
 .field {
