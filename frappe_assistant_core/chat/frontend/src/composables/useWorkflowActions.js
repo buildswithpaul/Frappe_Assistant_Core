@@ -12,8 +12,14 @@ const NEXT_STATUS = { Draft: "Active", Active: "Paused", Paused: "Active" };
  * `saveWorkflow` the autosave uses, so the first two report on the same
  * `saveError`; the drawer keeps its own so a failure stays next to the form.
  *
+ * Activate is the one switch that makes an agent live: while `blockReason` is
+ * set it calls `onBlocked` instead, and before saving Active it awaits
+ * `beforeActivate({ fromDraft })`, which turns the configured schedule and
+ * triggers on. If that fails, the status is left alone.
+ *
  * @param {object} deps - { workflowStore, workflowId, currentWorkflow, canEdit,
- *                          isDirty, toGraphJson, hasSaved, saveError, preflight }
+ *                          isDirty, toGraphJson, hasSaved, saveError, preflight,
+ *                          blockReason, onBlocked, beforeActivate }
  */
 export function useWorkflowActions({
 	workflowStore,
@@ -25,6 +31,9 @@ export function useWorkflowActions({
 	hasSaved,
 	saveError,
 	preflight,
+	blockReason = ref(""),
+	onBlocked = () => {},
+	beforeActivate = async () => {},
 	notify = (message) => useToast().showToast(message, "info", 6000),
 }) {
 	const settingsError = ref(null);
@@ -33,13 +42,15 @@ export function useWorkflowActions({
 
 	async function toggleStatus() {
 		if (!workflowId.value || !canEdit.value) return;
-		const nextStatus = NEXT_STATUS[currentWorkflow.value?.status];
+		const currentStatus = currentWorkflow.value?.status;
+		const nextStatus = NEXT_STATUS[currentStatus];
 		if (!nextStatus) return;
 
 		const updates = { status: nextStatus };
 		if (isDirty.value) updates.graph_json = toGraphJson();
 
 		try {
+			if (nextStatus === "Active") await beforeActivate({ fromDraft: currentStatus === "Draft" });
 			await workflowStore.saveWorkflow(workflowId.value, updates);
 			hasSaved.value = true;
 			saveError.value = null;
@@ -54,6 +65,7 @@ export function useWorkflowActions({
 		if (!workflowId.value || !canEdit.value) return;
 		if (isCheckingActivation.value) return;
 		if (NEXT_STATUS[currentWorkflow.value?.status] !== "Active") return toggleStatus();
+		if (blockReason.value) return onBlocked();
 		isCheckingActivation.value = true;
 		try {
 			const warnings = await preflight.check();
