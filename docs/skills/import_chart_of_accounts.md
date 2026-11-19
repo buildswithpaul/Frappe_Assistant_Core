@@ -83,7 +83,10 @@ finds its accounts by the client's names and numbers.
      Afterwards show `defaults_proposed` on ONE card (each default field, its `suggested` account first,
      the other `choices` below; only accounts ERPNext accepts in that field are listed) and set the user's
      picks on the Company with `update_document`, all in one call. A field with no `suggested` has a `note`:
-     ask the user on the same card or leave it empty; don't search the accounts for one. And, when
+     ask the user on the same card or leave it empty; don't search the accounts for one. A field with
+     `change_type`: the right account has another type in the file (the client's "Sundry Creditors" typed
+     Current Liability). Offer "change its type to Payable and use it": if picked, `update_document` the
+     Account's `account_type` first, then set the default. And, when
      `tax_setup_removed` is there, help the user set the tax setup up again on the new chart's own tax
      accounts (GST Settings accounts, tax templates, tax withholding accounts), asking which accounts.
      Replace once. If an answer seems lost, check the company's accounts before calling again: a call

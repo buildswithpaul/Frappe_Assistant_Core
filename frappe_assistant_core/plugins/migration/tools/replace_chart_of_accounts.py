@@ -162,7 +162,7 @@ class ReplaceChartOfAccounts(BaseTool):
             "old_ids_kept": len(kept["written"]),
             "defaults_proposed": proposals,
             "message": _(
-                "{0} accounts removed, {1} created. The chart is in place. The company's default accounts are empty: show defaults_proposed on ONE card (each field with its suggested account first) and, with the user's choices, set them on the Company with update_document. Then ask what they want next; don't start another step."  # noqa: E501
+                "{0} accounts removed, {1} created. The chart is in place. The company's default accounts are empty: show defaults_proposed on ONE card (each field with its suggested account first; for one with change_type say 'change the account type from <from> to <to> and use it') and, with the user's choices, first change those accounts' type with update_document, then set them on the Company with update_document. Then ask what they want next; don't start another step."  # noqa: E501
             ).format(done["removed"], done["created"])
             + (
                 " "

@@ -1156,8 +1156,20 @@ def add_leaves_beside(
 #: those, and words in the name. Live, 2026-11-19: "Accumulated Depreciation Account" (an asset) was proposed
 #: for Depreciation Expense; ERPNext refused it twice and the chat searched 15 times.
 DEFAULT_FIELDS: Tuple[Tuple[str, Tuple[str, ...], str, Tuple[str, ...], str], ...] = (
-    ("default_receivable_account", ("Asset",), "Receivable", (), r"\b(debtors?|receivables?)\b"),
-    ("default_payable_account", ("Liability",), "Payable", (), r"\b(creditors?|payables?)\b"),
+    (
+        "default_receivable_account",
+        ("Asset",),
+        "Receivable",
+        (),
+        r"\b(debtors?|customers?|trade receivables?|accounts receivables?)\b",
+    ),
+    (
+        "default_payable_account",
+        ("Liability",),
+        "Payable",
+        (),
+        r"\b(creditors?|suppliers?|vendors?|trade payables?|accounts payables?)\b",
+    ),
     ("default_cash_account", (), "Cash", (), r"\bcash\b"),
     ("default_bank_account", (), "Bank", (), r"\bbank\b"),
     ("round_off_account", ("Expense", "Income"), "", ("Round Off",), r"\bround(ing)?[ -]?off\b|\brounding\b"),
@@ -1216,6 +1228,20 @@ def default_proposals(company: str) -> List[Dict[str, Any]]:
         ]
         named = [a.name for a in accepted if re.search(words, _key(a.account_name))]
         typed = [a.name for a in accepted if a.account_type in likely_types]
+        retype = None
+        if account_type and not named:
+            # live, 2026-11-19: the client's "Sundry Creditors" was typed Current Liability, so the first
+            # Payable ledger, "Gratuity Payable", was proposed. Offer the account the name says, retyped.
+            retype = next(
+                (
+                    a
+                    for a in ledgers
+                    if (not roots or a.root_type in roots)
+                    and a.account_type != account_type
+                    and re.search(words, _key(a.account_name))
+                ),
+                None,
+            )
         if account_type:
             choices = list(dict.fromkeys(named + [a.name for a in accepted]))
         else:
@@ -1226,6 +1252,18 @@ def default_proposals(company: str) -> List[Dict[str, Any]]:
             "suggested": choices[0] if choices else None,
             "choices": choices[:5],
         }
+        if retype:
+            entry["suggested"] = retype.name
+            entry["choices"] = [retype.name, *choices][:5]
+            entry["change_type"] = {
+                "account": retype.name,
+                "from": retype.account_type or "",
+                "to": account_type,
+                "note": _(
+                    "Its account type in the file is {0}; ERPNext takes only a {1} account here. Picked, change "
+                    "the account's type to {1} (update_document) before setting the default."
+                ).format(retype.account_type or _("none"), account_type),
+            }
         if not choices:
             entry["note"] = (
                 _("The new chart has no {0} account of type {1}: ask the user, or leave it empty.").format(

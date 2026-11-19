@@ -587,3 +587,32 @@ class TestChartCard(ChartCase):
         sent = self._run("import_chart_of_accounts", {"session": session, "company": self.company, "mode": "replace"})
         self.assertFalse(sent["success"])
         self.assertIn("replace_chart_of_accounts", sent["result"]["error"] if "result" in sent else sent["error"])
+
+
+    def test_a_supplier_account_of_the_wrong_type_is_offered_retyped_not_an_employees_payable(self):
+        # live, 2026-11-19: "Gratuity Payable" was proposed as the default payable; "Sundry Creditors" was typed
+        # Current Liability in the file
+        rows = [
+            "Client Assets,,,,,",
+            "Client Cash,1020,Client Assets,Cash,,",
+            "Client Liabilities,,,,,",
+            "Gratuity Payable,2050,Client Liabilities,Payable,,",
+            "Sundry Creditors,2100,Client Liabilities,Current Liability,,",
+        ]
+        session = self._chart(rows)
+        self._clear_references()
+        figures = import_chart.replace_figures(
+            self.company, import_chart.read_chart(frappe.get_doc("FAC Import Session", session))
+        )
+        done = self._run(
+            "replace_chart_of_accounts",
+            {"session": session, "company": self.company, "source_system": self.system, **{
+                k: figures[k] for k in ("accounts_removed", "accounts_created", "tax_setup_removed")
+            }},
+        )
+        self.assertTrue(done["success"], done)
+        payable = {p["field"]: p for p in done["result"]["defaults_proposed"]}.get("default_payable_account")
+        if payable:  # ERPNext may set it again itself from the new chart
+            creditors = f"2100 - Sundry Creditors - {self.abbr}"
+            self.assertEqual(payable["suggested"], creditors)
+            self.assertEqual((payable["change_type"]["from"], payable["change_type"]["to"]), ("Current Liability", "Payable"))
