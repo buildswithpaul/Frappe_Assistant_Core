@@ -574,3 +574,16 @@ class TestChartCard(ChartCase):
             self.assertEqual(depreciation["choices"], [f"5200 - Depreciation - {self.abbr}"])
         self.assertIsNone(proposed["write_off_account"]["suggested"])
         self.assertTrue(proposed["write_off_account"]["note"])
+
+    def test_the_cards_replace_names_its_own_tool_and_a_replace_mode_is_sent_there(self):
+        rows = ["Client Assets,,,,,", "Bank Account,,Client Assets,Bank,,", "HDFC,1010,Bank Account,Bank,,"]
+        session = self._chart(rows)
+        checked = self._check(session, company=self.company)
+
+        replace = next(c for q in checked["questions"] if q["kind"] == "mode" for c in q["choices"] if c["mode"] == "replace")
+        self.assertEqual(replace["tool"], "replace_chart_of_accounts")
+        self.assertEqual(replace["arguments"]["accounts_removed"], checked["modes"]["replace_figures"]["accounts_removed"])
+
+        sent = self._run("import_chart_of_accounts", {"session": session, "company": self.company, "mode": "replace"})
+        self.assertFalse(sent["success"])
+        self.assertIn("replace_chart_of_accounts", sent["result"]["error"] if "result" in sent else sent["error"])

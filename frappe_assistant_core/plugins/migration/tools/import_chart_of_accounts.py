@@ -45,6 +45,12 @@ def chart_card(out: Dict[str, Any], nodes, classes, company: str, pattern) -> No
         choices.append(
             {
                 "mode": "replace",
+                "tool": "replace_chart_of_accounts",
+                "arguments": {
+                    "accounts_removed": figures.get("accounts_removed"),
+                    "accounts_created": figures.get("accounts_created"),
+                    "tax_setup_removed": figures.get("tax_setup_removed") or 0,
+                },
                 "label": _("Replace: only the file's accounts"),
                 "effect": _(
                     "Deletes the company's {0} accounts and creates the file's {1}; removes {2} tax setup records."
@@ -67,12 +73,20 @@ def chart_card(out: Dict[str, Any], nodes, classes, company: str, pattern) -> No
                 pair["company_has"], pair["file_has"]
             )
         choices.append(
-            {"mode": "add", "label": _("Add: the file's accounts beside the company's"), "effect": effect}
+            {
+                "mode": "add",
+                "tool": "import_chart_of_accounts",
+                "arguments": {"mode": "add"},
+                "label": _("Add: the file's accounts beside the company's"),
+                "effect": effect,
+            }
         )
     if "map" in offered:
         choices.append(
             {
                 "mode": "map",
+                "tool": "import_chart_of_accounts",
+                "arguments": {"mode": "map"},
                 "label": _("Map: use the company's accounts, create nothing"),
                 "effect": _("{0} of the file's accounts match the company's; {1} match nothing.").format(
                     (out.get("map") or {}).get("matched"), (out.get("map") or {}).get("unmatched")
@@ -322,6 +336,16 @@ class ImportChartOfAccounts(BaseTool):
             (arguments.get("company") or "").strip(),
             arguments.get("mode"),
         )
+        if mode == "replace":
+            # live, 2026-11-19: the card's "replace" was sent here as a mode, and the user's choice was lost
+            return {
+                "success": False,
+                "error": _(
+                    "Replace is its own tool: call replace_chart_of_accounts with session, company and the "
+                    "figures of the check (modes.replace_figures: accounts_removed, accounts_created, "
+                    "tax_setup_removed). Nothing was changed."
+                ),
+            }
         if mode not in ("map", "add", "categories"):
             return {"success": False, "error": _("mode is map, add or categories.")}
         refused = company_refusal(company)

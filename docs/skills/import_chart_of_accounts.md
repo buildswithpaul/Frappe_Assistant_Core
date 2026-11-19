@@ -58,6 +58,8 @@ finds its accounts by the client's names and numbers.
      transactions, **map** is suggested and replace isn't offered (`modes.replace_refused` says why).
    - `doubtful`, `clean_names`, `categories`: the file's mismatched types, the other company's numbers and
      abbreviation, the categories to check; each with examples and its suggested answer.
+   Each mode choice names its `tool` and `arguments`: **replace is `replace_chart_of_accounts`**, never a
+   mode of `import_chart_of_accounts`.
    The user's answer on that card is their decision: call the tool straight away with the figures the
    check gave (replace: `accounts_removed`, `accounts_created`, `tax_setup_removed`).
 4. Do what the user picked:
