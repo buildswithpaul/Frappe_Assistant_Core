@@ -20,6 +20,117 @@ from frappe_assistant_core.utils.one_at_a_time import StillRunning, one_at_a_tim
 
 #: The client's accounts a check lists that match none of the company's, at most
 SHOWN = 100
+#: Accounts a reply names of those it created: a chart's 1,000 names made FAC Cloud set the reply aside and
+#: the chat read it back three times (live, 2026-11-19: 760 credits)
+CREATED_SHOWN = 10
+
+
+def mark_done(session_name: Optional[str]) -> None:
+    """The session of a chart put on a company is done: it said "Mapped" after the chart was in (live)."""
+    if session_name and frappe.db.exists(SESSION_DOCTYPE, session_name):
+        frappe.db.set_value(SESSION_DOCTYPE, session_name, "status", "Completed", update_modified=False)
+
+
+def chart_card(out: Dict[str, Any], nodes, classes, company: str, pattern) -> None:
+    """Every question of the check, for ONE card the user answers once (live, 2026-11-19: the chat asked
+    the company and the mode before checking, then a card, then replace again with its figures). The mode
+    is suggested from the company: a company with no transactions gets replace, with what add would leave
+    beside the file's accounts; replace's figures are on the card, so the user's answer is the approval."""
+    modes = out.get("modes") or {}
+    offered = modes.get("offered") or []
+    questions = []
+    choices = []
+    if "replace" in offered:
+        figures = modes.get("replace_figures") or {}
+        choices.append(
+            {
+                "mode": "replace",
+                "label": _("Replace: only the file's accounts"),
+                "effect": _(
+                    "Deletes the company's {0} accounts and creates the file's {1}; removes {2} tax setup records."
+                ).format(
+                    figures.get("accounts_removed"),
+                    figures.get("accounts_created"),
+                    figures.get("tax_setup_removed") or 0,
+                ),
+            }
+        )
+    if "add" in offered:
+        beside = import_chart.add_leaves_beside(company, nodes, classes)
+        out["add_leaves_beside"] = beside
+        effect = _("Adds the file's accounts and keeps the company's {0} other accounts beside them.").format(
+            beside["accounts_kept"]
+        )
+        if beside["look_alikes"]:
+            pair = beside["look_alikes"][0]
+            effect += " " + _("Some look alike, e.g. {0} and {1}.").format(
+                pair["company_has"], pair["file_has"]
+            )
+        choices.append(
+            {"mode": "add", "label": _("Add: the file's accounts beside the company's"), "effect": effect}
+        )
+    if "map" in offered:
+        choices.append(
+            {
+                "mode": "map",
+                "label": _("Map: use the company's accounts, create nothing"),
+                "effect": _("{0} of the file's accounts match the company's; {1} match nothing.").format(
+                    (out.get("map") or {}).get("matched"), (out.get("map") or {}).get("unmatched")
+                ),
+            }
+        )
+    if choices:
+        suggested = "replace" if "replace" in offered else ("map" if modes.get("replace_refused") else "add")
+        questions.append(
+            {
+                "id": "chart:mode",
+                "kind": "mode",
+                "choices": choices,
+                "suggested": suggested,
+                "why": _("{0} has no transactions: replace leaves exactly the file's chart.").format(company)
+                if suggested == "replace"
+                else (modes.get("replace_refused") or ""),
+            }
+        )
+    if out.get("doubtful"):
+        questions.append(
+            {
+                "id": "chart:doubtful",
+                "kind": "doubtful",
+                "message": _("{0} accounts have an account type that doesn't fit their root type.").format(
+                    len(out["doubtful"])
+                ),
+                "examples": out["doubtful"][:3],
+                "choices": [
+                    {"answer": "keep", "label": _("Keep them as the file has them")},
+                    {"answer": "fix_file", "label": _("Stop: I'll correct the file first")},
+                ],
+                "suggested": "keep",
+            }
+        )
+    if pattern:
+        question = names_question(pattern)
+        if question:
+            questions.append(question)
+    if out.get("categories_to_check_count"):
+        questions.append(
+            {
+                "id": "chart:categories",
+                "kind": "categories",
+                "message": _(
+                    "{0} ledgers only got their root type's usual Account Category (the line of the Schedule "
+                    "III / IFRS statements)."
+                ).format(out["categories_to_check_count"]),
+                "examples": out["categories_to_check"][:3],
+                "choices": [
+                    {"answer": "accept", "label": _("Use them; they can be changed later on the account")},
+                    {"answer": "review", "label": _("Show me the list first")},
+                ],
+                "suggested": "accept",
+            }
+        )
+    out["questions"] = questions
+    out["card_title"] = _("Chart of accounts: {0} accounts to {1}").format(len(nodes), company)
 
 
 def company_refusal(company: str) -> Optional[Dict[str, Any]]:
@@ -39,7 +150,14 @@ def prepared(session, arguments: Dict[str, Any], company: Optional[str] = None):
     nodes = import_chart.read_chart(session, arguments.get("root_type_column"), arguments.get("clean_names"))
     pattern = import_chart.name_pattern(nodes)
     if pattern and arguments.get("clean_names") is None:
-        raise import_chart.ChartProblem(names_question(pattern))
+        # asked once, on the check's card (names_question), never here
+        raise import_chart.ChartProblem(
+            _(
+                "The file's names carry another ERPNext company's account numbers or abbreviation: the user "
+                "answers that on the check's card (dry_run_import, names_question). Pass their answer as "
+                "clean_names; nothing was put on the company."
+            )
+        )
     if company:
         import_chart.apply_outside_parents(nodes, company)
     import_chart.apply_answers(nodes, arguments.get("classifications"))
@@ -60,8 +178,18 @@ def prepared(session, arguments: Dict[str, Any], company: Optional[str] = None):
     return nodes, classes
 
 
-def names_question(pattern: Dict[str, Any]) -> str:
-    """What FACO asks when the file's names carry another ERPNext company's account numbers or abbreviation."""
+def _clean_label(pattern: Dict[str, Any]) -> str:
+    """The suggested answer, said as what it does: the number moves to Account Number, ERPNext shows it."""
+    if pattern["names_with_number"] and pattern["abbreviation"]:
+        return _("Move the number to Account Number and remove {0}").format(pattern["abbreviation"])
+    if pattern["names_with_number"]:
+        return _("Move the number to Account Number")
+    return _("Remove {0}").format(pattern["abbreviation"])
+
+
+def names_question(pattern: Dict[str, Any]) -> Dict[str, Any]:
+    """The check's question when the file's names carry another ERPNext company's account numbers or
+    abbreviation, for one single-choice card: removing them is suggested, as ERPNext adds this company's own."""
     said = []
     if pattern["names_with_number"]:
         said.append(_("{0} names start with their account number").format(pattern["names_with_number"]))
@@ -71,16 +199,21 @@ def names_question(pattern: Dict[str, Any]) -> str:
                 pattern["names_with_abbreviation"], pattern["abbreviation"]
             )
         )
-    example = pattern["examples"][0] if pattern["examples"] else None
-    return _(
-        "The file's account names look like another ERPNext company's ({0}{1}). ERPNext adds this company's "
-        "number and abbreviation to every account itself, so kept as they are they would be doubled. Ask the "
-        "user once: remove them (clean_names true; a number taken off becomes the account number) or keep "
-        "the names as they are (clean_names false)."
-    ).format(
-        "; ".join(said),
-        _(', e.g. "{0}" becomes "{1}"').format(example["in_the_file"], example["cleaned"]) if example else "",
-    )
+    return {
+        "id": "chart:clean_names",
+        "kind": "clean_names",
+        "card": "ask_user single_select",
+        "message": _(
+            "The account names look like another ERPNext company's: {0}. ERPNext adds this company's own "
+            "number and abbreviation to every account, so kept as they are they would be doubled."
+        ).format("; ".join(said)),
+        "examples": pattern["examples"],
+        "choices": [
+            {"label": _clean_label(pattern), "clean_names": True},
+            {"label": _("Keep the names as they are"), "clean_names": False},
+        ],
+        "suggested": True,
+    }
 
 
 def source_system(session, arguments: Dict[str, Any]) -> str:
@@ -140,6 +273,8 @@ class ImportChartOfAccounts(BaseTool):
             "categories_not_found",
             "ledgers_without_category",
             "names_from_another_company",
+            "questions",
+            "add_leaves_beside",
             # named by the user or the file, not by FAC
             "source_system",
             "old_id_conflicts",
@@ -213,6 +348,13 @@ class ImportChartOfAccounts(BaseTool):
         except Exception as e:
             frappe.log_error(title=_("Import Chart Of Accounts Error"), message=frappe.get_traceback())
             return {"success": False, "error": exception_message(e)}
+        mark_done(name)
+        created = result.pop("created")
+        result["created_count"] = len(created)
+        result["created"] = created[:CREATED_SHOWN]  # a few names, never the whole chart
+        if isinstance(result.get("unmatched"), list):
+            result["unmatched_count"] = len(result["unmatched"])
+            result["unmatched"] = result["unmatched"][:SHOWN]
         return {
             "success": True,
             "company": company,
@@ -220,9 +362,14 @@ class ImportChartOfAccounts(BaseTool):
             "source_system": system,
             **result,
             "old_ids_kept": len(kept["written"]),
-            "old_id_conflicts": kept["conflicts"],
+            "old_id_conflicts": kept["conflicts"][:SHOWN],
             "old_id_systems": kept["systems"],
-            "message": _repeat_note(company, result) + _old_ids_message(len(result["created"]), system, kept),
+            "message": _repeat_note(company, result)
+            + _old_ids_message(result["created_count"], system, kept)
+            + " "
+            + _(
+                "The chart is in place: tell the user, and ask what they want next. Don't start another step."
+            ),
         }
 
     @staticmethod
@@ -282,7 +429,7 @@ class ImportChartOfAccounts(BaseTool):
 def _repeat_note(company: str, result: Dict[str, Any]) -> str:
     """Said when nothing was created because the file's accounts are on the company already: the chat
     called the tool again after an earlier call had added them (live, 2026-11-19: "0 created")."""
-    if result["created"] or not result.get("already_on_company"):
+    if result.get("created_count", len(result.get("created") or [])) or not result.get("already_on_company"):
         return ""
     return (
         _(
@@ -337,6 +484,8 @@ def check_chart(name: str, company: str, arguments: Dict[str, Any]) -> Dict[str,
             out["names_from_another_company"] = {**pattern, "cleaned": bool(arguments.get("clean_names"))}
             if arguments.get("clean_names") is None:
                 out["names_question"] = names_question(pattern)
+            else:
+                pattern = None  # answered: not asked again
         if company and import_chart.already_in_place(company, nodes):
             # Live, 2026-11-18: a chart the company already had was offered replace and add again
             out.update(
@@ -372,6 +521,7 @@ def check_chart(name: str, company: str, arguments: Dict[str, Any]) -> Dict[str,
                 "unmatched": len(proposal["unmatched"]),
                 "unmatched_accounts": proposal["unmatched"][:SHOWN],
             }
+            chart_card(out, nodes, classes, company, pattern)
         return out
     except frappe.DoesNotExistError:
         return {"success": False, "error": _("Import session '{0}' not found.").format(name)}

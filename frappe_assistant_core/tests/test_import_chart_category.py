@@ -50,6 +50,13 @@ CHART = [
     "Staff Costs,6100100,Expenses,,Expense,1,",
     "Salaries,6100110,Staff Costs,Expense Account,Expense,0,",
     "Bank Interest,6100200,Expenses,,Expense,0,",
+    "Direct Expenses,6200100,Expenses,,Expense,1,",
+    "Program Hall Hire,6200110,Direct Expenses,Expense Account,Expense,0,",
+    "Long Term Liabilities,3400100,Liabilities,,Liability,1,",
+    "Bank Overdraft,3400110,Long Term Liabilities,,Liability,0,",
+    "Interest Payable On Loan,3400120,Long Term Liabilities,,Liability,0,",
+    "Term Loan - SBI,3400130,Long Term Liabilities,,Liability,0,",
+    "Share Premium,4100200,Equity,,Equity,0,",
 ]
 
 
@@ -133,6 +140,24 @@ class TestChartCategories(ChartCase):
         self.assertEqual(classes["Share Capital"]["account_category"], "Share Capital")
         self.assertEqual(classes["Interest on FD"]["account_category"], "Investment Income")
         self.assertEqual(classes["Bank Interest"]["account_category"], "Finance Costs")
+
+    def test_a_group_called_direct_expenses_does_not_make_every_expense_a_direct_cost(self):
+        # live, Sambhav: the whole expense tree sat under "Direct Expenses": salaries and rent are not
+        classes = self._classes()
+
+        self.assertEqual(self._category(classes, "Program Hall Hire"), ("Operating Expenses", "account type"))
+
+    def test_an_overdraft_is_short_term_and_interest_owed_is_not_a_loan_wherever_they_sit(self):
+        classes = self._classes()
+
+        self.assertEqual(classes["Term Loan - SBI"]["account_category"], "Long-term Borrowings")
+        self.assertEqual(classes["Bank Overdraft"]["account_category"], "Short-term Borrowings")
+        self.assertEqual(classes["Interest Payable On Loan"]["account_category"], "Other Current Liabilities")
+
+    def test_share_premium_is_a_reserve(self):
+        classes = self._classes()
+
+        self.assertEqual(classes["Share Premium"]["account_category"], "Reserves and Surplus")
 
     def test_what_no_rule_places_gets_its_root_types_usual_line_and_is_listed_to_check(self):
         classes = self._classes()
@@ -240,6 +265,19 @@ class TestChartCategories(ChartCase):
         )
         self.assertEqual(left, [])
 
+    def test_categories_mode_leaves_a_frozen_account_as_it_is(self):
+        frappe.db.set_value("Account", {"company": self.company}, "account_category", None)
+        cash = frappe.db.get_value(
+            "Account", {"company": self.company, "account_type": "Cash", "is_group": 0}
+        )
+        frappe.db.set_value("Account", cash, "freeze_account", "Yes")
+
+        done = self._run("import_chart_of_accounts", {"company": self.company, "mode": "categories"})
+
+        self.assertTrue(done["success"], done)
+        self.assertFalse(frappe.db.get_value("Account", cash, "account_category"))
+        self.assertIn(cash, done["result"]["not_changed_frozen_or_not_allowed"])
+
     def test_categories_mode_again_sets_nothing(self):
         self._run("import_chart_of_accounts", {"company": self.company, "mode": "categories"})
 
@@ -318,13 +356,31 @@ class TestChartNamesFromAnotherCompany(ChartCase):
             ("CCBF", 6, 6, False),
         )
         self.assertIn({"in_the_file": "1000 - Assets - CCBF", "cleaned": "Assets"}, found["examples"])
-        self.assertIn("clean_names", checked["names_question"])
+        question = checked["names_question"]
+        self.assertEqual((question["kind"], question["suggested"]), ("clean_names", True))
+        self.assertEqual([c["clean_names"] for c in question["choices"]], [True, False])
+
+    def test_the_question_is_asked_on_the_check_only_and_not_again_once_answered(self):
+        checked = self._check(self._chart(CCBF_CHART), root_type_column="Root", clean_names=True)
+
+        self.assertNotIn("names_question", checked)
+        self.assertTrue(checked["names_from_another_company"]["cleaned"])
+        self.assertIn("Assets", [row["account"] for row in checked["outline"]])
 
     def test_numbers_alone_are_reported_too(self):
         checked = self._check(self._chart(NUMBERED_CHART), root_type_column="Root")
 
         found = checked["names_from_another_company"]
         self.assertEqual((found["abbreviation"], found["names_with_number"]), (None, 3))
+
+    def test_a_very_long_name_is_read_quickly_and_left_as_it_is(self):
+        import time
+
+        nodes = [{"raw_name": "x - " * 5000 + "y"}, {"raw_name": "A - B"}]
+        started = time.monotonic()
+
+        self.assertIsNone(import_chart.name_pattern(nodes))
+        self.assertLess(time.monotonic() - started, 1)
 
     def test_plain_names_are_not_reported(self):
         checked = self._check(self._chart())
@@ -335,7 +391,7 @@ class TestChartNamesFromAnotherCompany(ChartCase):
         done = self._add(self._chart(CCBF_CHART))
 
         self.assertFalse(done["success"])
-        self.assertIn("clean_names", done["error"])
+        self.assertIn("names_question", done["error"])
         self.assertFalse(
             frappe.db.exists("Account", {"company": self.company, "account_name": ["like", "%CCBF%"]})
         )
@@ -379,3 +435,84 @@ class TestChartNamesFromAnotherCompany(ChartCase):
         self.assertNotIn("2220200 - Cash - " + self.abbr, done["result"]["created"])
         self.assertEqual(frappe.db.count("Account", {"company": self.company, "account_name": "Cash"}), 1)
         self.assertTrue(cash)
+
+
+@unittest.skipUnless("erpnext" in frappe.get_installed_apps(), "needs ERPNext's Account and Company")
+class TestChartCard(ChartCase):
+    """The check gives every question for ONE card, the mode suggested from the company (live, 2026-11-19: the
+    chat asked the mode before checking, suggested add on a new company, then asked replace again)."""
+
+    def test_a_company_with_no_transactions_is_suggested_replace_with_what_add_would_leave(self):
+        rows = ["Client Assets,,,,,", "Bank Account,,Client Assets,Bank,,", "HDFC,1010,Bank Account,Bank,,"]
+        checked = self._check(self._chart(rows), company=self.company)
+
+        mode = next(q for q in checked["questions"] if q["kind"] == "mode")
+        self.assertEqual(mode["suggested"], "replace")
+        self.assertEqual([c["mode"] for c in mode["choices"]][:2], ["replace", "add"])
+        replace = mode["choices"][0]["effect"]
+        self.assertIn(str(checked["modes"]["replace_figures"]["accounts_removed"]), replace)
+        self.assertGreater(checked["add_leaves_beside"]["accounts_kept"], 0)
+        self.assertIn(
+            {"company_has": "Bank Accounts", "file_has": "Bank Account"},
+            checked["add_leaves_beside"]["look_alikes"],
+        )
+        self.assertTrue(checked["card_title"])
+
+    def test_a_company_with_transactions_is_suggested_map(self):
+        self._make_a_ledger_entry()
+        checked = self._check(self._chart(), company=self.company)
+
+        mode = next(q for q in checked["questions"] if q["kind"] == "mode")
+        self.assertEqual(mode["suggested"], "map")
+        self.assertNotIn("replace", [c["mode"] for c in mode["choices"]])
+
+    def test_the_names_question_is_on_the_same_card(self):
+        checked = self._check(self._chart(CCBF_CHART), company=self.company, root_type_column="Root")
+
+        kinds = [q["kind"] for q in checked["questions"]]
+        self.assertIn("clean_names", kinds)
+        names = next(q for q in checked["questions"] if q["kind"] == "clean_names")
+        self.assertEqual(names["choices"][0]["label"], "Move the number to Account Number and remove CCBF")
+
+    def test_add_marks_the_session_done(self):
+        session = self._chart()
+        done = self._run(
+            "import_chart_of_accounts",
+            {"session": session, "company": self.company, "mode": "add", "source_system": self.system},
+        )
+
+        self.assertTrue(done["success"], done)
+        self.assertEqual(frappe.db.get_value("FAC Import Session", session, "status"), "Completed")
+        self.assertIn("ask what they want next", done["result"]["message"])
+
+    def test_a_replace_proposes_the_default_accounts_it_left_empty(self):
+        rows = [
+            "Client Assets,,,,,",
+            "Client Debtors,,Client Assets,,,",
+            "Acme Customers,1100,Client Debtors,Receivable,,",
+            "Client Cash,1020,Client Assets,Cash,,",
+            "Client Liabilities,,,,,",
+            "Vendor Pool,2100,Client Liabilities,Payable,,",
+            "Client Expenses,,,,,",
+            "Round Off Ledger,5900,Client Expenses,,,",
+        ]
+        session = self._chart(rows)
+        self._clear_references()
+        figures = import_chart.replace_figures(
+            self.company, import_chart.read_chart(frappe.get_doc("FAC Import Session", session))
+        )
+        done = self._run(
+            "replace_chart_of_accounts",
+            {
+                "session": session,
+                "company": self.company,
+                "source_system": self.system,
+                **{k: figures[k] for k in ("accounts_removed", "accounts_created", "tax_setup_removed")},
+            },
+        )
+        self.assertTrue(done["success"], done)
+
+        proposed = {p["field"]: p for p in done["result"]["defaults_proposed"]}
+        self.assertIn("round_off_account", proposed)
+        self.assertEqual(proposed["round_off_account"]["suggested"], f"5900 - Round Off Ledger - {self.abbr}")
+        self.assertEqual(frappe.db.get_value("FAC Import Session", session, "status"), "Completed")

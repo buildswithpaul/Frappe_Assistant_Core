@@ -58,6 +58,7 @@ class ReplaceChartOfAccounts(BaseTool):
             "error",
             "source_system",
             "cash_mode_of_payment_account",  # an account named by the client's chart
+            "defaults_proposed",
         )
         self.inputSchema = {
             "type": "object",
@@ -150,13 +151,18 @@ class ReplaceChartOfAccounts(BaseTool):
         except Exception as e:
             frappe.log_error(title=_("Replace Chart Of Accounts Error"), message=frappe.get_traceback())
             return {"success": False, "error": exception_message(e)}
+        from frappe_assistant_core.plugins.migration.tools.import_chart_of_accounts import mark_done
+
+        mark_done(name)
+        proposals = import_chart.default_proposals(company)
         return {
             "success": True,
             **done,
             "source_system": system,
             "old_ids_kept": len(kept["written"]),
+            "defaults_proposed": proposals,
             "message": _(
-                "{0} accounts removed, {1} created. Set the default accounts listed in defaults_left_empty."
+                "{0} accounts removed, {1} created. The chart is in place. The company's default accounts are empty: show defaults_proposed on ONE card (each field with its suggested account first) and, with the user's choices, set them on the Company with update_document. Then ask what they want next; don't start another step."  # noqa: E501
             ).format(done["removed"], done["created"])
             + (
                 " "

@@ -47,7 +47,8 @@ class TestImportChart(ChartCase):
         _session, result = self._added()
 
         # Office Rent is in the standard chart too: the company's own account is kept
-        self.assertEqual(len(result["created"]), 12)
+        self.assertEqual(result["created_count"], 12)
+        self.assertEqual(len(result["created"]), 10)  # a few names, never the whole chart
         self.assertEqual(self._account("Office Rent").parent_account.startswith("Indirect Expenses"), True)
         banks = self._account("Client Banks")
         hdfc = self._account("HDFC Current")

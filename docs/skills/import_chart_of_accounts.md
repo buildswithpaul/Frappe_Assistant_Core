@@ -30,10 +30,12 @@ finds its accounts by the client's names and numbers.
      company's new top-level account. Say so before the user picks.
    - `names_from_another_company`: the file's names carry another ERPNext company's account numbers
      and/or abbreviation ("141600 - State Bank of India - CCBF", or "2210100 - Current Assets"). ERPNext
-     adds this company's own to every account, so kept as they are they would be doubled. Show 2-3
-     `examples` and ask the user once: **remove them** (`clean_names: true`; the number taken off becomes
-     the account number) or **keep the names as they are** (`clean_names: false`). Pass the answer inside
-     `chart` on the next check and to the import or replace. Nothing is put on the company until they answer.
+     adds this company's own to every account, so kept as they are they would be doubled. Ask it on the **same
+     one card** of step 3 (its `clean_names` question; `names_question` gives
+     the message, the `examples` (show 2-3 as "in the file → cleaned") and the two `choices`, **Remove
+     them** first (suggested; the number taken off becomes the account number) and **Keep the names as
+     they are**. Pass the answer as `clean_names` inside `chart` on the next check and to the import or
+     replace. Don't ask it again later: an import without the answer is refused and points back here.
    - **Account Category** (ERPNext v16 only; the check has `by_category` then). It is the line of the
      Schedule III / IFRS Balance Sheet and P&L each account goes on; ERPNext reads it from ledgers only.
      Every ledger gets one: the file's own column, then ERPNext's own account of that name, words in the
@@ -44,10 +46,18 @@ finds its accounts by the client's names and numbers.
      lists categories in the file the site doesn't have.
    - `already_in_place`: the company has this chart already. Say so and stop; there is nothing to
      offer.
-3. Say which modes the company allows (`modes`). **map** is the default when the company has transactions,
-   **add** otherwise; **replace** is offered only for a company with no ledger entries, no submitted
-   documents and nothing else pointing at its accounts, and `modes.replace_refused` says why otherwise.
-4. Do what the user picks:
+3. **Ask once, on ONE card** (`ask_user`, one `single_select` per entry of `questions`, the `suggested`
+   answer first). Don't ask the company or the mode before the check, and ask nothing again after the card.
+   The card's title is `card_title`; each choice shows its `effect`.
+   - `mode`: replace / add / map with what each does. A company with no transactions is suggested
+     **replace** (the file's chart and nothing else); add's effect says how many of the company's own
+     accounts it keeps beside the file's, with look-alikes ("Bank Accounts" and "Bank Account"). With
+     transactions, **map** is suggested and replace isn't offered (`modes.replace_refused` says why).
+   - `doubtful`, `clean_names`, `categories`: the file's mismatched types, the other company's numbers and
+     abbreviation, the categories to check; each with examples and its suggested answer.
+   The user's answer on that card is their decision: call the tool straight away with the figures the
+   check gave (replace: `accounts_removed`, `accounts_created`, `tax_setup_removed`).
+4. Do what the user picked:
    - **map**: `import_chart_of_accounts(mode="map")`. The client's accounts that match the company's become
      those accounts; nothing is created. List what matched nothing (`unmatched`) and ask: add them
      (`add_unmatched`) or map them by hand.
@@ -65,7 +75,8 @@ finds its accounts by the client's names and numbers.
      those, or picks add.
      A mode of payment on the company's default cash account is not refused: ERPNext sets one up for every
      new company, and the replace moves it to the new chart's cash ledger (`cash_mode_of_payment_account`).
-     Afterwards set the default accounts listed in `defaults_left_empty` (Company settings), and, when
+     Afterwards show `defaults_proposed` on ONE card (each default field, its `suggested` account first,
+     the other `choices` below) and set the user's picks on the Company with `update_document`; and, when
      `tax_setup_removed` is there, help the user set the tax setup up again on the new chart's own tax
      accounts (GST Settings accounts, tax templates, tax withholding accounts), asking which accounts.
      Replace once. If an answer seems lost, check the company's accounts before calling again: a call
@@ -95,6 +106,10 @@ finds its accounts by the client's names and numbers.
   step is still running from your earlier call: nothing failed and nothing was started again. Don't tell
   the user it failed, and don't run another chart tool on that company: wait a minute and call the same
   tool once more with the same arguments; once the earlier run has finished, that call says what it did.
+- The reply gives `created_count` and only a few `created` names: say the count. Never try to read
+  back a full list of accounts.
+- When the chart is in, say so and ask what the user wants next. Don't start opening balances or any other
+  step on your own: a "go ahead" after the chart is not a request for the next step.
 - An add that answers `already_on_company` with nothing `created` found the file's accounts in place: an
   earlier call added them. Say the chart is in place (how many accounts), not that nothing was added.
 - When the file has a "Root Type" column, it is read even if you don't pass `root_type_column`; pass it

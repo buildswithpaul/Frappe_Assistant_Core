@@ -114,7 +114,20 @@ def _truthy(value: Any) -> Optional[bool]:
 #: "141600 - State Bank of India": the account number in front of the name, as ERPNext names an account
 NUMBER_PREFIX = re.compile(r"^(\d[\d./-]*)\s+-\s+(\S.*)$")
 #: "State Bank of India - CCBF": the company's abbreviation after the name, as ERPNext names an account
-ABBR_SUFFIX = re.compile(r"^(\S.*?)\s+-\s+([A-Za-z0-9&.]{1,10})$")
+ABBR = re.compile(r"[A-Za-z0-9&.]{1,10}")
+#: ERPNext's longest account name: a longer cell isn't one of its names
+NAME_LENGTH = 140
+
+
+def _abbr_of(name: str) -> Optional[str]:
+    """The abbreviation after the last " - " of ``name``, or None (split, not matched: a name is file text)."""
+    if len(name) > NAME_LENGTH or " - " not in name:
+        return None
+    head, tail = name.rsplit(" - ", 1)
+    tail = tail.strip()
+    return tail if head.strip() and ABBR.fullmatch(tail) else None
+
+
 #: Share of the file's names that must end in one abbreviation for it to be the other company's
 ABBR_SHARE = 0.6
 
@@ -123,6 +136,8 @@ def _split_name(text: Any, abbr: Optional[str], numbered: bool) -> Tuple[str, st
     """``text`` without the other company's abbreviation at its end and, when ``numbered``, without the
     account number in front: (name, number)."""
     text = cstr(text).strip()
+    if len(text) > NAME_LENGTH:
+        return text, ""
     if abbr and text.endswith(f" - {abbr}"):
         text = text[: -len(abbr) - 3].strip()
     found = NUMBER_PREFIX.match(text) if numbered else None
@@ -140,9 +155,9 @@ def name_pattern(nodes: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     names = [n["raw_name"] for n in nodes]
     tails: Dict[str, int] = {}
     for name in names:
-        found = ABBR_SUFFIX.match(name)
-        if found:
-            tails[found.group(2)] = tails.get(found.group(2), 0) + 1
+        tail = _abbr_of(name)
+        if tail:
+            tails[tail] = tails.get(tail, 0) + 1
     abbr, with_abbr = max(tails.items(), key=lambda kv: kv[1]) if tails else (None, 0)
     if with_abbr < max(2, len(names) * ABBR_SHARE):
         abbr, with_abbr = None, 0
@@ -467,7 +482,12 @@ _TAX = r"\b(gst|igst|cgst|sgst|utgst|tds|tcs|vat|tax|taxes|cenvat|cess|duties)\b
 #: interest accrued on one is a current asset.
 CATEGORY_WORDS: Tuple[Tuple[str, str, str, Optional[str]], ...] = (
     (r"\bdeferred tax", "Asset", "Deferred Tax Assets", None),
-    (r"\bcapital work[ -]in[ -]progress\b|\bcwip\b", "Asset", "Capital Work in Progress", None),
+    (
+        r"\bcapital work[ -]in[ -]progress\b|\bcwip\b|\bcapital w\.?i\.?p\b",
+        "Asset",
+        "Capital Work in Progress",
+        None,
+    ),
     (r"\bintangible assets? under development\b", "Asset", "Intangible Assets Under Development", None),
     (
         r"\bintangible|\bgoodwill\b|\bsoftware\b|\bpatents?\b|\btrade ?marks?\b",
@@ -509,8 +529,12 @@ CATEGORY_WORDS: Tuple[Tuple[str, str, str, Optional[str]], ...] = (
     (r"\bdeferred tax", "Liability", "Deferred Tax Liabilities", None),
     (_TAX, "Liability", "Current Tax Liabilities", None),
     (r"\bprovisions?\b", "Liability", "Short-term Provisions", "Long-term Provisions"),
+    # an overdraft is repayable on demand wherever the file puts it
+    (r"\b(overdrafts?|od|cash credit)\b", "Liability", "Short-term Borrowings", None),
+    # interest owed on a loan is not the loan
+    (r"\binterest\b.*\b(payable|accrued|due)\b", "Liability", "Other Current Liabilities", None),
     (
-        r"\b(loans?|borrowings?|overdrafts?|od|cash credit|debentures?)\b",
+        r"\b(loans?|borrowings?|debentures?)\b",
         "Liability",
         "Short-term Borrowings",
         "Long-term Borrowings",
@@ -521,7 +545,7 @@ CATEGORY_WORDS: Tuple[Tuple[str, str, str, Optional[str]], ...] = (
     (r"\bshare application\b", "Equity", "Share Application Money Pending Allotment", None),
     (r"\bshare warrants?\b", "Equity", "Money Received Against Share Warrants", None),
     (
-        r"\b(reserves?|surplus|retained|profit (and|&) loss|drawings?)\b",
+        r"\b(reserves?|surplus|retained|premium|profit (and|&) loss|drawings?)\b",
         "Equity",
         "Reserves and Surplus",
         None,
@@ -536,10 +560,9 @@ CATEGORY_WORDS: Tuple[Tuple[str, str, str, Optional[str]], ...] = (
     ),
     (r"\b(sales?|revenue|turnover|operations)\b", "Income", "Revenue from Operations", None),
     (r"\bdeferred tax", "Expense", "Deferred Tax Expense", None),
-    (r"\b(income tax|current tax|tax expenses?)\b", "Expense", "Tax Expense", None),
+    (r"\b(income tax|current tax|tax expenses?|taxation)\b", "Expense", "Tax Expense", None),
     (r"\b(interest|finance (costs?|charges)|bank charges)\b", "Expense", "Finance Costs", None),
     (r"\b(cost of (goods|sales)|cogs|purchases?|consum(ed|ption))\b", "Expense", "Cost of Goods Sold", None),
-    (r"\bdirect (expenses?|costs?)\b", "Expense", "Other Direct Costs", None),
 )
 
 #: A ledger's account type: its category, by root type
@@ -725,6 +748,7 @@ def fill_categories(company: str) -> Dict[str, Any]:
             "root_type",
             "account_type",
             "account_category",
+            "freeze_account",
         ],
         order_by="lft",
     )
@@ -745,8 +769,14 @@ def fill_categories(company: str) -> Dict[str, Any]:
     updates: Dict[str, Dict[str, str]] = {}
     by_category: Dict[str, int] = {}
     to_check: List[Dict[str, Any]] = []
+    skipped: List[str] = []
     for r, c in zip(rows, classes):
         if r.account_category or not c["account_category"]:
+            continue
+        # the whole tree is read to follow the groups, but only what the user may edit is written, and
+        # never a frozen account (ERPNext keeps those as they are)
+        if r.freeze_account == "Yes" or not frappe.has_permission(ACCOUNT, "write", doc=r.name):
+            skipped.append(r.name)
             continue
         updates[r.name] = {"account_category": c["account_category"]}
         if not r.is_group:
@@ -760,13 +790,14 @@ def fill_categories(company: str) -> Dict[str, Any]:
     return {
         "categories_set": len(updates),
         "categories_kept": sum(1 for r in rows if r.account_category),
+        "not_changed_frozen_or_not_allowed": skipped[:CATEGORIES_SHOWN],
         "by_category": by_category,
         "categories_to_check": to_check[:CATEGORIES_SHOWN],
         "categories_to_check_count": len(to_check),
         "ledgers_without_category": [
             r.name
             for r, c in zip(rows, classes)
-            if not r.is_group and not (r.account_category or c["account_category"])
+            if not r.is_group and not r.account_category and r.name not in updates
         ][:CATEGORIES_SHOWN],
     }
 
@@ -1079,6 +1110,95 @@ def map_proposal(nodes: List[Dict[str, Any]], classes: List[Dict[str, Any]], com
             {"row": n["row"], "account": n["name"], "parent": n["parent_name"] or None} for n in still
         ],
     }
+
+
+def _look(text: Any) -> str:
+    """A name with case, punctuation and plural endings left out: "Bank Accounts" and "Bank Account" look alike."""
+    words = re.findall(r"[a-z0-9]+", _key(text))
+    return " ".join(w[:-1] if len(w) > 3 and w.endswith("s") else w for w in words)
+
+
+def add_leaves_beside(
+    company: str, nodes: List[Dict[str, Any]], classes: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """What an add keeps of the company's own accounts beside the file's: the ones no account of the file is
+    (by name or number), and those that look like one of the file's under another name. Live, 2026-11-19:
+    an add on a new company kept ERPNext's 95 accounts, "Bank Accounts" beside the file's "Bank Account",
+    and the user then asked for replace."""
+    used = set()
+    for node in nodes:
+        found = _existing(company, node, classes[node["index"]])
+        if found:
+            used.add(found)
+    own = frappe.get_all(
+        ACCOUNT, filters={"company": company}, fields=["name", "account_name", "is_group"], order_by="lft"
+    )
+    kept = [a for a in own if a.name not in used]
+    file_looks = {}
+    for node in nodes:
+        file_looks.setdefault(_look(node["name"]), node["name"])
+    look_alikes = []
+    for a in kept:
+        twin = file_looks.get(_look(a.account_name))
+        if twin and _key(twin) != _key(a.account_name):
+            look_alikes.append({"company_has": a.account_name, "file_has": twin})
+    return {
+        "accounts_kept": len(kept),
+        "look_alikes": look_alikes[:5],
+        "examples": [a.account_name for a in kept if a.is_group][:5],
+    }
+
+
+#: Company default-account fields a chart replace leaves empty, and how to find the account for each: the
+#: account types (ledgers), then words in the name
+DEFAULT_FIELDS: Tuple[Tuple[str, Tuple[str, ...], str], ...] = (
+    ("default_receivable_account", ("Receivable",), r"\b(debtors?|receivables?)\b"),
+    ("default_payable_account", ("Payable",), r"\b(creditors?|payables?)\b"),
+    ("default_cash_account", ("Cash",), r"\bcash\b"),
+    ("default_bank_account", ("Bank",), r"\bbank\b"),
+    ("round_off_account", ("Round Off",), r"\bround(ing)?[ -]?off\b|\brounding\b"),
+    ("write_off_account", (), r"\bwrite[ -]?off\b"),
+    ("exchange_gain_loss_account", (), r"\bexchange (gain|loss)|\bforex\b"),
+    ("default_income_account", ("Income Account", "Direct Income"), r"\b(sales|revenue)\b"),
+    ("default_expense_account", ("Cost of Goods Sold",), r"\bcost of (goods|sales)\b"),
+    ("depreciation_expense_account", ("Depreciation",), r"\bdepreciation\b"),
+    ("accumulated_depreciation_account", ("Accumulated Depreciation",), r"\baccumulated depreciation\b"),
+    ("stock_received_but_not_billed", ("Stock Received But Not Billed",), r"\breceived but not billed\b"),
+    ("default_inventory_account", ("Stock",), r"\b(stock in hand|inventory)\b"),
+    ("stock_adjustment_account", ("Stock Adjustment",), r"\bstock adjustment\b"),
+)
+
+
+def default_proposals(company: str) -> List[Dict[str, Any]]:
+    """For each empty default-account field of the company that a chart usually has an account for, the
+    ledgers that fit (its account types first, then words in the name), the likeliest first. After a replace
+    (live: "the default account settings are now empty") FACO puts them on one card for the user to pick."""
+    meta = frappe.get_meta("Company")
+    ledgers = frappe.get_all(
+        ACCOUNT,
+        filters={"company": company, "is_group": 0, "disabled": 0},
+        fields=["name", "account_name", "account_type", "root_type"],
+        order_by="lft",
+    )
+    out = []
+    for field, types, words in DEFAULT_FIELDS:
+        df = meta.get_field(field)
+        if not df or frappe.db.get_value("Company", company, field):
+            continue
+        by_type = [a.name for a in ledgers if a.account_type in types]
+        by_name = [
+            a.name for a in ledgers if re.search(words, _key(a.account_name)) and a.name not in by_type
+        ]
+        choices = (by_type + by_name)[:5]
+        out.append(
+            {
+                "field": field,
+                "label": _(df.label),
+                "suggested": choices[0] if choices else None,
+                "choices": choices,
+            }
+        )
+    return out
 
 
 # -- add and map ---------------------------------------------------------------------------------------
