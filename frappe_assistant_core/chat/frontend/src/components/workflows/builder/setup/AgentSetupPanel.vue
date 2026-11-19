@@ -8,46 +8,48 @@
 			<button type="button" class="panel-close" :aria-label="__('Close')" @click="$emit('close')">×</button>
 		</header>
 
-		<ul class="panel-body">
-			<SetupItem v-for="item in items" :key="item.key" :item="item" :show-detail="showDetail(item)">
-				<SetupRunsAs
-					v-if="item.key === 'runs_as'"
-					:user-id="workflow?.default_user_id || ''"
-					:current-user="currentUser"
-					:saving="saving"
-					@save="(user) => $emit('save-settings', { default_user_id: user })"
-				/>
-				<SetupWhenItRuns
-					v-else-if="item.key === 'start'"
-					:schedule="schedule"
-					:triggers="triggers"
-					:status="status"
-					:saving="saving"
-					@save-schedule="(config) => $emit('save-schedule', config)"
-					@open-triggers="$emit('open-triggers')"
-				/>
-				<SetupWriteTools
-					v-else-if="item.key === 'writes' && item.state !== 'ok'"
-					:warnings="warnings"
-					:current-user="currentUser"
-					:stuck="stuckTools"
-					:note="writeNote"
-					:busy="busy"
-					@allow="(w) => $emit('allow-tool', w)"
-					@recheck="$emit('recheck')"
-				/>
-				<SetupModel
-					v-else-if="item.key === 'model'"
-					:model-id="workflow?.default_model_id || ''"
-					:models="models"
-					:saving="saving"
-					@save="(id) => $emit('save-settings', { default_model_id: id })"
-				/>
-			</SetupItem>
-		</ul>
-		<button type="button" class="advanced-link" data-test="open-advanced" @click="$emit('open-advanced')">
-			{{ __("Advanced settings: failure handling, timeouts, retries") }}
-		</button>
+		<div class="panel-body">
+			<ul>
+				<SetupItem v-for="item in items" :key="item.key" :item="item" :show-detail="showDetail(item)">
+					<SetupRunsAs
+						v-if="item.key === 'runs_as'"
+						:user-id="workflow?.default_user_id || ''"
+						:current-user="currentUser"
+						:saving="saving"
+						@save="(user) => $emit('save-settings', { default_user_id: user })"
+					/>
+					<SetupWhenItRuns
+						v-else-if="item.key === 'start'"
+						:schedule="schedule"
+						:triggers="triggers"
+						:status="status"
+						:saving="saving"
+						@save-schedule="(config) => $emit('save-schedule', config)"
+						@open-triggers="$emit('open-triggers')"
+					/>
+					<SetupWriteTools
+						v-else-if="item.key === 'writes' && item.state !== 'ok'"
+						:warnings="warnings"
+						:current-user="currentUser"
+						:stuck="stuckTools"
+						:note="writeNote"
+						:busy="busy"
+						@allow="(w) => $emit('allow-tool', w)"
+						@recheck="$emit('recheck')"
+					/>
+					<SetupModel
+						v-else-if="item.key === 'model'"
+						:model-id="workflow?.default_model_id || ''"
+						:models="models"
+						:saving="saving"
+						@save="(id) => $emit('save-settings', { default_model_id: id })"
+					/>
+				</SetupItem>
+			</ul>
+			<button type="button" class="advanced-link" data-test="open-advanced" @click="$emit('open-advanced')">
+				{{ __("Advanced settings: failure handling, timeouts, retries") }}
+			</button>
+		</div>
 
 		<footer v-if="!isLive && status !== 'Archived'" class="panel-footer">
 			<button
@@ -146,11 +148,14 @@ const showDetail = (item) => item.key !== "start" && !(item.key === "writes" && 
 }
 .panel-body {
 	flex: 1;
+	display: flex;
+	flex-direction: column;
 	overflow-y: auto;
 	padding: 0 1rem;
 }
 .advanced-link {
-	margin: 0 1rem 0.75rem;
+	align-self: flex-start;
+	margin: 0.25rem 0 0.75rem;
 	padding: 0;
 	font-size: 0.6875rem;
 	color: var(--ql-text-muted);
