@@ -63,6 +63,9 @@ finds its accounts by the client's names and numbers.
 
 ## Rules
 
+- The company is the user's choice. If they didn't name it: with one company on the site, say which one
+  you will use before the check; with several, ask which one first. Never guess or pick one yourself.
+
 - Never guess an account's root type: an account the rules can't place is asked about.
 - Never replace on a company with transactions, whatever the user says: map or add.
 - A chart is not designed in chat: restructuring an existing one is an accountant's job.
