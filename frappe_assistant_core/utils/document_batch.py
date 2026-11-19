@@ -183,8 +183,9 @@ def _refuse_one_at_a_time(documents: List[Dict[str, Any]], with_name: bool) -> N
         raise BatchProblem(
             _(
                 "Nothing was written. Customisations and records that change the database schema "
-                "can't be in documents: make each of these on its own, with {0}, one call each. "
-                "The other records may still go as a list."
+                "can't be in documents: make each of these on its own, with {0}, one call each, all "
+                "sent together in the same message: the user approves them on one card. The other "
+                "records may still go as a list."
             ).format(inputs),
             problems,
             error_type="one_at_a_time",

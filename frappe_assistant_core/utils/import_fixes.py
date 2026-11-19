@@ -2163,9 +2163,9 @@ CARD_HOW = (
     "Show this card now as ONE ask_user card: every question as a single_select, its recommended option "
     "pre-selected, its title and result as the description. Don't decide, summarise or leave out any question, "
     "and don't print the mapping table. When the user answers, don't ask again: tell them in one line what "
-    "you'll do, then do it in this order, with a short line after each step: 1) custom_fields: one "
-    "create_document call per field (doctype Custom Field), ALL sent together in one message so the user approves "
-    "them on one card (never in records or documents), then set_column_mapping for those columns; 2) records to create in one create_document call with import_session (create_all's "
+    "you'll do, then do it in this order, with a short line after each step: 1) the columns option's calls: "
+    "each its own create_document call (never a list: records and documents refuse a Custom Field), ALL sent "
+    "together in one message so the user approves them on one card, then set_column_mapping for those columns; 2) records to create in one create_document call with import_session (create_all's "
     "planned_masters with the chosen shared values, or the chosen options' create as documents); 3) one "
     "dry_run_import with every chosen option's fixes; 4) if it is ready, start_import. An option with "
     "fix_in_file: tell the user what to correct and stop."
@@ -2494,13 +2494,20 @@ def _columns_question(session) -> Optional[Dict[str, Any]]:
                 "label": _("Create a text field on {0} for each, and import them").format(_(doctype)),
                 "effect": _("{0} new fields on the {1} form; their values come in.").format(len(left), _(doctype)),
                 "recommended": True,
-                "custom_fields": [
-                    {"doctype": "Custom Field", "data": {"dt": doctype, "label": heading, "fieldtype": "Data"}}
+                "calls": [
+                    {
+                        "tool": "create_document",
+                        "arguments": {
+                            "doctype": "Custom Field",
+                            "data": {"dt": doctype, "label": heading, "fieldtype": "Data"},
+                        },
+                    }
                     for heading in left
                 ],
                 "then": _(
-                    "one create_document call per field (doctype Custom Field), all sent together in one message so "
-                    "the user approves them on one card; then map every column to its new field with set_column_mapping"
+                    "make each of calls as its own create_document call (live: a list of them was refused), all "
+                    "sent together in one message so the user approves them on one card; then map every column to "
+                    "its new field with set_column_mapping"
                 ),
             },
             {
