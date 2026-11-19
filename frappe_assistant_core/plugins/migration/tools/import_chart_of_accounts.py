@@ -461,10 +461,12 @@ def _old_ids_message(created: int, system: str, kept: Dict[str, Any]) -> str:
 def check_chart(name: str, company: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """What the chart would become: read from the session, nothing written. dry_run_import's chart
     check."""
-    if not company:
-        # nothing to ask on a site of one company
-        only = frappe.get_list("Company", pluck="name", limit=2)
-        company = only[0] if len(only) == 1 else ""
+    companies = frappe.get_list("Company", pluck="name", order_by="name")
+    if company and not frappe.db.exists("Company", company):
+        # live, 2026-11-19: "(site's only company)" was passed as the name; the check failed, nothing shown
+        company = ""
+    if not company and len(companies) == 1:
+        company = companies[0]  # nothing to ask on a site of one company
     refused = company_refusal(company) if company else None
     if refused:
         return refused
@@ -522,6 +524,21 @@ def check_chart(name: str, company: str, arguments: Dict[str, Any]) -> Dict[str,
                 "unmatched_accounts": proposal["unmatched"][:SHOWN],
             }
             chart_card(out, nodes, classes, company, pattern)
+        else:
+            # several companies and none named: the check still shows the chart; the card asks the company
+            # first, and the next check, with it, gives the rest of the card
+            out["questions"] = [
+                {
+                    "id": "chart:company",
+                    "kind": "company",
+                    "message": _("Which company is this chart for?"),
+                    "choices": companies,
+                    "suggested": None,
+                }
+            ]
+            if pattern and arguments.get("clean_names") is None:
+                out["questions"].append(names_question(pattern))
+            out["card_title"] = _("Chart of accounts: {0} accounts").format(len(nodes))
         return out
     except frappe.DoesNotExistError:
         return {"success": False, "error": _("Import session '{0}' not found.").format(name)}

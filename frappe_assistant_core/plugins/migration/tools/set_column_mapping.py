@@ -220,6 +220,15 @@ class SetColumnMapping(BaseTool):
 
             schema = build_import_schema(target)
             existing = session_mapping(doc) if target == current_target else {}
+            if target == "Account" and isinstance(mapping, dict):
+                # Root Type is read-only on Account, so it can't be mapped; the chart import reads its
+                # column by its heading. Live, 2026-11-19: FACO mapped it, the call failed and was made again.
+                mapping = {
+                    column: (
+                        DONT_IMPORT if str(field).strip().lower() in ("root_type", "root type") else field
+                    )
+                    for column, field in mapping.items()
+                }
             resolved, problems = resolve_mapping(target, schema, headers, mapping)
             merged = {**existing, **resolved}
             problems += duplicate_targets(merged, headers)

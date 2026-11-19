@@ -13,7 +13,10 @@ finds its accounts by the client's names and numbers.
 
 1. Open the file (`start_import_session`) and map its columns to Account fields with `set_column_mapping`
    (DocType Account): Account Name, Parent Account, and where the file has them Account Number, Root Type,
-   Account Type, Is Group, and on ERPNext v16 Account Category. A Tally export of groups and ledgers is one
+   Account Type, Is Group, and on ERPNext v16 Account Category. With headings like these, map them yourself
+   without asking the user to confirm, and go straight to the check: the check's card is the one question.
+   Root Type is read from its column by the check (mapping it is fine, it is read either way). Don't open
+   the session again. A Tally export of groups and ledgers is one
    sheet with the group as the parent.
 2. `dry_run_import(session, chart={"company": ...})`: the chart's check. It writes nothing and asks no approval. Show the tree's top levels, the counts, and what each
    account is proposed to be (root type, account type, and where that came from: the file's own column,
@@ -92,8 +95,9 @@ finds its accounts by the client's names and numbers.
 
 ## Rules
 
-- The company is the user's choice. If they didn't name it: with one company on the site, say which one
-  you will use before the check; with several, ask which one first. Never guess or pick one yourself.
+- The company is the user's choice. If they didn't name it, run the check without `company` (never a
+  placeholder): with one company on the site the check uses it (say which); with several, the card's first
+  question is `company`. Never guess or pick one yourself.
 
 - Never guess an account's root type: an account the rules can't place is asked about.
 - Never remove or keep another company's numbers and abbreviation in the names without asking the user.

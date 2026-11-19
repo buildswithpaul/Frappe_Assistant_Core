@@ -516,3 +516,29 @@ class TestChartCard(ChartCase):
         self.assertIn("round_off_account", proposed)
         self.assertEqual(proposed["round_off_account"]["suggested"], f"5900 - Round Off Ledger - {self.abbr}")
         self.assertEqual(frappe.db.get_value("FAC Import Session", session, "status"), "Completed")
+
+    def test_with_several_companies_and_none_named_the_card_asks_the_company_first(self):
+        checked = self._check(self._chart(), company="(site's only company)")
+
+        self.assertTrue(checked["accounts"])
+        question = checked["questions"][0]
+        self.assertEqual(question["kind"], "company")
+        self.assertIn(self.company, question["choices"])
+
+    def test_a_root_type_column_mapped_on_account_is_read_not_refused(self):
+        content = "Name,Parent,Root Type\nClient Assets,,Asset\nHDFC,Client Assets,Asset\n"
+        started = self._run(
+            "start_import_session", {"file_url": self._file("rt.csv", content.encode()).file_url}
+        )
+        mapped = self._run(
+            "set_column_mapping",
+            {
+                "session": started["result"]["session_id"],
+                "doctype": "Account",
+                "mapping": {"Name": "account_name", "Parent": "parent_account", "Root Type": "root_type"},
+            },
+        )
+
+        self.assertTrue(mapped["success"], mapped)
+        nodes = import_chart.read_chart(frappe.get_doc("FAC Import Session", started["result"]["session_id"]))
+        self.assertEqual(nodes[0]["root_type"], "Asset")
