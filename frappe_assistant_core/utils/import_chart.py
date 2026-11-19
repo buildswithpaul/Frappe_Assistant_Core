@@ -1151,30 +1151,52 @@ def add_leaves_beside(
     }
 
 
-#: Company default-account fields a chart replace leaves empty, and how to find the account for each: the
-#: account types (ledgers), then words in the name
-DEFAULT_FIELDS: Tuple[Tuple[str, Tuple[str, ...], str], ...] = (
-    ("default_receivable_account", ("Receivable",), r"\b(debtors?|receivables?)\b"),
-    ("default_payable_account", ("Payable",), r"\b(creditors?|payables?)\b"),
-    ("default_cash_account", ("Cash",), r"\bcash\b"),
-    ("default_bank_account", ("Bank",), r"\bbank\b"),
-    ("round_off_account", ("Round Off",), r"\bround(ing)?[ -]?off\b|\brounding\b"),
-    ("write_off_account", (), r"\bwrite[ -]?off\b"),
-    ("exchange_gain_loss_account", (), r"\bexchange (gain|loss)|\bforex\b"),
-    ("default_income_account", ("Income Account", "Direct Income"), r"\b(sales|revenue)\b"),
-    ("default_expense_account", ("Cost of Goods Sold",), r"\bcost of (goods|sales)\b"),
-    ("depreciation_expense_account", ("Depreciation",), r"\bdepreciation\b"),
-    ("accumulated_depreciation_account", ("Accumulated Depreciation",), r"\baccumulated depreciation\b"),
-    ("stock_received_but_not_billed", ("Stock Received But Not Billed",), r"\breceived but not billed\b"),
-    ("default_inventory_account", ("Stock",), r"\b(stock in hand|inventory)\b"),
-    ("stock_adjustment_account", ("Stock Adjustment",), r"\bstock adjustment\b"),
+#: Company default-account fields a chart replace leaves empty: the accounts ERPNext accepts for each (its
+#: Company.validate_default_accounts: root types, account type), the account types it is most likely among
+#: those, and words in the name. Live, 2026-11-19: "Accumulated Depreciation Account" (an asset) was proposed
+#: for Depreciation Expense; ERPNext refused it twice and the chat searched 15 times.
+DEFAULT_FIELDS: Tuple[Tuple[str, Tuple[str, ...], str, Tuple[str, ...], str], ...] = (
+    ("default_receivable_account", ("Asset",), "Receivable", (), r"\b(debtors?|receivables?)\b"),
+    ("default_payable_account", ("Liability",), "Payable", (), r"\b(creditors?|payables?)\b"),
+    ("default_cash_account", (), "Cash", (), r"\bcash\b"),
+    ("default_bank_account", (), "Bank", (), r"\bbank\b"),
+    ("round_off_account", ("Expense", "Income"), "", ("Round Off",), r"\bround(ing)?[ -]?off\b|\brounding\b"),
+    ("write_off_account", ("Expense",), "", (), r"\bwrite[ -]?off\b"),
+    (
+        "exchange_gain_loss_account",
+        ("Expense", "Income"),
+        "",
+        (),
+        r"\bexchange (gain|loss|difference)|\bforex\b",
+    ),
+    ("default_income_account", ("Income",), "", ("Income Account", "Direct Income"), r"\b(sales|revenue)\b"),
+    ("default_expense_account", ("Expense",), "", ("Cost of Goods Sold",), r"\bcost of (goods|sales)\b"),
+    ("depreciation_expense_account", ("Expense",), "Depreciation", (), r"\bdepreciation\b"),
+    (
+        "accumulated_depreciation_account",
+        ("Asset",),
+        "Accumulated Depreciation",
+        (),
+        r"\baccumulated depreciation\b",
+    ),
+    (
+        "stock_received_but_not_billed",
+        ("Liability",),
+        "Stock Received But Not Billed",
+        (),
+        r"\breceived but not billed\b",
+    ),
+    ("default_inventory_account", (), "Stock", (), r"\b(stock in hand|inventory)\b"),
+    ("stock_adjustment_account", ("Expense",), "Stock Adjustment", (), r"\bstock adjustment\b"),
 )
 
 
 def default_proposals(company: str) -> List[Dict[str, Any]]:
-    """For each empty default-account field of the company that a chart usually has an account for, the
-    ledgers that fit (its account types first, then words in the name), the likeliest first. After a replace
-    (live: "the default account settings are now empty") FACO puts them on one card for the user to pick."""
+    """For each empty default-account field of the company, the ledgers ERPNext accepts there (root type and
+    account type as it checks them), the likeliest first: the field's own account type, then words in the
+    name. A field whose rule leaves many accounts (round off, write off...) is proposed only from words in the
+    name; with nothing that fits, ``suggested`` is None and ``note`` says why, so the user is asked, not
+    searched for. After a replace FACO puts them on one card."""
     meta = frappe.get_meta("Company")
     ledgers = frappe.get_all(
         ACCOUNT,
@@ -1183,23 +1205,38 @@ def default_proposals(company: str) -> List[Dict[str, Any]]:
         order_by="lft",
     )
     out = []
-    for field, types, words in DEFAULT_FIELDS:
+    for field, roots, account_type, likely_types, words in DEFAULT_FIELDS:
         df = meta.get_field(field)
         if not df or frappe.db.get_value("Company", company, field):
             continue
-        by_type = [a.name for a in ledgers if a.account_type in types]
-        by_name = [
-            a.name for a in ledgers if re.search(words, _key(a.account_name)) and a.name not in by_type
+        accepted = [
+            a
+            for a in ledgers
+            if (not roots or a.root_type in roots) and (not account_type or a.account_type == account_type)
         ]
-        choices = (by_type + by_name)[:5]
-        out.append(
-            {
-                "field": field,
-                "label": _(df.label),
-                "suggested": choices[0] if choices else None,
-                "choices": choices,
-            }
-        )
+        named = [a.name for a in accepted if re.search(words, _key(a.account_name))]
+        typed = [a.name for a in accepted if a.account_type in likely_types]
+        if account_type:
+            choices = list(dict.fromkeys(named + [a.name for a in accepted]))
+        else:
+            choices = list(dict.fromkeys(typed + named))
+        entry = {
+            "field": field,
+            "label": _(df.label),
+            "suggested": choices[0] if choices else None,
+            "choices": choices[:5],
+        }
+        if not choices:
+            entry["note"] = (
+                _("The new chart has no {0} account of type {1}: ask the user, or leave it empty.").format(
+                    "/".join(roots) or _("ledger"), account_type
+                )
+                if account_type
+                else _(
+                    "No account's name says it: ask the user which {0} account, or leave it empty."
+                ).format("/".join(roots))
+            )
+        out.append(entry)
     return out
 
 

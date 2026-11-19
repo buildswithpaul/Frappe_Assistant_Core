@@ -542,3 +542,35 @@ class TestChartCard(ChartCase):
         self.assertTrue(mapped["success"], mapped)
         nodes = import_chart.read_chart(frappe.get_doc("FAC Import Session", started["result"]["session_id"]))
         self.assertEqual(nodes[0]["root_type"], "Asset")
+
+    def test_a_default_is_proposed_only_from_accounts_erpnext_accepts_there(self):
+        # live: "Accumulated Depreciation Account" (an asset) was proposed for Depreciation Expense
+        rows = [
+            "Client Assets,,,,,",
+            "Accumulated Depreciation Account,1500,Client Assets,Accumulated Depreciation,,",
+            "Client Expenses,,,,,",
+            "Depreciation on Computers,5100,Client Expenses,Expense Account,,",
+            "Depreciation,5200,Client Expenses,Depreciation,,",
+        ]
+        session = self._chart(rows)
+        self._clear_references()
+        figures = import_chart.replace_figures(
+            self.company, import_chart.read_chart(frappe.get_doc("FAC Import Session", session))
+        )
+        done = self._run(
+            "replace_chart_of_accounts",
+            {
+                "session": session,
+                "company": self.company,
+                "source_system": self.system,
+                **{k: figures[k] for k in ("accounts_removed", "accounts_created", "tax_setup_removed")},
+            },
+        )
+        self.assertTrue(done["success"], done)
+        proposed = {p["field"]: p for p in done["result"]["defaults_proposed"]}
+
+        depreciation = proposed.get("depreciation_expense_account")
+        if depreciation:  # set again by ERPNext from the chart when it found one
+            self.assertEqual(depreciation["choices"], [f"5200 - Depreciation - {self.abbr}"])
+        self.assertIsNone(proposed["write_off_account"]["suggested"])
+        self.assertTrue(proposed["write_off_account"]["note"])
