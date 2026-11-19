@@ -18,6 +18,7 @@ from frappe_assistant_core.tests.chart_case import ChartCase
 from frappe_assistant_core.utils import compat, import_chart
 from frappe_assistant_core.utils import import_keys as keys
 from frappe_assistant_core.utils import import_opening_balances as balances
+from frappe_assistant_core.utils.one_at_a_time import StillRunning, one_at_a_time
 
 
 @unittest.skipUnless("erpnext" in frappe.get_installed_apps(), "needs ERPNext's Account and Company")
@@ -397,6 +398,50 @@ class TestImportChart(ChartCase):
         self.assertIsInstance(done["defaults_left_empty"], list)
         receivable = frappe.db.get_value("Company", self.company, "default_receivable_account")
         self.assertEqual(receivable, self._account("Acme Customers").name)
+
+    def test_an_add_while_an_earlier_call_runs_is_told_to_wait(self):
+        # Live, 2026-11-19: FAC Cloud called a slow chart tool again while the first call still ran
+        session = self._chart()
+        before = frappe.db.count("Account", {"company": self.company})
+
+        with one_at_a_time("chart", self.company):  # the earlier call
+            out = self._import(session, "add")["result"]
+
+        self.assertTrue(out["still_running"], out)
+        self.assertFalse(out["success"])
+        self.assertIn("still running", out["error"])
+        self.assertEqual(frappe.db.count("Account", {"company": self.company}), before)
+
+    def test_a_replace_while_an_earlier_call_runs_is_told_to_wait(self):
+        session = self._chart()
+        before = frappe.db.count("Account", {"company": self.company})
+
+        with one_at_a_time("chart", self.company):  # the earlier call
+            out = self._replace(session)["result"]
+
+        self.assertTrue(out["still_running"], out)
+        self.assertEqual(frappe.db.count("Account", {"company": self.company}), before)
+
+    def test_adding_the_chart_again_says_it_is_in_place(self):
+        # Live, 2026-11-19: the repeat of an add that had worked said "0 accounts created"
+        session = self._chart()
+        first = self._import(session, "add")["result"]
+        self.assertTrue(first["created"], first)
+
+        again = self._import(session, "add")["result"]
+
+        self.assertTrue(again["success"], again)
+        self.assertEqual(again["created"], [])
+        self.assertGreaterEqual(again["already_on_company"], len(first["created"]))
+        self.assertIn("already on", again["message"])
+
+    def test_the_step_is_free_again_after_a_call(self):
+        with one_at_a_time("chart", self.company):
+            with self.assertRaises(StillRunning):
+                with one_at_a_time("chart", self.company):
+                    pass
+        with one_at_a_time("chart", self.company):
+            pass
 
     def test_replacing_again_with_the_same_chart_changes_nothing(self):
         # The chat called replace again after the first one had finished (live, 2026-11-18): the

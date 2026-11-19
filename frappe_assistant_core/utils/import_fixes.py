@@ -77,6 +77,25 @@ class FixProblem(Exception):
     """A fix that can't be applied. The message is shown to the user."""
 
 
+class AlreadyThere(FixProblem):
+    """A planned master that exists already."""
+
+
+class CreatedBefore(FixProblem):
+    """Every master sent exists already: an earlier call created them (live, 2026-11-19: the chat
+    called create_document again 28 s after it had created 264 masters, and told the user someone
+    else must have added them)."""
+
+    def __init__(self, count: int):
+        super().__init__(
+            _(
+                "All {0} masters sent exist already: an earlier call created them, so none was created "
+                "now. Tell the user they are in place, then check the file again with dry_run_import."
+            ).format(count)
+        )
+        self.count = count
+
+
 class FixProblems(FixProblem):
     """Some fixes were wrong, so none was saved. ``problems`` says which and why."""
 
@@ -1262,6 +1281,18 @@ def planned_documents(session, planned: Any) -> List[Dict[str, Any]]:
                     _(doctype), ", ".join(sorted(allowed)) or _("nothing")
                 )
             )
+    # a group (or territory) the Settings don't give must be chosen: live, 2026-11-19, on a new site 262
+    # customers were created with no customer group at all
+    for entry in plan:
+        for field, options in (entry.get("choose") or {}).items():
+            # the group only: a territory may stay empty, as ERPNext lets it
+            if field.endswith("_group") and options and not (shared.get(entry["doctype"]) or {}).get(field):
+                raise FixProblem(
+                    _(
+                        "Ask the user which {0} the new {1} records go under (one of: {2}), then pass it "
+                        'in shared, e.g. {{"{1}": {{"{0}": "{3}"}}}}.'
+                    ).format(field, entry["doctype"], ", ".join(options), options[0])
+                )
     return [
         {"doctype": entry["doctype"], "data": {**entry["data"], **(shared.get(entry["doctype"]) or {})}}
         for entry in plan
@@ -1294,12 +1325,17 @@ def check_masters(session, documents: List[Dict[str, Any]]) -> List[Dict[str, An
             item = _planned_master(session, plan, entry, listed, named)
             _as_sent(entry, item)
         except FixProblem as e:
-            problems.append({"document": number, "doctype": entry.get("doctype"), "error": str(e)})
+            problems.append(
+                {"document": number, "doctype": entry.get("doctype"), "error": str(e)}
+                | ({"exists": True} if isinstance(e, AlreadyThere) else {})
+            )
             continue
         key = (item["doctype"], _planned_name(item))
         if key not in seen:
             seen.add(key)
             planned.append(item)
+    if problems and len(problems) == len(documents) and all(p.get("exists") for p in problems):
+        raise CreatedBefore(len(problems))
     if problems:
         raise FixProblems(problems, _("Nothing was created. Correct these and call again."))
     return parents_first(planned)
@@ -1393,7 +1429,7 @@ def _planned_master(session, plan, entry, listed=frozenset(), named=frozenset())
                 )
             )
         if opening_invoices.find_party(doctype, name):
-            raise FixProblem(
+            raise AlreadyThere(
                 _("{0} '{1}' already exists. Check the file again with dry_run_import.").format(
                     _(doctype), name
                 )
@@ -1421,7 +1457,7 @@ def _planned_master(session, plan, entry, listed=frozenset(), named=frozenset())
             )
         )
     if frappe.db.exists(doctype, name):
-        raise FixProblem(
+        raise AlreadyThere(
             _("{0} '{1}' already exists. Check the file again with dry_run_import.").format(_(doctype), name)
         )
     planned = {name_field: name}

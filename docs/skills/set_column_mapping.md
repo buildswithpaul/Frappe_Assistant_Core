@@ -103,6 +103,8 @@ While the session's import is running (**Importing**) the mapping is kept: wait 
 4. **A required field with no column** needs a decision: map a column to it, rely on its default if it has one, or the user adds the column to the file. An update (Update Existing Records) lists none: it changes only the fields mapped. For a DocType named by the user, `name` (ID) is listed until a column maps to it.
 5. **`required_when`** lists fields with no column that a condition makes required (`when`), with `sample_rows`: how many of the file's first rows meet it, or `null` when that can't be worked out (a condition written for the browser). Tell the user: the import goes through without them, but Desk asks for them when the record is next saved.
 6. **Changing the target DocType** clears the mapping, because the fields differ. Say so before you do it.
+7. **A party (customer, supplier) by name, not by code.** When the file has both a party code column (e.g. "Customer": C000065) and a name column (e.g. "Customer name"), map the **name** column to the link and the code to "Don't Import" (or to the old ID): a missing party is created by the value it is linked by, and one named "C000065" is no use to anyone. Ask when unsure.
+8. **A link column whose values the site doesn't have and can't create** (e.g. Department codes on a new site): offer "Don't import" for that column in the same question as the other unsure ones, rather than letting every row fail on it.
 
 ## Next
 

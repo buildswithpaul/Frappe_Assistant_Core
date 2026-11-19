@@ -122,6 +122,12 @@ def read_chart(session, root_type_column: Optional[str] = None) -> List[Dict[str
     }
     if "account_name" not in mapping:
         raise ChartProblem(_("Map a column to Account Name first (set_column_mapping, DocType Account)."))
+    if not root_type_column:
+        # FACO left it out though the file has the column (live, 2026-11-19): the root types were then
+        # guessed from the tree, and the check warned of 9 other accounts than the file's own 14
+        from frappe_assistant_core.utils.import_mapping import session_headers
+
+        root_type_column = next((h for h in session_headers(session) if _key(h) == "root type"), None)
     if root_type_column:
         from frappe_assistant_core.utils.import_mapping import session_headers
 

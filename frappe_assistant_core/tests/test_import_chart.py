@@ -282,6 +282,16 @@ class TestReadChart(ChartCase):
         misc = next(n for n in nodes if n["name"] == "Misc Income")
         self.assertEqual(nodes[misc["parent"]]["number"], "3200")
 
+    def test_the_root_type_column_is_read_without_being_named(self):
+        # Live, 2026-11-19: FACO left root_type_column out, and the check guessed the root types from the tree
+        session = self._erpnext_chart(
+            ["Client Funds,,5000,,1,,Equity", "Client Reserve,Client Funds,5100,5000,0,,Equity"]
+        )
+
+        nodes = import_chart.read_chart(frappe.get_doc("FAC Import Session", session))
+
+        self.assertEqual({n.get("root_type") for n in nodes}, {"Equity"})
+
     def test_one_name_and_one_number_twice_is_still_listed(self):
         session = self._erpnext_chart(["Rent,,5000,,0,,Expense", "Rent,,5000,,0,,Expense"])
 

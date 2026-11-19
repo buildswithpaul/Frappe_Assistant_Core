@@ -21,6 +21,7 @@ from frappe_assistant_core.plugins.migration.tools.import_chart_of_accounts impo
 )
 from frappe_assistant_core.utils import import_chart
 from frappe_assistant_core.utils.import_mapping import SESSION_DOCTYPE, load_session
+from frappe_assistant_core.utils.one_at_a_time import StillRunning, one_at_a_time
 
 
 class ReplaceChartOfAccounts(BaseTool):
@@ -127,9 +128,14 @@ class ReplaceChartOfAccounts(BaseTool):
                     "approval": figures,
                 }
             system = source_system(session, arguments)
-            done = import_chart.replace(company, nodes, classes)
-            accounts = {n["index"]: self._account(company, n) for n in nodes}
-            kept = import_chart.keep_old_ids(name, system, nodes, {i: a for i, a in accounts.items() if a})
+            with one_at_a_time("chart", company):
+                done = import_chart.replace(company, nodes, classes)
+                accounts = {n["index"]: self._account(company, n) for n in nodes}
+                kept = import_chart.keep_old_ids(
+                    name, system, nodes, {i: a for i, a in accounts.items() if a}
+                )
+        except StillRunning as e:
+            return e.result()
         except frappe.DoesNotExistError:
             return {"success": False, "error": _("Import session '{0}' not found.").format(name)}
         except frappe.PermissionError as e:

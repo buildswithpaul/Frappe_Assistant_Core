@@ -16,6 +16,7 @@ from frappe import _
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
 from frappe_assistant_core.utils import import_chart, import_keys
 from frappe_assistant_core.utils.import_mapping import SESSION_DOCTYPE, load_session
+from frappe_assistant_core.utils.one_at_a_time import StillRunning, one_at_a_time
 
 #: The client's accounts a check lists that match none of the company's, at most
 SHOWN = 100
@@ -153,25 +154,10 @@ class ImportChartOfAccounts(BaseTool):
                 raise frappe.PermissionError(_("You can't create accounts."))
             nodes, classes = prepared(session, arguments, company)
             system = source_system(session, arguments)
-            frappe.db.savepoint("fac_chart_import")
-            try:
-                if mode == "add":
-                    done = import_chart.add(company, nodes, classes)
-                    result = {"created": done["created"], "accounts": done["accounts"]}
-                else:
-                    done = import_chart.apply_map(
-                        company, nodes, classes, bool(arguments.get("add_unmatched"))
-                    )
-                    result = {
-                        "created": done["created"],
-                        "accounts": done["accounts"],
-                        "matched": len(done["matched"]),
-                        "unmatched": done["unmatched"],
-                    }
-                kept = import_chart.keep_old_ids(name, system, nodes, result.pop("accounts"))
-            except Exception:
-                frappe.db.rollback(save_point="fac_chart_import")
-                raise
+            with one_at_a_time("chart", company):
+                result, kept = self._apply(name, company, mode, arguments, nodes, classes, system)
+        except StillRunning as e:
+            return e.result()
         except frappe.DoesNotExistError:
             return {"success": False, "error": _("Import session '{0}' not found.").format(name)}
         except frappe.PermissionError as e:
@@ -190,8 +176,45 @@ class ImportChartOfAccounts(BaseTool):
             "old_ids_kept": len(kept["written"]),
             "old_id_conflicts": kept["conflicts"],
             "old_id_systems": kept["systems"],
-            "message": _old_ids_message(len(result["created"]), system, kept),
+            "message": _repeat_note(company, result) + _old_ids_message(len(result["created"]), system, kept),
         }
+
+    @staticmethod
+    def _apply(name, company, mode, arguments, nodes, classes, system):
+        frappe.db.savepoint("fac_chart_import")
+        try:
+            if mode == "add":
+                done = import_chart.add(company, nodes, classes)
+                result = {"created": done["created"], "accounts": done["accounts"]}
+            else:
+                done = import_chart.apply_map(company, nodes, classes, bool(arguments.get("add_unmatched")))
+                result = {
+                    "created": done["created"],
+                    "accounts": done["accounts"],
+                    "matched": len(done["matched"]),
+                    "unmatched": done["unmatched"],
+                }
+            if mode == "add":
+                result["already_on_company"] = len(result["accounts"]) - len(result["created"])
+            kept = import_chart.keep_old_ids(name, system, nodes, result.pop("accounts"))
+        except Exception:
+            frappe.db.rollback(save_point="fac_chart_import")
+            raise
+        return result, kept
+
+
+def _repeat_note(company: str, result: Dict[str, Any]) -> str:
+    """Said when nothing was created because the file's accounts are on the company already: the chat
+    called the tool again after an earlier call had added them (live, 2026-11-19: "0 created")."""
+    if result["created"] or not result.get("already_on_company"):
+        return ""
+    return (
+        _(
+            "All {0} accounts of the file are already on {1}, so none was created now: an earlier call "
+            "added them. Tell the user the chart is in place, not that nothing was added."
+        ).format(result["already_on_company"], company)
+        + " "
+    )
 
 
 def _old_ids_message(created: int, system: str, kept: Dict[str, Any]) -> str:

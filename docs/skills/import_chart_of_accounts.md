@@ -69,3 +69,11 @@ finds its accounts by the client's names and numbers.
 - When a chart tool refuses or fails, tell the user why and stop. Never create, move, rename or delete
   accounts, tax templates or settings by hand (create_document, update_document, delete_document) to get
   round it: an account put under the wrong root, or setup half removed, is worse than no import.
+- A big chart takes a minute or two to add or replace. When a call answers `still_running`, the same
+  step is still running from your earlier call: nothing failed and nothing was started again. Don't tell
+  the user it failed, and don't run another chart tool on that company: wait a minute and call the same
+  tool once more with the same arguments; once the earlier run has finished, that call says what it did.
+- An add that answers `already_on_company` with nothing `created` found the file's accounts in place: an
+  earlier call added them. Say the chart is in place (how many accounts), not that nothing was added.
+- When the file has a "Root Type" column, it is read even if you don't pass `root_type_column`; pass it
+  anyway when the heading differs (e.g. "Account Root").

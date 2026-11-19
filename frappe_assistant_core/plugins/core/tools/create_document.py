@@ -645,6 +645,7 @@ class DocumentCreate(BaseTool):
         ``import_session`` they must be that session's missing masters, and are listed on it."""
         from frappe_assistant_core.utils import import_fixes
         from frappe_assistant_core.utils.import_mapping import SESSION_DOCTYPE, load_session
+        from frappe_assistant_core.utils.one_at_a_time import StillRunning, one_at_a_time
 
         session_name = arguments.get("import_session")
         session = None
@@ -674,7 +675,15 @@ class DocumentCreate(BaseTool):
                 return self.execute({"doctype": entry["doctype"], "data": dict(entry["data"])})
 
             after = (lambda results: import_fixes.link_created(session, results)) if session else None
-            results = document_batch.write_all(documents, create_one, _("created"), after)
+            if session:
+                with one_at_a_time("masters", session.name):
+                    results = document_batch.write_all(documents, create_one, _("created"), after)
+            else:
+                results = document_batch.write_all(documents, create_one, _("created"), after)
+        except StillRunning as e:
+            return e.result()
+        except import_fixes.CreatedBefore as e:
+            return {"success": True, "created": [], "created_before": e.count, "message": str(e)}
         except import_fixes.FixProblems as e:
             return {"success": False, "error": str(e), "problems": e.problems}
         except import_fixes.FixProblem as e:
