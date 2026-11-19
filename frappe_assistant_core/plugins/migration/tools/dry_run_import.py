@@ -131,6 +131,8 @@ class DryRunImport(BaseTool):
             "questions[kind=categories].examples",
             "add_leaves_beside",
             "card_title",
+            # the import card quotes the file's values and names
+            "card",
             "groups",
             "decisions",  # each value the file has, as the groups quote them
             "masters_plan",
