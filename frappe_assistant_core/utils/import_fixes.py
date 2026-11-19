@@ -1006,10 +1006,12 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
         group = groups.get(cstr(fix.get("group")))
         try:
             if not group:
+                # live, 2026-11-19: a fix from an earlier check listed all 280 groups, five times
                 raise FixProblem(
-                    _("There is no group {0} in the last check. Groups: {1}.").format(
-                        fix.get("group"), ", ".join(groups)
-                    )
+                    _(
+                        "There is no group {0} in the last check: group ids change with every check. Use "
+                        "the ids of the latest check's card (or decisions)."
+                    ).format(fix.get("group"))
                 )
             group = _with_target(session, group)
             action = fix.get("action")
@@ -2161,16 +2163,16 @@ CARD_HOW = (
     "Show this card now as ONE ask_user card: every question as a single_select, its recommended option "
     "pre-selected, its title and result as the description. Don't decide, summarise or leave out any question, "
     "and don't print the mapping table. When the user answers, don't ask again: tell them in one line what "
-    "you'll do, then do it in this order, with a short line after each step: 1) custom_fields: each with its "
-    "own create_document call (doctype Custom Field; never in documents or records), then set_column_mapping "
-    "for those columns; 2) records to create in one create_document call with import_session (create_all's "
+    "you'll do, then do it in this order, with a short line after each step: 1) custom_fields: one "
+    "create_document call per field (doctype Custom Field), ALL sent together in one message so the user approves "
+    "them on one card (never in records or documents), then set_column_mapping for those columns; 2) records to create in one create_document call with import_session (create_all's "
     "planned_masters with the chosen shared values, or the chosen options' create as documents); 3) one "
     "dry_run_import with every chosen option's fixes; 4) if it is ready, start_import. An option with "
     "fix_in_file: tell the user what to correct and stop."
 )
 CARD_CREATE_LISTED = 10  # records an option lists to create; more are created by planned_masters, by count
 GROUPS_DETAILED = 5  # groups a big reply still shows with their example rows
-REPLY_BUDGET = 40000  # a check's reply above it keeps the card and counts, not every group's detail
+REPLY_BUDGET = 20000  # a check's reply above it keeps the card and counts, not every group's detail
 CARD_LIKELY = 50  # groups of a question looked up for a clear match
 
 
@@ -2497,8 +2499,8 @@ def _columns_question(session) -> Optional[Dict[str, Any]]:
                     for heading in left
                 ],
                 "then": _(
-                    "create each with create_document (a Custom Field is created one at a time), then map every "
-                    "column to its new field with set_column_mapping, then dry_run_import"
+                    "one create_document call per field (doctype Custom Field), all sent together in one message so "
+                    "the user approves them on one card; then map every column to its new field with set_column_mapping"
                 ),
             },
             {
