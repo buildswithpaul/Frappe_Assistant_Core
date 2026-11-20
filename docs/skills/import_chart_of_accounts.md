@@ -58,6 +58,9 @@ finds its accounts by the client's names and numbers.
      transactions, **map** is suggested and replace isn't offered (`modes.replace_refused` says why).
    - `doubtful`, `clean_names`, `categories`: the file's mismatched types, the other company's numbers and
      abbreviation, the categories to check; each with examples and its suggested answer.
+   Show it as the reply's `next` says: ONE ask_user card, the `headline` as its description, each question
+   its own single_select with the suggested choice selected; never the lists written out in a message. A
+   file not mapped yet is mapped by the check from its headings (`mapped_by_headings`): don't map it again.
    Each mode choice names its `tool` and `arguments`: **replace is `replace_chart_of_accounts`**, never a
    mode of `import_chart_of_accounts`.
    The user's answer on that card is their decision: call the tool straight away with the figures the

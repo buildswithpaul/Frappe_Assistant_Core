@@ -984,9 +984,14 @@ def _select_options(session, group: Dict[str, Any]) -> List[str]:
 # -- applying fixes ------------------------------------------------------------------
 
 
-#: The ids of the groups whose fixes are saved: one sent again is said saved, not refused as unknown
+#: The fixes saved, each as sent (its group id with it): the same fix sent again is said saved, not refused
+#: as an unknown group; another fix for that group still is
 FIXED_GROUPS = "fixed_groups"
 FIXED_GROUPS_KEPT = 2000
+
+
+def _signature(fix: Dict[str, Any]) -> str:
+    return json.dumps(fix, sort_keys=True, default=str)
 
 
 def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str, Any]]) -> List[str]:
@@ -1011,7 +1016,7 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
     done, problems, planned = [], [], []
     for fix in fixes:
         group = groups.get(cstr(fix.get("group")))
-        if not group and cstr(fix.get("group")) in saved_before:
+        if not group and _signature(fix) in saved_before:
             # live, 2026-11-20: the same fixes sent again after the check that applied them; that check no
             # longer has their groups (they're fixed), so they were refused and the call made a third time
             done.append(_("The fix for {0} was already saved.").format(fix.get("group")))
@@ -1026,7 +1031,7 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
                     ).format(fix.get("group"))
                 )
             group = _with_target(session, group)
-            fixed_now.append(group["id"])
+            fixed_now.append(_signature(fix))
             action = fix.get("action")
             if group.get("cause") == opening_balances.CAUSE_NOT_BALANCED:
                 raise FixProblem(
@@ -2151,8 +2156,14 @@ def report(session, summary: Dict[str, Any]) -> Dict[str, Any]:
             # missed the card and typed the questions. The card carries every fix: the lists go, counts stay.
             out["groups"] = out["groups"][:GROUPS_DETAILED]
             out.pop("decisions", None)
-            out["masters_plan"] = []
+            # live, 2026-11-20: an empty masters_plan was read as nothing to create, and the chat stopped
+            out.pop("masters_plan", None)
             out["masters_plan_total"] = len(masters)
+            if masters:
+                out["masters_plan_left_out"] = _(
+                    "{0} records to create, left out to keep this short: create them with the card's create "
+                    "option (create_document with import_session and planned_masters {{count: {0}}})."
+                ).format(len(masters))
             out["message"] += " " + _(
                 "The details are left out to keep this short: card has every choice, with what to send."
             )
@@ -2183,8 +2194,8 @@ CARD_HOW = (
     "you'll do, then do it in this order, with a short line after each step: 1) the columns option's calls: "
     "one create_document call per field (never a list: records and documents refuse a Custom Field), ALL in "
     "ONE response as parallel tool calls, never one after another's approval: the chat then shows them on one "
-    "card ('N changes go live') approved once. Then set_column_mapping for those columns and dry_run_import "
-    "with every chosen option's fixes (the records to create come from a check of the current mapping); 2) "
+    "card ('N changes go live') approved once. Then set_column_mapping for those columns and, after its reply, "
+    "dry_run_import with every chosen option's fixes (the records to create come from a check of the current mapping); 2) "
     "records to create in one create_document call with import_session (create_all's planned_masters with the "
     "chosen shared values, or the chosen options' create as documents); 3) dry_run_import (with the chosen "
     "fixes if step 1 didn't send them; fixes once saved needn't be sent again); 4) if it is ready, "

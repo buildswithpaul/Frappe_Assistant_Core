@@ -138,7 +138,12 @@ class DryRunProblem(Exception):
 def check_status(session) -> None:
     """Raise DryRunProblem when ``session``'s status lets nothing be checked, or a file linked."""
     if session.status == "File Read":
-        raise DryRunProblem(_("Map the columns first, with set_column_mapping."))
+        raise DryRunProblem(
+            _(
+                "Map the columns first, with set_column_mapping. If it was sent in this same response, call "
+                "dry_run_import again now, after its reply: never both in one response."
+            )
+        )
     if session.status not in RUNNABLE_STATUSES:
         raise DryRunProblem(_("This session is {0}, so it can't be checked again.").format(_(session.status)))
     if nothing_left(session):
@@ -190,7 +195,12 @@ def check_can_run(session) -> None:
         return engine.check_can_run(session)
     check_status(session)
     if not column_to_field_map(session):
-        raise DryRunProblem(_("Map the columns first, with set_column_mapping."))
+        raise DryRunProblem(
+            _(
+                "Map the columns first, with set_column_mapping. If it was sent in this same response, call "
+                "dry_run_import again now, after its reply: never both in one response."
+            )
+        )
     problem = import_target_problem(session.target_doctype, session.import_type or INSERT)
     if problem:
         raise DryRunProblem(problem)

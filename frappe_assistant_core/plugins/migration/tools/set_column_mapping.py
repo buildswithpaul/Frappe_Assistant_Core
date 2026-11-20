@@ -64,8 +64,8 @@ CHART_READ_COLUMNS = (
 #: Said after every mapping (live, 2026-11-19: FACO remapped a column and stopped, the user had to ask for the
 #: check; it had also linked contract codes to Sales Order, which no row could satisfy).
 AFTER_MAPPING = (
-    "Now call dry_run_import and show its card (all questions on one card), unless the user is still "
-    "changing the mapping. Never map a column of the other system's codes to a link (Sales Order, "
+    "Now call dry_run_import (this reply came first: never send the two in one response) and show its card "
+    "(all questions on one card), unless the user is still changing the mapping. Never map a column of the other system's codes to a link (Sales Order, "
     "Department...) whose records don't exist: leave it for the card's 'create a field' question."
 )
 
@@ -75,6 +75,8 @@ AFTER_MAPPING = (
 PARTY_NAME_HEADINGS = {"Customer": r"\bcustomer\s*name\b", "Supplier": r"\bsupplier\s*name\b"}
 #: DocTypes whose records keep the file's own ID as their ID when it has a column of them (Project ID)
 ID_FROM_FILE = frozenset({"Project", "Task"})
+#: Headings of the column that names each record's company (the old system's legal entity)
+COMPANY_HEADINGS = r"(company|legal\s*entity|entity)(\s*(name|code))?"
 #: Share of a link column's values that must exist for the link to be kept, when none can be created
 LINK_FOUND_SHARE = 0.2
 
@@ -154,6 +156,29 @@ def _tidied(doc, target, headers, merged, notes, re, import_fixes):
                 "{0} isn't linked to {1}: its values aren't {1} records. The check offers a field for it."
             ).format(headers[int(position)], _(df.label))
         )
+    company = meta.get_field("company")
+    if (
+        company
+        and company.fieldtype == "Link"
+        and company.options == "Company"
+        and "company" not in merged.values()
+    ):
+        # live, 2026-11-20: "Legal entity" (the old system's company code) was left out, the import had no
+        # company and the column was offered as a new field; mapped, its code is matched on the card
+        at = next(
+            (
+                i
+                for i, h in enumerate(headers)
+                if re.fullmatch(COMPANY_HEADINGS, cstr(h).strip().lower())
+                and merged.get(str(i)) in (None, DONT_IMPORT)
+            ),
+            None,
+        )
+        if at is not None:
+            merged[str(at)] = "company"
+            notes.append(
+                _("{0} is the company column; its values are matched to a company.").format(headers[at])
+            )
     if target in ID_FROM_FILE and "name" not in merged.values():
         at = import_fixes.id_column(doc, rows)
         if at is not None and merged.get(str(at)) in (None, DONT_IMPORT):

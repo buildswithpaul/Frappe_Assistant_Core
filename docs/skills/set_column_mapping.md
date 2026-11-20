@@ -98,7 +98,7 @@ While the session's import is running (**Importing**) the mapping is kept: wait 
 ## Best Practices
 
 1. **During an import of a file, don't show the mapping table:** the check's card is what the user sees. Show the table only when the user asks for it, or changes the mapping. Then show it as a table: *Your column → ERPNext field*. Show each child table in its own table under its title. Below, mark the **unmapped columns** and the **required fields with no column** clearly. An unmapped column is not imported, like one mapped to "Don't Import".
-2. **Don't ask before the check.** Map what you're sure of yourself and go straight to `dry_run_import`: its `card` is the one question the user answers. Only a column you can't place at all goes on that card's question (or one question with it), offering the likely fields, **"Create a field '<column>' on <DocType>"** (a text field; create every chosen one in one `create_document` call with `documents` of Custom Field, System Manager only, then map them) and "Don't import". Never put another system's columns in Notes. A column that only numbers the rows (S.No, Sr. No., #) needs no question.
+2. **Don't ask before the check.** Map what you're sure of yourself and go straight to `dry_run_import`: its `card` is the one question the user answers. Only a column you can't place at all goes on that card's question (or one question with it), offering the likely fields, **"Create a field '<column>' on <DocType>"** (a text field; one `create_document` call of Custom Field per field, all in ONE response as parallel tool calls so they are approved on one card, System Manager only, then map them) and "Don't import". Never put another system's columns in Notes. A column that only numbers the rows (S.No, Sr. No., #) needs no question.
    - **Insert or update** is not a question: with no records of the DocType yet, it's always new records.
    - **Use the site's own fields first.** `get_import_schema` lists custom fields too: a code column ("Customer": C000065) goes to a field like "Legacy Customer Code", a "Project ID" to "Legacy Project Reference", when the site has one.
    - **The file's own ID.** When the DocType is named by a series (PROJ-0001…) and the file has a column of IDs that are all different (Project ID), map it to the ID (`name`) on new records, so the records keep the client's IDs.
@@ -111,7 +111,7 @@ While the session's import is running (**Importing**) the mapping is kept: wait 
 
 ## Next
 
-Once the user agrees the mapping, call `dry_run_import(session)` to check every row before anything is imported.
+Once the user agrees the mapping, call `dry_run_import(session)` to check every row before anything is imported: **after `set_column_mapping`'s reply, never in the same response** (sent together, the check runs before the mapping is saved). A required Company with no column: a column of the old system's company or legal entity is mapped to Company by the tool itself; its codes are matched to a company on the card.
 
 ## In a migration plan
 

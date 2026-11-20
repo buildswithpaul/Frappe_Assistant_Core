@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 
 import frappe
 from frappe import _
+from frappe.utils import cstr
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
 from frappe_assistant_core.utils import import_chart, import_keys
@@ -145,6 +146,11 @@ def chart_card(out: Dict[str, Any], nodes, classes, company: str, pattern) -> No
         )
     out["questions"] = questions
     out["card_title"] = _("Chart of accounts: {0} accounts to {1}").format(len(nodes), company)
+    if questions:
+        out["next"] = _(CHART_CARD_HOW)
+        out["headline"] = _("{0} accounts ({1} groups, {2} ledgers).").format(
+            out.get("accounts"), out.get("groups"), out.get("ledgers")
+        ) + (" " + questions[0]["why"] if questions[0].get("why") else "")
 
 
 def company_refusal(company: str) -> Optional[Dict[str, Any]]:
@@ -483,7 +489,19 @@ def _old_ids_message(created: int, system: str, kept: Dict[str, Any]) -> str:
 
 
 #: What the chart check's reply starts with: the card, then the figures (a long reply is cut from its end)
+#: How FACO shows the chart check (live, 2026-11-20: it wrote the lists out in a long message and asked
+#: "which mode, and keep or change the other two?" in words, with no card)
+CHART_CARD_HOW = (
+    "Show this now as ONE ask_user card and nothing else: the headline as its description, then every "
+    "question as its own single_select (its message and examples as the description), its suggested "
+    "choice pre-selected. Don't write the questions, lists, counts or tax setup out in your message, don't "
+    "merge questions into one and don't add your own. The user's answers are the go-ahead: call the chosen "
+    "mode's tool with its arguments straight away (replace: replace_chart_of_accounts, whose approval is "
+    "the only other step). A 'fix the file' answer: say what to correct and stop."
+)
 CARD_FIRST = (
+    "next",
+    "headline",
     "success",
     "session",
     "company",
@@ -499,6 +517,52 @@ def _card_first(out: Dict[str, Any]) -> Dict[str, Any]:
     return {**{key: out[key] for key in CARD_FIRST if key in out}, **out}
 
 
+#: A chart's headings as ERPNext's Chart of Accounts Importer (and most exports) write them, and the Account
+#: field each goes to; Root Type and Parent Account Number are read by their headings (set_column_mapping)
+CHART_HEADINGS = {
+    "account name": "account_name",
+    "account": "account_name",
+    "ledger": "account_name",
+    "ledger name": "account_name",
+    "parent account": "parent_account",
+    "parent": "parent_account",
+    "parent group": "parent_account",
+    "group": "parent_account",
+    "under": "parent_account",
+    "account number": "account_number",
+    "number": "account_number",
+    "is group": "is_group",
+    "account type": "account_type",
+    "root type": "root_type",
+    "parent account number": "parent account number",
+    "currency": "account_currency",
+    "account currency": "account_currency",
+}
+
+
+def map_chart_headings(name: str) -> Optional[Dict[str, str]]:
+    """Map an unmapped chart file by its headings, as the user would (live, 2026-11-20: the check was called
+    before any mapping, again and again, and refused each time). Returns what was mapped, or None when the
+    session is mapped already or its headings aren't a chart's (an account name and a parent)."""
+    from frappe_assistant_core.plugins.migration.tools.set_column_mapping import SetColumnMapping
+    from frappe_assistant_core.utils.import_dry_run import column_to_field_map
+    from frappe_assistant_core.utils.import_session import read_sheet_rows, readable_session_file
+
+    session = load_session(name)
+    if column_to_field_map(session):
+        return None
+    rows = read_sheet_rows(readable_session_file(session), session.sheet or None)
+    mapping = {}
+    for heading in rows[0] if rows else []:
+        field = CHART_HEADINGS.get(" ".join(cstr(heading).strip().lower().split()))
+        if field and field not in mapping.values():
+            mapping[cstr(heading)] = field
+    if "account_name" not in mapping.values() or "parent_account" not in mapping.values():
+        return None
+    done = SetColumnMapping().execute({"session": name, "doctype": "Account", "mapping": mapping})
+    return mapping if done.get("success") else None
+
+
 def check_chart(name: str, company: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """What the chart would become: read from the session, nothing written. dry_run_import's chart
     check."""
@@ -512,6 +576,7 @@ def check_chart(name: str, company: str, arguments: Dict[str, Any]) -> Dict[str,
     if refused:
         return refused
     try:
+        mapped_by_headings = map_chart_headings(name)
         session = load_session(name)
         nodes = import_chart.read_chart(
             session, arguments.get("root_type_column"), arguments.get("clean_names")
@@ -521,6 +586,8 @@ def check_chart(name: str, company: str, arguments: Dict[str, Any]) -> Dict[str,
         import_chart.apply_answers(nodes, arguments.get("classifications"))
         classes = import_chart.classify(nodes)
         out: Dict[str, Any] = {"success": True, "session": name, **import_chart.summary(nodes, classes)}
+        if mapped_by_headings:
+            out["mapped_by_headings"] = mapped_by_headings  # the file's own headings: fenced as untrusted
         pattern = import_chart.name_pattern(nodes)
         if pattern:
             # "141600 - State Bank of India - CCBF": the user decides before anything is put on the company

@@ -202,3 +202,105 @@ class TestProjectFileFollowups(ImportRunCase):
         self.assertFalse(sent["success"])
         error = sent.get("error") or sent["result"]["error"]
         self.assertIn("not session", error)
+
+
+@unittest.skipUnless(HAS_ERPNEXT, "needs ERPNext's Project and Department")
+class TestProjectFileOnTheEconomyModel(ImportRunCase):
+    """Live, 2026-11-20 (IMP-2026-00094): "Legal entity" left out, so the import had no company; the mapping
+    and the check sent at once; an empty masters_plan read as nothing to create."""
+
+    def setUp(self):
+        super().setUp()
+        self.company = frappe.get_all("Company", pluck="name", limit=1)[0]
+
+    def _session(self):
+        t = self.tag
+        content = (
+            "Project ID,Project,Legal entity,Department\n"
+            f"P1{t},Kolar {t},samb,D{t[:4].upper()}\nP2{t},Hosur {t},samb,D{t[:4].upper()}\n"
+        )
+        started = self._run(
+            "start_import_session", {"file_url": self._file("p.csv", content.encode()).file_url}
+        )
+        return started["result"]["session_id"]
+
+    def test_a_legal_entity_column_left_out_is_mapped_to_company(self):
+        for mapping in (
+            {"Project": "project_name", "Department": "department"},
+            {"Project": "project_name", "Department": "department", "Legal entity": "Don't Import"},
+        ):
+            with self.subTest(mapping=mapping):
+                mapped = self._run(
+                    "set_column_mapping",
+                    {"session": self._session(), "doctype": "Project", "mapping": mapping},
+                )
+                self.assertTrue(mapped["success"], mapped)
+                fields = str(mapped["result"]["mapping"])
+                self.assertIn("'company'", fields.replace('"', "'"))
+                self.assertNotIn("Company", [m["label"] for m in mapped["result"]["missing_required"]])
+
+    def test_a_check_cut_short_says_what_to_create_instead_of_an_empty_list(self):
+        session = self._session()
+        self._run(
+            "set_column_mapping",
+            {
+                "session": session,
+                "doctype": "Project",
+                "mapping": {"Project": "project_name", "Department": "department"},
+            },
+        )
+        with patch.object(import_fixes, "REPLY_BUDGET", 10):
+            checked = self._run("dry_run_import", {"session": session})["result"]
+
+        self.assertNotIn("masters_plan", checked)
+        self.assertIn("planned_masters", checked["masters_plan_left_out"])
+
+    def test_a_check_that_meets_a_mapping_being_saved_says_call_again_alone(self):
+        from frappe_assistant_core.plugins.migration.tools.dry_run_import import SENT_TOGETHER
+
+        session = self._session()
+        self._run(
+            "set_column_mapping",
+            {"session": session, "doctype": "Project", "mapping": {"Project": "project_name"}},
+        )
+        with patch.object(import_fixes, "check", side_effect=frappe.TimestampMismatchError("changed")):
+            checked = self._run("dry_run_import", {"session": session})
+
+        self.assertFalse(checked["success"])
+        self.assertIn("again now, alone", checked.get("error") or checked["result"]["error"])
+        self.assertTrue(SENT_TOGETHER)
+
+
+@unittest.skipUnless(HAS_ERPNEXT, "needs ERPNext's Account")
+class TestChartCheckBeforeMapping(ChartCase):
+    """Live, 2026-11-20: the chart check called before any mapping was refused again and again, and its
+    questions were written out in a long message instead of a card."""
+
+    def test_an_unmapped_chart_is_mapped_by_its_headings_and_checked(self):
+        content = (
+            # the live file's headings (ERPNext's Chart of Accounts Importer layout)
+            "Account Name,Parent Account,Account Number,Parent Account Number,Is Group,Account Type,Root Type,Currency\n"
+            "Client Assets,,,,1,,Asset,INR\nClient Bank,Client Assets,1010,,0,Bank,Asset,INR\n"
+        )
+        started = self._run(
+            "start_import_session", {"file_url": self._file("coa.csv", content.encode()).file_url}
+        )
+        self.assertIn("session_id", started["result"], started)
+        session = started["result"]["session_id"]
+
+        checked = self._check(session, company=self.company)
+
+        self.assertEqual(checked["accounts"], 2)
+        self.assertIn("parent_account", str(checked["mapped_by_headings"]))
+        self.assertEqual(list(checked)[:2], ["next", "headline"])
+        self.assertIn("ONE ask_user card", checked["next"])
+
+    def test_a_file_that_isnt_a_chart_is_still_refused(self):
+        content = "Customer,City\nAcme,Pune\n"
+        started = self._run(
+            "start_import_session", {"file_url": self._file("c.csv", content.encode()).file_url}
+        )
+        checked = self._run(
+            "dry_run_import", {"session": started["result"]["session_id"], "chart": {"company": self.company}}
+        )
+        self.assertFalse(checked["success"])

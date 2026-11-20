@@ -34,6 +34,12 @@ from frappe_assistant_core.utils.import_session import (
     find_site_file,
 )
 
+#: A check that met a mapping being saved: the two were sent in the same response
+SENT_TOGETHER = (
+    "The session changed while it was checked: set_column_mapping was sent at the same time. Call "
+    "dry_run_import again now, alone; never in the same response as set_column_mapping."
+)
+
 
 class DryRunImport(BaseTool):
     """Check every row of an import session's file without importing anything."""
@@ -389,6 +395,10 @@ class DryRunImport(BaseTool):
             return {"success": False, "error": str(e), "session": session_name}
         except frappe.QueryDeadlockError:
             raise  # the database undid the call: _safe_execute runs it again or says so
+        except frappe.TimestampMismatchError:
+            # live, 2026-11-20: set_column_mapping and dry_run_import sent in one response; the mapping was
+            # saved while the check ran
+            return {"success": False, "error": _(SENT_TOGETHER), "session": session_name}
         except Exception as e:
             frappe.log_error(title=_("Dry Run Import Error"), message=frappe.get_traceback())
             return {"success": False, "error": str(e), "session": session_name}
