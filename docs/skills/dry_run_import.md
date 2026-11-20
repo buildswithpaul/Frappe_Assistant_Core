@@ -130,7 +130,8 @@ When they answer, do what the chosen options say, in this order, without asking 
 3. An option with `then` says what to call first (e.g. switch to new records). `custom_fields` come
    **first**: one `create_document` call per field (doctype Custom Field), **all sent together in one
    message**, so the user approves them on one card ("Approve all"); never in `records` or `documents`,
-   which refuse a customisation. Then `set_column_mapping` for those columns. An option with
+   which refuse a customisation. Then `set_column_mapping` for those columns, and `dry_run_import` again: records
+   to create come from a check of the current mapping (one from before is refused). An option with
    `fix_in_file`: tell the user what to correct in the file and stop; they upload it again.
 
 Then show the new check's headline in one line. If it has a `card` again, it holds only what is left.

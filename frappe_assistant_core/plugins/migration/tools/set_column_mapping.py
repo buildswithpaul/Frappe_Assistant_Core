@@ -70,6 +70,88 @@ AFTER_MAPPING = (
     "Department...) whose records don't exist: leave it for the card's 'create a field' question."
 )
 
+
+#: A party linked by its code while the file has its name (live, 2026-11-19: 262 customers would have been
+#: created named "C000065"): the name column is linked instead.
+PARTY_NAME_HEADINGS = {"Customer": r"\bcustomer\s*name\b", "Supplier": r"\bsupplier\s*name\b"}
+#: DocTypes whose records keep the file's own ID as their ID when it has a column of them (Project ID)
+ID_FROM_FILE = frozenset({"Project", "Task"})
+#: Share of a link column's values that must exist for the link to be kept, when none can be created
+LINK_FOUND_SHARE = 0.2
+
+
+def _tidy(doc, target: str, headers, merged: Dict[str, str]):
+    """The mapping with what the user should never have to correct: a party linked by its name column, a
+    link whose values aren't records and can't be created left for the card's new-field question, and the
+    file's own IDs as the record's ID. Returns (mapping, what was changed, said in plain words)."""
+    import re
+
+    from frappe_assistant_core.utils import import_fixes
+
+    notes = []
+    previous = doc.target_doctype
+    doc.target_doctype = target  # what is mapped to, for the helpers below; saved with the mapping anyway
+    try:
+        return _tidied(doc, target, headers, merged, notes, re, import_fixes)
+    finally:
+        doc.target_doctype = previous or target
+
+
+def _tidied(doc, target, headers, merged, notes, re, import_fixes):
+    try:
+        rows = read_sheet_rows(readable_session_file(doc), doc.sheet or None)
+    except Exception:
+        return merged, notes
+    meta = frappe.get_meta(target)
+
+    def values(position: int):
+        return [cstr(r[position]).strip() for r in rows[1:] if position < len(r) and cstr(r[position]).strip()]
+
+    def link_df(field):
+        df = meta.get_field(field) if field and "." not in field else None
+        return df if df and df.fieldtype == "Link" else None
+
+    for position, field in list(merged.items()):
+        df = link_df(field)
+        if not df or df.options not in PARTY_NAME_HEADINGS:
+            continue
+        wanted = PARTY_NAME_HEADINGS[df.options]
+        name_at = next(
+            (i for i, h in enumerate(headers) if str(i) != position and re.search(wanted, cstr(h).lower())), None
+        )
+        if name_at is None or merged.get(str(name_at)) not in (None, DONT_IMPORT):
+            continue
+        merged[str(name_at)], merged[position] = field, DONT_IMPORT
+        notes.append(
+            _("{0} is linked by its name column ({1}), not by {2}, which holds codes.").format(
+                _(df.label), headers[name_at], headers[int(position)]
+            )
+        )
+    for position, field in list(merged.items()):
+        df = link_df(field)
+        if not df or df.options in PARTY_NAME_HEADINGS or df.options in import_fixes.COMPANY_NAMED:
+            continue
+        if df.options == "Company" or not import_fixes.cannot_create(df.options, doc):
+            continue  # a company is mapped on the card; a record that can be created is offered there
+        distinct = list(dict.fromkeys(values(int(position))))[:200]
+        if not distinct:
+            continue
+        found = sum(1 for v in distinct if frappe.db.exists(df.options, v))
+        if found / len(distinct) >= LINK_FOUND_SHARE:
+            continue
+        merged[position] = DONT_IMPORT
+        notes.append(
+            _(
+                "{0} isn't linked to {1}: its values aren't {1} records. The check offers a field for it."
+            ).format(headers[int(position)], _(df.label))
+        )
+    if target in ID_FROM_FILE and "name" not in merged.values():
+        at = import_fixes.id_column(doc, rows)
+        if at is not None and merged.get(str(at)) in (None, DONT_IMPORT):
+            merged[str(at)] = "name"
+            notes.append(_("{0} is the records' ID, so they keep the file's IDs.").format(headers[at]))
+    return merged, notes
+
 class SetColumnMapping(BaseTool):
     """
     Tool for saving a migration file's column mapping on its import session.
@@ -250,6 +332,9 @@ class SetColumnMapping(BaseTool):
                 }
             resolved, problems = resolve_mapping(target, schema, headers, mapping)
             merged = {**existing, **resolved}
+            adjusted = []
+            if import_type != import_update.UPDATE:
+                merged, adjusted = _tidy(doc, target, headers, merged)
             problems += duplicate_targets(merged, headers)
             key_position, key_system = None, ""
             if has_key:
@@ -319,6 +404,7 @@ class SetColumnMapping(BaseTool):
                 "doctype": target,
                 "status": doc.status,
                 **described,
+                **({"adjusted": adjusted} if adjusted else {}),
             }
             if key_position is not None:
                 header = headers[int(key_position)]

@@ -2163,7 +2163,7 @@ CARD_HOW = (
     "and don't print the mapping table. When the user answers, don't ask again: tell them in one line what "
     "you'll do, then do it in this order, with a short line after each step: 1) the columns option's calls: "
     "each its own create_document call (never a list: records and documents refuse a Custom Field), ALL sent "
-    "together in one message so the user approves them on one card, then set_column_mapping for those columns; 2) records to create in one create_document call with import_session (create_all's "
+    "together in one message so the user approves them on one card, then set_column_mapping for those columns and dry_run_import again (the records to create come from a check of the current mapping); 2) records to create in one create_document call with import_session (create_all's "
     "planned_masters with the chosen shared values, or the chosen options' create as documents); 3) one "
     "dry_run_import with every chosen option's fixes; 4) if it is ready, start_import. An option with "
     "fix_in_file: tell the user what to correct and stop."
