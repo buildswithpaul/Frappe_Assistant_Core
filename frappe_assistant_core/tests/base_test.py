@@ -35,6 +35,12 @@ try:
 except ImportError:  # Frappe v15
     from frappe.tests.utils import FrappeTestCase as IntegrationTestCase
 
+# The one role of the "someone else" a test acts as: desk access and no permission rules, which
+# is what a role an administrator has just added looks like. Every right its user has then comes
+# from the rules Frappe gives every desk user (All, Desk User). No role Frappe ships does this on
+# every version (v16 dropped the blog roles the tests used), so the role is made here when missing.
+NO_RIGHTS_ROLE = "FAC Test No Rights"
+
 
 CUSTOM_TEST_DOCTYPE = "FAC Test Chat Record"
 
@@ -308,6 +314,20 @@ class BaseAssistantTest(IntegrationTestCase):
                 "roles": [{"role": role} for role in roles],
             }
         ).insert(ignore_permissions=True)
+        return email
+
+    def make_desk_user(self, prefix: str) -> str:
+        """A fresh desk (System) user whose only own role grants nothing: see ``NO_RIGHTS_ROLE``.
+
+        For tests that must act as an ordinary user without rights on the records they touch.
+        The user and the role are rolled back with the test transaction.
+        """
+        if not frappe.db.exists("Role", NO_RIGHTS_ROLE):
+            frappe.get_doc({"doctype": "Role", "role_name": NO_RIGHTS_ROLE, "desk_access": 1}).insert(
+                ignore_permissions=True
+            )
+        email = self.make_throwaway_user(prefix, roles=(NO_RIGHTS_ROLE,))
+        self.assertEqual(frappe.db.get_value("User", email, "user_type"), "System User")
         return email
 
     def create_test_document(self, doctype, data):
