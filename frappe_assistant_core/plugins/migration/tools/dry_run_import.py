@@ -117,6 +117,8 @@ class DryRunImport(BaseTool):
         # takes them with or without their fence).
         self.untrusted_fields = (
             # a chart check quotes the client's account names
+            "headline",  # its reason can quote records a user typed (why replace isn't offered)
+            "mapped_by_headings",  # the file's own column headings
             "outline",
             "unclassified",
             "doubtful",

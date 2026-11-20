@@ -355,3 +355,12 @@ class TestColumnsFACOLeftOut(ImportRunCase):
         self.assertEqual(statuses["Root Type"], "read_by_chart")
         self.assertEqual(statuses["Parent Account Number"], "read_by_chart")
         self.assertEqual(statuses["Parent Account"], "mapped")
+
+
+class TestChartCheckFencing(unittest.TestCase):
+    def test_the_headline_and_the_headings_mapped_are_fenced(self):
+        from frappe_assistant_core.plugins.migration.tools.dry_run_import import DryRunImport
+
+        fields = DryRunImport().untrusted_fields
+        self.assertIn("headline", fields)
+        self.assertIn("mapped_by_headings", fields)
