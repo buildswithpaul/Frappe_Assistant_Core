@@ -104,9 +104,10 @@ class FACImportSession(Document):
         changed = self._changed_by_hand()
         if changed:
             frappe.throw(
-                _("Only the import tools can change an import session: {0} can't be set by hand.").format(
-                    ", ".join(changed)
-                ),
+                _(
+                    "Only the import tools can change an import session: {0} can't be set by hand. Change "
+                    "the mapping with set_column_mapping, and values with dry_run_import's fixes."
+                ).format(", ".join(changed)),
                 frappe.PermissionError,
             )
 

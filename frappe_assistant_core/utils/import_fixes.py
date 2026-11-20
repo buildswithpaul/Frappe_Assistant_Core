@@ -46,6 +46,8 @@ LEAVE_OUT = "leave_out"
 ALLOW_ZERO_RATE = "allow_zero_rate"  # opening stock: bring an item in at zero value
 POST_AT_CUTOFF = "post_at_cutoff"  # opening invoices: post invoices dated in no fiscal year at the cut-off
 FILL = "fill"  # one value for a required field the rows leave blank, or the file has no column for
+MAKE_UNIQUE = "make_unique"  # a repeated name: the later rows get their ID (or a number) added to it
+DROP_COLUMN = "drop_column"  # a column whose values the site can't take: left empty, every row kept
 ACTIONS = (
     MAP,
     LEAVE_OUT,
@@ -53,6 +55,8 @@ ACTIONS = (
     POST_AT_CUTOFF,
     CREATE,
     FILL,
+    MAKE_UNIQUE,
+    DROP_COLUMN,
 )  # applied by dry_run_import; create only in a migration plan, else create_document does it
 
 CLOSEST_LIMIT = 5
@@ -72,9 +76,36 @@ NEVER_CREATE = {
     "Company": "creating one also creates a chart of accounts, warehouses and taxes",
 }
 
+#: Masters each company defines for itself, that ERPNext names "<name> - <company abbreviation>": DocType →
+#: (its name field, its company field). A file names them without the abbreviation ("DEL"), so a new one is
+#: created for the import's company and the rows find it by "<name> - <abbr>". Live, 2026-11-19: a client's
+#: 7 department codes couldn't be created (ERPNext names it itself) and were forced onto ERPNext's defaults.
+COMPANY_NAMED = {
+    "Department": ("department_name", "company"),
+}
+
 
 class FixProblem(Exception):
     """A fix that can't be applied. The message is shown to the user."""
+
+
+class AlreadyThere(FixProblem):
+    """A planned master that exists already."""
+
+
+class CreatedBefore(FixProblem):
+    """Every master sent exists already: an earlier call created them (live, 2026-11-19: the chat
+    called create_document again 28 s after it had created 264 masters, and told the user someone
+    else must have added them)."""
+
+    def __init__(self, count: int):
+        super().__init__(
+            _(
+                "All {0} masters sent exist already: an earlier call created them, so none was created "
+                "now. Tell the user they are in place, then check the file again with dry_run_import."
+            ).format(count)
+        )
+        self.count = count
 
 
 class FixProblems(FixProblem):
@@ -96,6 +127,16 @@ def value_maps(session) -> List[Dict[str, Any]]:
     return list(_rules(session).get("value_maps") or [])
 
 
+def renames(session) -> Dict[str, Dict[str, str]]:
+    """Row → ``{"parent", "field", "value"}``: a repeated name made unique (MAKE_UNIQUE)."""
+    return dict(_rules(session).get("renames") or {})
+
+
+def dropped(session) -> List[Dict[str, str]]:
+    """``{"parent", "field", "label"}`` of each column left empty in every row (DROP_COLUMN)."""
+    return list(_rules(session).get("dropped_fields") or [])
+
+
 def fills(session) -> List[Dict[str, Any]]:
     """The fills: ``{"field", "label", "value"}``, each a field of the target DocType that every
     record the file starts gets this value for, when its row leaves it blank (#34415)."""
@@ -110,6 +151,13 @@ def left_out(session) -> List[Dict[str, Any]]:
     reasons = _rules(session).get("left_out") or {}
     rows = sorted(dry_run._excluded_rows(session))
     return [{"row": row, "reason": cstr(reasons.get(str(row)))} for row in rows]
+
+
+def left_out_problems(session) -> Dict[str, Dict[str, Optional[str]]]:
+    """What the check found wrong with each row left out, by row: ``{"error", "fix"}``. The
+    reason given for leaving rows out is often only the user's request ("leave the failing rows
+    out"); the failed-rows file says what to correct in them (#34417)."""
+    return dict(_rules(session).get("left_out_problems") or {})
 
 
 def left_out_report(session) -> List[Dict[str, Any]]:
@@ -164,22 +212,136 @@ def apply_value_maps(session, rows: List[List[str]]) -> List[List[str]]:
     """The file's rows (header first) with each old ID column translated (#34244) and every value map
     applied to its columns. Every reader of the file's rows comes through here."""
     rows = _with_fills(session, import_keys.translate(session, rows))
-    maps = value_maps(session)
-    if not maps or not rows:
+    if not rows:
         return rows
+    maps = value_maps(session)
+    targets = _column_targets(session)
     by_column: Dict[int, Dict[str, str]] = {}
-    for position, target in _column_targets(session).items():
+    for position, target in targets.items():
         for rule in maps:
             if target == (rule.get("parent"), rule.get("field")):
                 by_column.setdefault(position, {})[cstr(rule.get("from")).strip()] = cstr(rule.get("to"))
-    if not by_column:
+    if by_column:
+        out = [rows[0]]
+        for row in rows[1:]:
+            row = list(row)
+            for position, replace in by_column.items():
+                if position < len(row) and cstr(row[position]).strip() in replace:
+                    row[position] = replace[cstr(row[position]).strip()]
+            out.append(row)
+        rows = out
+    return _with_renames(
+        session, _without_dropped(session, _company_named(session, rows, targets), targets), targets
+    )
+
+
+def _company_named(session, rows: List[List[str]], targets) -> List[List[str]]:
+    """The rows with each value of a COMPANY_NAMED link ("DEL") as ERPNext names the record of the row's
+    company ("DEL - SD"), where that record exists and the value alone doesn't."""
+    columns = {}
+    for position, (parent, field) in targets.items():
+        df = frappe.get_meta(parent).get_field(field)
+        if df and df.fieldtype == "Link" and df.options in COMPANY_NAMED:
+            columns[position] = df.options
+    if not columns:
+        return rows
+    company_at = next(
+        (
+            p
+            for p, (parent, field) in targets.items()
+            if parent == session.target_doctype and field == "company"
+        ),
+        None,
+    )
+    fallback = import_company(session, rows)
+    abbr_of: Dict[str, Optional[str]] = {}
+    found: Dict[Tuple[str, str], bool] = {}
+
+    def exists(doctype: str, name: str) -> bool:
+        if (doctype, name) not in found:
+            found[(doctype, name)] = bool(frappe.db.exists(doctype, name))
+        return found[(doctype, name)]
+
+    out = [rows[0]]
+    for row in rows[1:]:
+        row = list(row)
+        company = cstr(row[company_at]).strip() if company_at is not None and company_at < len(row) else ""
+        company = company or fallback
+        if company not in abbr_of:
+            abbr_of[company] = frappe.get_cached_value("Company", company, "abbr") if company else None
+        abbr = abbr_of[company]
+        for position, doctype in columns.items():
+            value = cstr(row[position]).strip() if position < len(row) else ""
+            if abbr and value and not exists(doctype, value) and exists(doctype, f"{value} - {abbr}"):
+                row[position] = f"{value} - {abbr}"
+        out.append(row)
+    return out
+
+
+def import_company(session, rows: Optional[List[List[str]]] = None) -> Optional[str]:
+    """The company the file's records go to: the one its company column names most (after the value maps),
+    a fill's, or the site's default company."""
+    for fill in fills(session):
+        if fill.get("field") == "company" and fill.get("value"):
+            return fill["value"]
+    targets = _column_targets(session)
+    at = next(
+        (
+            p
+            for p, (parent, field) in targets.items()
+            if parent == session.target_doctype and field == "company"
+        ),
+        None,
+    )
+    if at is not None and rows:
+        counts: Dict[str, int] = {}
+        mapped = {
+            cstr(m.get("from")).strip(): cstr(m.get("to"))
+            for m in value_maps(session)
+            if m.get("field") == "company"
+        }
+        for row in rows[1:]:
+            value = cstr(row[at]).strip() if at < len(row) else ""
+            value = mapped.get(value, value)
+            if value and frappe.db.exists("Company", value):
+                counts[value] = counts.get(value, 0) + 1
+        if counts:
+            return max(counts, key=counts.get)
+    return frappe.defaults.get_user_default("Company") or frappe.db.get_single_value(
+        "Global Defaults", "default_company"
+    )
+
+
+def _without_dropped(session, rows: List[List[str]], targets) -> List[List[str]]:
+    """The rows with each dropped column's values left empty: every row is kept, the field isn't set."""
+    wanted = {(d.get("parent"), d.get("field")) for d in dropped(session)}
+    positions = [p for p, target in targets.items() if target in wanted]
+    if not positions:
         return rows
     out = [rows[0]]
     for row in rows[1:]:
         row = list(row)
-        for position, replace in by_column.items():
-            if position < len(row) and cstr(row[position]).strip() in replace:
-                row[position] = replace[cstr(row[position]).strip()]
+        for position in positions:
+            if position < len(row):
+                row[position] = ""
+        out.append(row)
+    return out
+
+
+def _with_renames(session, rows: List[List[str]], targets) -> List[List[str]]:
+    """The rows with each repeated name made unique, as MAKE_UNIQUE worked it out (by row number)."""
+    wanted = renames(session)
+    if not wanted:
+        return rows
+    position_of = {target: p for p, target in targets.items()}
+    out = [rows[0]]
+    for number, row in enumerate(rows[1:], start=2):
+        rename = wanted.get(str(number))
+        if rename:
+            at = position_of.get((rename.get("parent"), rename.get("field")))
+            if at is not None and at < len(row):
+                row = list(row)
+                row[at] = rename["value"]
         out.append(row)
     return out
 
@@ -673,6 +835,9 @@ def advise(session, group: Dict[str, Any]) -> Dict[str, Any]:
                     value, _(doctype), meant
                 )
             fixes.append(create)
+        drop = _drop_fix(session, group)
+        if drop:
+            fixes.append(drop)
         fixes.append(leave_out)
         out = {"explanation": explanation, "fixes": fixes}
         if reason:
@@ -691,7 +856,8 @@ def advise(session, group: Dict[str, Any]) -> Dict[str, Any]:
             fix["likely"] = meant
             if meant not in closest:
                 fix["closest"] = [meant, *closest][:CLOSEST_LIMIT]
-        return {"explanation": explanation, "fixes": [fix, leave_out]}
+        drop = _drop_fix(session, group)
+        return {"explanation": explanation, "fixes": [fix, *([drop] if drop else []), leave_out]}
 
     from frappe_assistant_core.utils import import_opening_stock as opening_stock
 
@@ -780,12 +946,25 @@ def advise(session, group: Dict[str, Any]) -> Dict[str, Any]:
         # The values a refusal's message quoted, "…" in it (#34407)
         explanation += " " + _("Values: {0}.").format(_listed(group["values"]))
     fixes = [leave_out]
+    if cause == dry_run.CAUSE_DUPLICATE_IN_FILE and group.get("field"):
+        # keep every row: the later ones get their ID, or a number, added to the name (MAKE_UNIQUE)
+        fixes.insert(0, {"action": MAKE_UNIQUE, "add": ["id", "number"]})
     blank = _fill_field(session, group)
     if blank:
         # One value for every row: the HSN code of a file of items, say (#34415)
         fixes.insert(0, {"action": FILL, "field": blank.fieldname, "label": _(blank.label)})
     # Anything else is corrected in the file, which is then checked again.
     return {"explanation": explanation, "fixes": fixes, "fix_in_file": True}
+
+
+def _drop_fix(session, group: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Leaving the column empty in every row, when the record can be saved without it: no row is lost.
+    Live, 2026-11-19: 2,083 of 2,084 projects were left out over a Department column."""
+    try:
+        entry = _droppable(session, group)
+    except FixProblem:
+        return None
+    return {"action": DROP_COLUMN, "note": _("{0} stays empty; every row is kept.").format(entry["label"])}
 
 
 def _listed(values: List[str], shown: int = 5) -> str:
@@ -805,6 +984,16 @@ def _select_options(session, group: Dict[str, Any]) -> List[str]:
 # -- applying fixes ------------------------------------------------------------------
 
 
+#: The fixes saved, each as sent (its group id with it): the same fix sent again is said saved, not refused
+#: as an unknown group; another fix for that group still is
+FIXED_GROUPS = "fixed_groups"
+FIXED_GROUPS_KEPT = 2000
+
+
+def _signature(fix: Dict[str, Any]) -> str:
+    return json.dumps(fix, sort_keys=True, default=str)
+
+
 def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str, Any]]) -> List[str]:
     """Check every fix, then store them all on the session, or none if any is wrong.
 
@@ -813,22 +1002,36 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
     """
     from frappe_assistant_core.utils import import_opening_balances as opening_balances
 
+    fixes = _expanded(fixes)
     maps = value_maps(session)
     filled = fills(session)
     reasons = {str(entry["row"]): entry["reason"] for entry in left_out(session)}
+    row_problems = left_out_problems(session)
     zero_rate = list(_rules(session).get("zero_rate_items") or [])
+    renamed = renames(session)
+    dropped_fields = dropped(session)
     post_at_cutoff = bool(_rules(session).get("post_at_cutoff"))
+    saved_before = list(_rules(session).get(FIXED_GROUPS) or [])
+    fixed_now = []
     done, problems, planned = [], [], []
     for fix in fixes:
         group = groups.get(cstr(fix.get("group")))
+        if not group and _signature(fix) in saved_before:
+            # live, 2026-11-20: the same fixes sent again after the check that applied them; that check no
+            # longer has their groups (they're fixed), so they were refused and the call made a third time
+            done.append(_("The fix for {0} was already saved.").format(fix.get("group")))
+            continue
         try:
             if not group:
+                # live, 2026-11-19: a fix from an earlier check listed all 280 groups, five times
                 raise FixProblem(
-                    _("There is no group {0} in the last check. Groups: {1}.").format(
-                        fix.get("group"), ", ".join(groups)
-                    )
+                    _(
+                        "There is no group {0} in the last check: group ids change with every check. Use "
+                        "the ids of the latest check's card (or decisions)."
+                    ).format(fix.get("group"))
                 )
             group = _with_target(session, group)
+            fixed_now.append(_signature(fix))
             action = fix.get("action")
             if group.get("cause") == opening_balances.CAUSE_NOT_BALANCED:
                 raise FixProblem(
@@ -842,9 +1045,14 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
                     )
                 )
             elif action == LEAVE_OUT:
-                reason = cstr(fix.get("reason")).strip() or group.get("message") or group["cause"]
+                from frappe_assistant_core.utils.import_failures import fix_of
+
+                error = group.get("message") or group["cause"]
+                reason = cstr(fix.get("reason")).strip() or error
+                problem = {"error": error, "fix": fix_of(session, group)}
                 for row in group["rows"]:
                     reasons.setdefault(str(row), reason)
+                    row_problems.setdefault(str(row), problem)
                 done.append(_("Left out {0}: {1}.").format(_rows(group["count"]), row_ranges(group["rows"])))
             elif action == ALLOW_ZERO_RATE:
                 from frappe_assistant_core.utils import import_opening_stock as opening_stock
@@ -873,6 +1081,22 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
                     _("{0} is '{1}' in {2}.").format(
                         _(filled[-1]["label"]), filled[-1]["value"], _rows(group["count"])
                     )
+                )
+            elif action == MAKE_UNIQUE:
+                renamed.update(_unique_names(session, group, fix, renamed))
+                done.append(
+                    _("{0}: {1} repeated names made unique, e.g. '{2}'.").format(
+                        _(group["label"]),
+                        group["count"],
+                        next(iter(renamed.values()))["value"] if renamed else "",
+                    )
+                )
+            elif action == DROP_COLUMN:
+                entry = _droppable(session, group)
+                if entry not in dropped_fields:
+                    dropped_fields.append(entry)
+                done.append(
+                    _("{0} is left empty in every row; no row is left out.").format(_(entry["label"]))
                 )
             elif action == CREATE:
                 if not session.get("migration_plan"):
@@ -909,8 +1133,12 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
         "value_maps": maps,
         "fills": filled,
         "left_out": reasons,
+        "left_out_problems": {row: problem for row, problem in row_problems.items() if row in reasons},
         "zero_rate_items": zero_rate,
         "post_at_cutoff": post_at_cutoff,
+        "renames": renamed,
+        "dropped_fields": dropped_fields,
+        FIXED_GROUPS: list(dict.fromkeys(saved_before + fixed_now))[-FIXED_GROUPS_KEPT:],
     }
     rules = {key: value for key, value in rules.items() if value}
     # what the fixes don't own stays: the column that holds the old ID, and the references it translates
@@ -935,6 +1163,7 @@ def forget_left_out(session) -> str:
         return ""
     rules = _rules(session)
     rules.pop("left_out", None)
+    rules.pop("left_out_problems", None)
     session.transformation_rules = frappe.as_json(rules) if rules else None
     session.excluded_rows = None
     note = _("This is a different file, so the {0} left out before are checked again.").format(
@@ -1064,7 +1293,15 @@ def cannot_create(doctype: str, session=None) -> str:
     if doctype in NEVER_CREATE:
         return _(NEVER_CREATE[doctype])
     if doctype in (frappe.conf.get("fac_import_never_create_doctypes") or []):
+        # before the company-named branch too: a site's deny list holds for a client's departments
         return _("this site doesn't allow creating it during an import")
+    if doctype in COMPANY_NAMED:
+        # created for the import's company, found by "<name> - <abbr>" (_company_named)
+        if not frappe.has_permission(doctype, "create"):
+            return _("you aren't allowed to create a {0}").format(_(doctype))
+        if not _may_use_create_document():
+            return _("creating records with FACO is turned off for you")
+        return ""
     meta = frappe.get_meta(doctype)
     if meta.issingle or meta.istable or meta.is_virtual or meta.is_submittable:
         return _("it isn't a master record")
@@ -1158,6 +1395,79 @@ def _holds_records(doctype: str, name: str) -> bool:
     return bool(frappe.db.exists(doctype, name))
 
 
+def id_column(session, rows: List[List[str]]) -> Optional[int]:
+    """The column of the file that tells its rows apart: mapped to the record's ID, the old ID column, or a
+    column headed "... ID" whose values are all different. None when the file has none."""
+    targets = _column_targets(session)
+    for position, (parent, field) in targets.items():
+        if parent == session.target_doctype and field == "name":
+            return position
+    key = import_keys.source_key(session)
+    if key:
+        return int(key["position"])
+    for position, heading in enumerate(rows[0] if rows else []):
+        if not re.search(r"\b(id|code|no\.?|number)\s*$", cstr(heading).strip().lower()):
+            continue
+        filled = [row for row in rows[1:] if any(cstr(cell).strip() for cell in row)]
+        values = [cstr(row[position]).strip() if position < len(row) else "" for row in filled]
+        if values and all(values) and len(set(values)) == len(values):
+            return position
+    return None
+
+
+def _unique_names(
+    session, group: Dict[str, Any], fix: Dict[str, Any], already: Dict
+) -> Dict[str, Dict[str, str]]:
+    """Row → new name for each later row of a repeated name: the name with the row's ID ("Accenture - COVID
+    (PMSF_0074_01)"), or with a number when the file has no ID column or ``add`` is "number". Never a name
+    the file or the site has already. Live, 2026-11-19: 322 sub-projects named like their main project
+    could only be left out."""
+    if group.get("cause") != dry_run.CAUSE_DUPLICATE_IN_FILE:
+        raise FixProblem(_("Only a name repeated in the file can be made unique."))
+    from frappe_assistant_core.utils.import_dry_run import read_sheet_rows
+
+    rows = apply_value_maps(session, read_sheet_rows(readable_session_file(session), session.sheet or None))
+    targets = _column_targets(session)
+    parent = group.get("parent") or session.target_doctype
+    at = next((p for p, target in targets.items() if target == (parent, group["field"])), None)
+    if at is None:
+        raise FixProblem(
+            _("No column of the file is mapped to {0}.").format(_(group.get("label") or group["field"]))
+        )
+    by_id = None if fix.get("add") == "number" else id_column(session, rows)
+    taken = {cstr(row[at]).strip().casefold() for row in rows[1:] if at < len(row)}
+    if frappe.get_meta(parent).has_field(group["field"]):
+        taken |= {
+            cstr(v).casefold() for v in frappe.get_all(parent, pluck=group["field"], limit_page_length=0) if v
+        }
+    out = {}
+    for number in sorted(int(r) for r in group["rows"]):
+        if number - 1 >= len(rows):
+            continue
+        row = rows[number - 1]
+        base = cstr(row[at]).strip()
+        tag = cstr(row[by_id]).strip() if by_id is not None and by_id < len(row) else ""
+        candidate, n = (f"{base} ({tag})" if tag else f"{base} (2)"), 2
+        while candidate.casefold() in taken:
+            n += 1
+            candidate = f"{base} ({tag} {n})" if tag else f"{base} ({n})"
+        taken.add(candidate.casefold())
+        out[str(number)] = {"parent": parent, "field": group["field"], "value": candidate}
+    return out
+
+
+def _droppable(session, group: Dict[str, Any]) -> Dict[str, str]:
+    """The column ``group`` is about, to leave empty in every row, or FixProblem when the record can't be
+    saved without it."""
+    if not group.get("field"):
+        raise FixProblem(_("This problem isn't about one column."))
+    parent = group.get("parent") or session.target_doctype
+    df = frappe.get_meta(parent).get_field(group["field"])
+    if df and df.reqd:
+        raise FixProblem(_("{0} is required, so it can't be left empty.").format(_(df.label)))
+    return {"parent": parent, "field": group["field"], "label": _(df.label) if df else group["field"]}
+
+
 def masters_plan(session, groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Every missing master the rows need that can be created: what FACO shows the user, as
     one table, before create_document creates them (documents, with import_session). One entry
@@ -1171,7 +1481,20 @@ def masters_plan(session, groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if group.get("cause") != dry_run.CAUSE_MISSING_LINK or not doctype or cannot_create(doctype, session):
             continue
         choose = {}
-        if is_party(session, doctype):
+        record_name = group["value"]
+        if doctype in COMPANY_NAMED:
+            company = import_company(session)
+            abbr = frappe.get_cached_value("Company", company, "abbr") if company else None
+            if not abbr:
+                continue
+            name_field, company_field = COMPANY_NAMED[doctype]
+            meta = frappe.get_meta(doctype)
+            parent = default_parent(doctype)
+            data = {name_field: group["value"], company_field: company}
+            if parent:
+                data[_parent_field(meta)] = parent
+            record_name = f"{group['value']} - {abbr}"
+        elif is_party(session, doctype):
             parent, data = None, opening_invoices.party_data(doctype, group["value"])
             choose = opening_invoices.party_choices(doctype, data)
         else:
@@ -1185,7 +1508,8 @@ def masters_plan(session, groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             {
                 "group": group["id"],
                 "doctype": doctype,
-                "name": group["value"],
+                "name": record_name,
+                "value": group["value"],
                 "parent": parent,
                 "rows": 0,
                 "data": data,  # as create_document takes it in documents
@@ -1247,6 +1571,18 @@ def planned_documents(session, planned: Any) -> List[Dict[str, Any]]:
                     _(doctype), ", ".join(sorted(allowed)) or _("nothing")
                 )
             )
+    # a group (or territory) the Settings don't give must be chosen: live, 2026-11-19, on a new site 262
+    # customers were created with no customer group at all
+    for entry in plan:
+        for field, options in (entry.get("choose") or {}).items():
+            # the group only: a territory may stay empty, as ERPNext lets it
+            if field.endswith("_group") and options and not (shared.get(entry["doctype"]) or {}).get(field):
+                raise FixProblem(
+                    _(
+                        "Ask the user which {0} the new {1} records go under (one of: {2}), then pass it "
+                        'in shared, e.g. {{"{1}": {{"{0}": "{3}"}}}}.'
+                    ).format(field, entry["doctype"], ", ".join(options), options[0])
+                )
     return [
         {"doctype": entry["doctype"], "data": {**entry["data"], **(shared.get(entry["doctype"]) or {})}}
         for entry in plan
@@ -1279,12 +1615,17 @@ def check_masters(session, documents: List[Dict[str, Any]]) -> List[Dict[str, An
             item = _planned_master(session, plan, entry, listed, named)
             _as_sent(entry, item)
         except FixProblem as e:
-            problems.append({"document": number, "doctype": entry.get("doctype"), "error": str(e)})
+            problems.append(
+                {"document": number, "doctype": entry.get("doctype"), "error": str(e)}
+                | ({"exists": True} if isinstance(e, AlreadyThere) else {})
+            )
             continue
         key = (item["doctype"], _planned_name(item))
         if key not in seen:
             seen.add(key)
             planned.append(item)
+    if problems and len(problems) == len(documents) and all(p.get("exists") for p in problems):
+        raise CreatedBefore(len(problems))
     if problems:
         raise FixProblems(problems, _("Nothing was created. Correct these and call again."))
     return parents_first(planned)
@@ -1351,6 +1692,46 @@ def parents_first(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return sorted(items, key=lambda item: levels[(item["doctype"], _planned_name(item))])
 
 
+def _planned_company_record(session, plan, doctype: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """A COMPANY_NAMED record from masters_plan (a client's department): its name, its company and its
+    parent, exactly as planned; ERPNext names it "<name> - <abbr>"."""
+    name_field, company_field = COMPANY_NAMED[doctype]
+    parent_field = _parent_field(frappe.get_meta(doctype))
+    others = sorted(set(data) - {name_field, company_field, parent_field})
+    if others:
+        raise FixProblem(
+            _("A missing {0} takes {1} only (as masters_plan's data has them), not {2}.").format(
+                _(doctype),
+                ", ".join(f for f in (name_field, company_field, parent_field) if f),
+                ", ".join(others),
+            )
+        )
+    value, company = cstr(data.get(name_field)).strip(), cstr(data.get(company_field)).strip()
+    abbr = frappe.get_cached_value("Company", company, "abbr") if company else None
+    if not abbr:
+        raise FixProblem(_("{0} needs a company that exists.").format(_(doctype)))
+    name = f"{value} - {abbr}"
+    if (doctype, name) not in plan:
+        raise FixProblem(
+            _("{0} '{1}' isn't one of the masters the last check found missing ({2}).").format(
+                _(doctype), value, _planned_list(plan)
+            )
+        )
+    if frappe.db.exists(doctype, name):
+        raise AlreadyThere(
+            _("{0} '{1}' already exists. Check the file again with dry_run_import.").format(_(doctype), name)
+        )
+    planned = {name_field: value, company_field: company}
+    # the parent is checked as for any master (a group the user may read), and is of no other company
+    parent = _parent(doctype, cstr(data.get(parent_field)).strip() if parent_field else "")
+    if parent:
+        owner = frappe.db.get_value(doctype, parent, company_field)
+        if owner and owner != company:
+            raise FixProblem(_("'{0}' belongs to another company than {1}.").format(parent, company))
+        planned[parent_field] = parent
+    return {"doctype": doctype, "data": planned}
+
+
 def _planned_master(session, plan, entry, listed=frozenset(), named=frozenset()) -> Dict[str, Any]:
     doctype = cstr(entry.get("doctype")).strip()
     if not frappe.db.exists("DocType", doctype):
@@ -1378,12 +1759,14 @@ def _planned_master(session, plan, entry, listed=frozenset(), named=frozenset())
                 )
             )
         if opening_invoices.find_party(doctype, name):
-            raise FixProblem(
+            raise AlreadyThere(
                 _("{0} '{1}' already exists. Check the file again with dry_run_import.").format(
                     _(doctype), name
                 )
             )
         return {"doctype": doctype, "data": data}
+    if doctype in COMPANY_NAMED:
+        return _planned_company_record(session, plan, doctype, entry.get("data") or {})
     meta = frappe.get_meta(doctype)
     name_field, parent_field = _name_field(meta), _parent_field(meta)
     group_field = "is_group" if parent_field and meta.has_field("is_group") else None
@@ -1406,7 +1789,7 @@ def _planned_master(session, plan, entry, listed=frozenset(), named=frozenset())
             )
         )
     if frappe.db.exists(doctype, name):
-        raise FixProblem(
+        raise AlreadyThere(
             _("{0} '{1}' already exists. Check the file again with dry_run_import.").format(_(doctype), name)
         )
     planned = {name_field: name}
@@ -1483,6 +1866,10 @@ def _planned_list(plan) -> str:
 def _planned_name(entry: Dict[str, Any]) -> str:
     from frappe_assistant_core.utils import import_opening_invoices as opening_invoices
 
+    if entry["doctype"] in COMPANY_NAMED:
+        name_field, company_field = COMPANY_NAMED[entry["doctype"]]
+        abbr = frappe.get_cached_value("Company", entry["data"].get(company_field), "abbr")
+        return f"{entry['data'][name_field]} - {abbr}"
     field = _name_field(frappe.get_meta(entry["doctype"])) or opening_invoices.PARTY_NAME_FIELDS.get(
         entry["doctype"]
     )
@@ -1665,7 +2052,7 @@ def decisions(session, groups: List[Dict[str, Any]], masters: List[Dict[str, Any
     each with its values (up to DECISION_VALUES), the rows of each, and a suggested answer. The
     groups shown are the first GROUPS_SHOWN only; live, 2026-11-17, a status value among 276 groups
     came up four rounds after the others. Fixes reach every group, shown or not."""
-    planned = {(m["doctype"], m["name"]) for m in masters}
+    planned = {(m["doctype"], m.get("value", m["name"])) for m in masters}
     out: Dict[Tuple[Any, Any, Any], Dict[str, Any]] = {}
     for group in groups:
         key = (group.get("cause"), group.get("parent"), group.get("field"))
@@ -1703,10 +2090,18 @@ def _suggested(session, group: Dict[str, Any], planned) -> Optional[Dict[str, An
     """The answer to suggest for one group: create a planned master, map to the likely name or
     choice, leave out the later rows of a repeated name; None when only the user can say."""
     target = _with_target(session, group)
+    if target.get("link_doctype") in COMPANY_NAMED:
+        # the client's own departments: map only a clear match (HR → Human Resources), else create it
+        likely = (
+            ({f.get("action"): f for f in advise(session, group).get("fixes") or []}).get(MAP) or {}
+        ).get("likely")
+        if likely:
+            return {"action": MAP, "to": likely}
     if (target.get("link_doctype"), group.get("value")) in planned:
         return {"action": CREATE}
     if group.get("cause") == dry_run.CAUSE_DUPLICATE_IN_FILE:
-        return {"action": LEAVE_OUT, "reason": _("Repeated name")}
+        # live, 2026-11-19: 322 sub-projects named like their main project were only offered "leave out"
+        return {"action": MAKE_UNIQUE}
     fixes = {fix.get("action"): fix for fix in advise(session, group).get("fixes") or []}
     likely = (fixes.get(MAP) or {}).get("likely")
     if likely:
@@ -1753,8 +2148,477 @@ def report(session, summary: Dict[str, Any]) -> Dict[str, Any]:
         out["groups_not_shown"] = hidden
     if summary["groups"]:
         out["decisions"] = decisions(session, summary["groups"], masters)
+    choices = card(session, summary, masters)
+    if choices:
+        out["card"] = choices
+        out["next"] = _(CARD_HOW)  # outside the card: the card quotes the file and is fenced
+        if len(json.dumps(out, default=str)) > REPLY_BUDGET:
+            # live, 2026-11-19: replies set aside by FAC Cloud (130,000, then 20,000 characters): FACO read parts,
+            # missed the card and typed the questions. The card carries every fix: the lists go, counts stay.
+            out["groups"] = out["groups"][:GROUPS_DETAILED]
+            out.pop("decisions", None)
+            # live, 2026-11-20: an empty masters_plan was read as nothing to create, and the chat stopped
+            out.pop("masters_plan", None)
+            out["masters_plan_total"] = len(masters)
+            if masters:
+                out["masters_plan_left_out"] = _(
+                    "{0} records to create, left out to keep this short: create them with the card's create "
+                    "option (create_document with import_session and planned_masters {{count: {0}}})."
+                ).format(len(masters))
+            out["message"] += " " + _(
+                "The details are left out to keep this short: card has every choice, with what to send."
+            )
+        # the instruction and the card first, so a reply cut or set aside still starts with them
+        out = {"next": out.pop("next"), "card": out.pop("card"), **out}
     if len(masters) > MASTERS_SHOWN:
         out["masters_plan_total"] = len(masters)
     if summary.get("excluded"):
         out["left_out"] = left_out_report(session)
     return out
+
+
+# -- the one card: every choice of a check, in plain words -----------------------------------------
+# Live, 2026-11-19 (2,084 projects): six questions one after another, "exclude rows with missing departments"
+# left 1 row of 2,084, repeated names could only be left out, and the user was asked to type department
+# names. The card puts every choice of the check on one card, each option saying what it does, the
+# recommended one first, with the fixes (and the records to create first) FACO sends when it is picked.
+
+CARD_LISTED = 6  # values named in an option's label
+
+#: How FACO uses the card, in the reply it always reads (live, 2026-11-19: it asked one question of eight,
+#: confirmed three times, printed the mapping table twice and ran 15 calls without a word to the user).
+CARD_HOW = (
+    "Show this card now: one ask_user call per question (single_select, its recommended option "
+    "pre-selected, its title and result as the description), ALL in the same response as parallel tool "
+    "calls: the chat shows them together as one card. Never one ask_user holding several questions. Don't decide, summarise or leave out any question, "
+    "don't add your own (the company again, one question summing up the others, a final 'Proceed?': the "
+    "card's answers are the go-ahead), and don't print the mapping table. When the user answers, don't ask again: tell them in one line what "
+    "you'll do, then do it in this order, with a short line after each step: 1) the columns option's calls: "
+    "one create_document call per field (never a list: records and documents refuse a Custom Field), ALL in "
+    "ONE response as parallel tool calls, never one after another's approval: the chat then shows them on one "
+    "card ('N changes go live') approved once. Then set_column_mapping for those columns and, after its reply, "
+    "dry_run_import with every chosen option's fixes (the records to create come from a check of the current mapping); 2) "
+    "records to create in one create_document call with import_session (create_all's planned_masters with the "
+    "chosen shared values, or the chosen options' create as documents); 3) dry_run_import (with the chosen "
+    "fixes if step 1 didn't send them; fixes once saved needn't be sent again); 4) if it is ready, "
+    "start_import. An option with "
+    "fix_in_file: tell the user what to correct and stop."
+)
+CARD_CREATE_LISTED = 10  # records an option lists to create; more are created by planned_masters, by count
+GROUPS_DETAILED = 5  # groups a big reply still shows with their example rows
+REPLY_BUDGET = 12000  # a check's reply above it keeps the card and counts, not every group's detail
+CARD_LIKELY = 50  # groups of a question looked up for a clear match
+
+
+def _plural(doctype: str, count: int) -> str:
+    return _(doctype) if count == 1 else _("{0} records").format(_(doctype))
+
+
+def card(session, summary: Dict[str, Any], masters: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The check's choices for ONE card: ``title``, ``intro``, ``questions`` (each ``title``, ``detail`` and
+    ``options``: ``label``, ``effect``, ``recommended``, and what to send, ``fixes`` for dry_run_import and
+    ``create`` records for create_document first), and ``result``: how many rows the recommended answers
+    import. None when there is nothing to ask."""
+    total = summary.get("total_rows") or summary.get("records") or 0
+    questions: List[Dict[str, Any]] = []
+    target = session.target_doctype
+    if session.import_type == "Update Existing Records" and not frappe.db.count(target):
+        questions.append(
+            {
+                "id": "import_type",
+                "title": _("There are no {0} records yet").format(_(target)),
+                "detail": _("Updating would change nothing: every row would find no record to update."),
+                "options": [
+                    {
+                        "label": _("Import them as new records"),
+                        "effect": _("All {0} rows are created.").format(total),
+                        "recommended": True,
+                        "then": _(
+                            "set_column_mapping again with the same mapping and import_type 'Insert New Records', then dry_run_import"
+                        ),
+                    },
+                    {
+                        "label": _("Keep updating"),
+                        "effect": _("Nothing would be imported."),
+                        "recommended": False,
+                    },
+                ],
+            }
+        )
+    by_key: Dict[Tuple[Any, Any, Any], List[Dict[str, Any]]] = {}
+    for group in summary.get("groups") or []:
+        by_key.setdefault((group.get("cause"), group.get("parent"), group.get("field")), []).append(group)
+    planned = {(m["doctype"], m.get("value", m["name"])): m for m in masters}
+    for (cause, _parent, field), groups in by_key.items():
+        rows = sum(g.get("count") or 0 for g in groups)
+        label = _(groups[0].get("label") or field or "")
+        skip = {
+            "label": _("Ignore these for now: skip the {0} rows").format(rows),
+            "effect": _("These rows aren't imported; the import report lists them."),
+            "fixes": _compact([{"group": g["id"], "action": LEAVE_OUT} for g in groups]),
+        }
+        if cause == dry_run.CAUSE_DUPLICATE_IN_FILE:
+            questions.append(_duplicate_question(session, groups, label, rows, skip))
+        elif cause == dry_run.CAUSE_MISSING_LINK:
+            questions.append(_missing_question(session, groups, label, rows, planned, skip))
+        elif cause == dry_run.CAUSE_BAD_OPTION:
+            questions.append(_option_question(session, groups, label, rows, skip))
+        else:
+            first = advise(session, groups[0])
+            questions.append(
+                {
+                    "id": f"{cause}:{field}",
+                    "title": _("{0} rows: {1}").format(rows, label or _(cause)),
+                    "detail": first.get("explanation"),
+                    "options": [
+                        {
+                            "label": _("I'll correct the file and upload it again"),
+                            "effect": _("Nothing is imported until then."),
+                            "fix_in_file": True,
+                        },
+                        skip,
+                    ],
+                }
+            )
+    unplaced = _columns_question(session)
+    if unplaced:
+        questions.append(unplaced)
+    choose = _shared_question(masters)
+    if choose:
+        questions.append(choose)
+    if not questions:
+        return None
+    for question in questions:
+        if not any(o.get("recommended") for o in question["options"]):
+            question["options"][0]["recommended"] = question["options"][0].get("fix_in_file") is not True
+    lost = sum(o.get("rows_lost", 0) for q in questions for o in q["options"] if o.get("recommended"))
+    company = import_company(session)
+    return {
+        "title": (
+            _("Import {0} {1} into {2}").format(total, _plural(target, total), company)
+            if company and frappe.get_meta(target).has_field("company")
+            else _("Import {0} {1}").format(total, _plural(target, total))
+        ),
+        "intro": _("I checked the file. These need your choice; the recommended answer is selected."),
+        "questions": questions,
+        **(
+            {"create_all": {"planned_masters": {"count": len(masters)}}}
+            if any(o.get("create_planned") for q in questions for o in q["options"])
+            else {}
+        ),
+        "result": _("With the recommended answers, up to {0} of {1} rows are imported.").format(
+            max(total - lost, 0), total
+        ),
+    }
+
+
+def _duplicate_question(session, groups, label, rows, skip) -> Dict[str, Any]:
+    from frappe_assistant_core.utils.import_dry_run import read_sheet_rows
+
+    example, heading = "", ""
+    try:
+        first = (groups[0].get("rows") or groups[0].get("example_rows") or [])[:1]
+        sample = _unique_names(session, {**_with_target(session, groups[0]), "rows": first}, {}, {})
+        example = next(iter(sample.values()))["value"] if sample else ""
+        file_rows = apply_value_maps(
+            session, read_sheet_rows(readable_session_file(session), session.sheet or None)
+        )
+        at = id_column(session, file_rows)
+        heading = cstr(file_rows[0][at]) if at is not None else ""
+    except Exception:
+        pass
+    options = []
+    if heading:
+        options.append(
+            {
+                "label": _("Give them different names: add the {0}").format(heading),
+                "effect": _("All {0} rows are kept, e.g. '{1}'.").format(rows, example),
+                "recommended": True,
+                "fixes": [{"group": g["id"], "action": MAKE_UNIQUE, "add": "id"} for g in groups],
+            }
+        )
+    options.append(
+        {
+            "label": _("Give them different names: add a number"),
+            "effect": _("All {0} rows are kept, e.g. '… (2)'.").format(rows),
+            "recommended": not heading,
+            "fixes": [{"group": g["id"], "action": MAKE_UNIQUE, "add": "number"} for g in groups],
+        }
+    )
+    options.append(
+        {
+            "label": _("I'll rename them in the file and upload it again"),
+            "effect": _("Nothing is imported until then."),
+            "fix_in_file": True,
+        }
+    )
+    options.append({**skip, "rows_lost": rows})
+    return {
+        "id": f"duplicate:{groups[0].get('field')}",
+        "title": _("{0} rows repeat a {1} used earlier in the file").format(rows, label),
+        "detail": _("ERPNext allows each {0} only once, so these can't come in as they are.").format(label),
+        "options": options,
+    }
+
+
+def _missing_question(session, groups, label, rows, planned, skip) -> Dict[str, Any]:
+    doctype = _with_target(session, groups[0]).get("link_doctype") or label
+    create, maps, unplaced = [], [], 0
+    groups_left = groups
+    if doctype == "Company":
+        # the company the user is importing into, never the closest-sounding one (live: samb → Sambhav Demo)
+        company = import_company(session)
+        if company:
+            maps, groups_left = [(g, company) for g in groups], []
+    for index, group in enumerate(groups_left):
+        plan = planned.get((doctype, group.get("value")))
+        clear = None
+        if index < CARD_LIKELY:
+            fix = {f.get("action"): f for f in advise(session, group).get("fixes") or []}.get(MAP) or {}
+            clear = fix.get("likely")
+        if clear and (doctype in COMPANY_NAMED or not plan):
+            maps.append((group, clear))
+        elif plan:
+            create.append(plan)
+        else:
+            unplaced += group.get("count") or 0
+    values = [cstr(g.get("value")) for g in groups]
+    options = []
+    if create or maps:
+        parts = []
+        if create:
+            parts.append(
+                _("Create {0} new {1}: {2}").format(
+                    len(create),
+                    _plural(doctype, len(create)),
+                    ", ".join(c["value"] if "value" in c else c["name"] for c in create[:CARD_LISTED])
+                    + ("…" if len(create) > CARD_LISTED else ""),
+                )
+            )
+        if maps:
+            parts.append(
+                _("use {0}").format(
+                    ", ".join(f"{_short(to)} for {g.get('value')}" for g, to in maps[:CARD_LISTED])
+                )
+            )
+        option = {
+            "label": "; ".join(parts),
+            "effect": _("Every row is kept.")
+            if not unplaced
+            else _("{0} rows still need another answer.").format(unplaced),
+            "recommended": True,
+            "fixes": [{"group": g["id"], "action": MAP, "to": to} for g, to in maps],
+            "rows_lost": unplaced,
+        }
+        if len(create) > CARD_CREATE_LISTED:
+            # too many to list: planned_masters creates every planned record, by count (card.create_all)
+            option["create_planned"] = {"doctype": doctype, "count": len(create)}
+        elif create:
+            option["create"] = [{"doctype": c["doctype"], "data": c["data"]} for c in create]
+        options.append(option)
+    drop = _drop_fix(session, groups[0])
+    if drop:
+        options.append(
+            {
+                "label": _("Leave {0} empty").format(label),
+                "effect": _("Every row is kept, with no {0}.").format(label),
+                "recommended": not options,
+                "fixes": [{"group": groups[0]["id"], "action": DROP_COLUMN}],
+            }
+        )
+    options.append(
+        {
+            "label": _("I'll correct them in the file and upload it again"),
+            "effect": _("Nothing is imported until then."),
+            "fix_in_file": True,
+        }
+    )
+    options.append({**skip, "rows_lost": rows})
+    return {
+        "id": f"missing:{groups[0].get('field')}",
+        "title": _("{0} {1} in the file don't exist in ERPNext yet").format(len(groups), label),
+        "detail": _("Values: {0}.").format(
+            ", ".join(values[:CARD_LISTED]) + ("…" if len(values) > CARD_LISTED else "")
+        ),
+        "options": options,
+    }
+
+
+def _short(name: str) -> str:
+    """A company record's name without the company's abbreviation, for the user: "Human Resources"."""
+    return re.sub(r" - [A-Za-z0-9&.]{1,10}$", "", cstr(name))
+
+
+def _option_question(session, groups, label, rows, skip) -> Dict[str, Any]:
+    maps, unknown = [], []
+    for group in groups:
+        fix = {f.get("action"): f for f in advise(session, group).get("fixes") or []}.get(MAP) or {}
+        to = fix.get("likely") or next(iter(fix.get("closest") or []), None)
+        (maps if to else unknown).append((group, to))
+    options = []
+    if maps:
+        options.append(
+            {
+                "label": _("Use ERPNext's: {0}").format(
+                    ", ".join(f"{g.get('value')} → {to}" for g, to in maps[:CARD_LISTED])
+                ),
+                "effect": _("Every row is kept."),
+                "recommended": True,
+                "fixes": [{"group": g["id"], "action": MAP, "to": to} for g, to in maps],
+            }
+        )
+    drop = _drop_fix(session, groups[0])
+    if drop:
+        options.append(
+            {
+                "label": _("Leave {0} empty").format(label),
+                "effect": _("Every row is kept, with no {0}.").format(label),
+                "fixes": [{"group": groups[0]["id"], "action": DROP_COLUMN}],
+            }
+        )
+    options.append({**skip, "rows_lost": rows})
+    return {
+        "id": f"option:{groups[0].get('field')}",
+        "title": _("{0} values in the file aren't ERPNext's choices for {1}").format(len(groups), label),
+        "detail": _("{0} rows.").format(rows),
+        "options": options,
+    }
+
+
+def _columns_question(session) -> Optional[Dict[str, Any]]:
+    """The file's columns with values that go nowhere (unmapped or Don't Import): create a text field for each
+    on the DocType, or leave them out. Not a column of old IDs, nor one that repeats another column. Live,
+    2026-11-19: 17 columns of a client's projects were offered "put in Notes"."""
+    from frappe_assistant_core.utils.import_dry_run import read_sheet_rows
+
+    try:
+        rows = apply_value_maps(
+            session, read_sheet_rows(readable_session_file(session), session.sheet or None)
+        )
+    except Exception:
+        return None
+    if not rows:
+        return None
+    mapped = _column_targets(session)
+    key = import_keys.source_key(session)
+    skip = {int(key["position"])} if key else set()
+    ids = id_column(session, rows)
+    if ids is not None:
+        skip.add(ids)  # the file's own IDs: the record's ID, not a field (set-column-mapping-usage)
+    columns = {p: [cstr(r[p]).strip() if p < len(r) else "" for r in rows[1:]] for p in range(len(rows[0]))}
+    meta = frappe.get_meta(session.target_doctype)
+    labels = {cstr(df.label).strip().casefold() for df in meta.fields}
+    left = []
+    for position, values in columns.items():
+        heading = cstr(rows[0][position]).strip()
+        if position in mapped or position in skip or not heading or not any(values):
+            continue
+        if any(
+            values == other for p, other in columns.items() if p != position and (p in mapped or p < position)
+        ):
+            continue  # a copy of another column
+        if heading.casefold() in labels:
+            continue  # the DocType has a field of that name: a mapping question, not a new field
+        left.append(heading)
+    if not left:
+        return None
+    doctype = session.target_doctype
+    return {
+        "id": "columns",
+        "title": _("{0} columns of the file have no field on {1}").format(len(left), _(doctype)),
+        "detail": ", ".join(left[:12]) + ("…" if len(left) > 12 else ""),
+        "options": [
+            {
+                "label": _("Create a text field on {0} for each, and import them").format(_(doctype)),
+                "effect": _("{0} new fields on the {1} form; their values come in.").format(
+                    len(left), _(doctype)
+                ),
+                "recommended": True,
+                "calls": [
+                    {
+                        "tool": "create_document",
+                        "arguments": {
+                            "doctype": "Custom Field",
+                            "data": {"dt": doctype, "label": heading, "fieldtype": "Data"},
+                        },
+                    }
+                    for heading in left
+                ],
+                "then": _(
+                    "make each of calls as its own create_document call (live: a list of them was refused), all "
+                    "sent together in one message so the user approves them on one card; then map every column to "
+                    "its new field with set_column_mapping"
+                ),
+            },
+            {
+                "label": _("Don't import these columns"),
+                "effect": _("Their values stay only in the file."),
+            },
+        ],
+    }
+
+
+#: The group a new party that is a company most likely belongs to, when no existing party says otherwise
+BUSINESS_GROUPS = {"customer_group": ("Commercial",)}
+
+
+def _likeliest_first(doctype: str, field: str, values: List[str]) -> List[str]:
+    """``values`` with the one the site's own records use most first, then the usual one for a business (a
+    customer group of Commercial), then as listed. Live, 2026-11-20: 262 CSR clients were offered
+    "Government" as recommended, only because it was listed first."""
+    used = {v: frappe.db.count(doctype, {field: v}) for v in values}
+    usual = {_(v) for v in BUSINESS_GROUPS.get(field, ())} | set(BUSINESS_GROUPS.get(field, ()))
+    return sorted(values, key=lambda v: (-used[v], v not in usual, values.index(v)))
+
+
+def _shared_question(masters: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """For new customers or suppliers the site has no default group or territory for: which one, once for
+    all of them (masters_plan's ``choose``), as one question of the card."""
+    wanted: Dict[Tuple[str, str], List[str]] = {}
+    for entry in masters:
+        for field, values in (entry.get("choose") or {}).items():
+            if values:
+                wanted.setdefault((entry["doctype"], field), list(values))
+    if not wanted:
+        return None
+    (doctype, field), values = next(iter(wanted.items()))
+    values = _likeliest_first(doctype, field, values)
+    count = sum(1 for m in masters if m["doctype"] == doctype)
+    label = _(frappe.get_meta(doctype).get_label(field))
+    return {
+        "id": f"shared:{doctype}:{field}",
+        "title": _("{0} for the {1} new {2}").format(label, count, _plural(doctype, count)),
+        "detail": _("The site has no default {0}: one is given to all of them.").format(label),
+        "options": [
+            {
+                "label": value,
+                "effect": _("All {0} get {1}.").format(count, value),
+                "recommended": i == 0,
+                "shared": {doctype: {field: value}},
+            }
+            for i, value in enumerate(values[:CARD_LISTED])
+        ],
+    }
+
+
+def _expanded(fixes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Fixes as the card sends them for many groups at once, ``{"groups": [ids], "action": ...}``, one per
+    group: 262 groups' "leave out" written one by one made the card too long to show (live, 2026-11-19)."""
+    out = []
+    for fix in fixes or []:
+        if isinstance(fix, dict) and isinstance(fix.get("groups"), list) and not fix.get("group"):
+            rest = {k: v for k, v in fix.items() if k != "groups"}
+            out.extend({**rest, "group": group} for group in fix["groups"])
+        else:
+            out.append(fix)
+    return out
+
+
+def _compact(fixes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The same fix for many groups as one entry with their ids (_expanded reads it back)."""
+    if len(fixes) <= 3 or any(set(f) - {"group", "action"} for f in fixes):
+        return fixes
+    actions = {f["action"] for f in fixes}
+    if len(actions) != 1:
+        return fixes
+    return [{"action": actions.pop(), "groups": [f["group"] for f in fixes]}]

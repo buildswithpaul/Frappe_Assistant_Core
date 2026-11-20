@@ -34,6 +34,12 @@ from frappe_assistant_core.utils.import_session import (
     find_site_file,
 )
 
+#: A check that met a mapping being saved: the two were sent in the same response
+SENT_TOGETHER = (
+    "The session changed while it was checked: set_column_mapping was sent at the same time. Call "
+    "dry_run_import again now, alone; never in the same response as set_column_mapping."
+)
+
 
 class DryRunImport(BaseTool):
     """Check every row of an import session's file without importing anything."""
@@ -111,10 +117,30 @@ class DryRunImport(BaseTool):
         # takes them with or without their fence).
         self.untrusted_fields = (
             # a chart check quotes the client's account names
+            "headline",  # its reason can quote records a user typed (why replace isn't offered)
+            "mapped_by_headings",  # the file's own column headings
             "outline",
             "unclassified",
+            "doubtful",
+            "modes.replace_refused",  # names the records that point at the accounts
             "parents_not_in_the_file",
             "map",
+            "categories_to_check",
+            "categories_not_found",
+            "names_from_another_company",
+            "names_question",
+            # the chart check's one card quotes the client's account names and abbreviation
+            "questions[kind=mode].choices",
+            "questions[kind=mode].why",
+            "questions[kind=doubtful].examples",
+            "questions[kind=clean_names].message",
+            "questions[kind=clean_names].examples",
+            "questions[kind=clean_names].choices",
+            "questions[kind=categories].examples",
+            "add_leaves_beside",
+            "card_title",
+            # the import card quotes the file's values and names
+            "card",
             "groups",
             "decisions",  # each value the file has, as the groups quote them
             "masters_plan",
@@ -154,8 +180,9 @@ class DryRunImport(BaseTool):
                         "(for the modes it allows and which accounts match; default: the site's only "
                         "company, so ask only on a site of several), classifications ({account "
                         "name: {root_type, account_type}}, the user's answers for the accounts that "
-                        "couldn't be classified) and root_type_column (the heading of a Root Type "
-                        "column, when the file has one)."
+                        "couldn't be classified; account_category too on ERPNext v16), root_type_column (the "
+                        "heading of a Root Type column, when the file has one) and clean_names (the user's "
+                        "answer when names_from_another_company is reported)."
                     ),
                 },
                 "plan": {
@@ -197,6 +224,15 @@ class DryRunImport(BaseTool):
                         "type": "object",
                         "properties": {
                             "group": {"type": "string", "description": "Group id, e.g. 'G3fa2c1'"},
+                            "groups": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Instead of group: the same fix for several groups, as the card sends it.",
+                            },
+                            "add": {
+                                "type": "string",
+                                "description": "For 'make_unique': 'id' (the row's ID) or 'number'.",
+                            },
                             "action": {"type": "string", "enum": list(import_fixes.ACTIONS)},
                             "to": {
                                 "type": "string",
@@ -204,7 +240,10 @@ class DryRunImport(BaseTool):
                             },
                             "reason": {
                                 "type": "string",
-                                "description": "For 'leave_out': why, in the user's words.",
+                                "description": "For 'leave_out': the user's own reason for "
+                                "leaving these rows out (a closed shop, say), in their words. Leave "
+                                "it out when they only asked to leave the failing rows out: the "
+                                "check's error is kept for each row anyway.",
                             },
                             "value": {
                                 "type": "string",
@@ -212,7 +251,7 @@ class DryRunImport(BaseTool):
                                 "required field it leaves blank (one HSN code for every item, say).",
                             },
                         },
-                        "required": ["group", "action"],
+                        "required": ["action"],  # and group, or groups for the same fix on several
                     },
                 },
             },
@@ -358,6 +397,10 @@ class DryRunImport(BaseTool):
             return {"success": False, "error": str(e), "session": session_name}
         except frappe.QueryDeadlockError:
             raise  # the database undid the call: _safe_execute runs it again or says so
+        except frappe.TimestampMismatchError:
+            # live, 2026-11-20: set_column_mapping and dry_run_import sent in one response; the mapping was
+            # saved while the check ran
+            return {"success": False, "error": _(SENT_TOGETHER), "session": session_name}
         except Exception as e:
             frappe.log_error(title=_("Dry Run Import Error"), message=frappe.get_traceback())
             return {"success": False, "error": str(e), "session": session_name}

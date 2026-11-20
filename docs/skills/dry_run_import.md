@@ -103,6 +103,47 @@ A large file is checked in the background: one of more than 3,000 rows of plain 
 
 ## Fixing the groups
 
+### The card: ask everything once, in plain words
+
+When the reply has `card`, it **is** what you ask. Show it as **ONE** `ask_user` card, nothing before it
+and nothing after it until the user answers:
+
+- The card's title is `card.title`; its description is `card.intro` and, at the end, `card.result`.
+- One `single_select` per entry of `card.questions`, titled with its `title` (and `detail` under it), its
+  `options` in order, each shown as `label` with `effect` after it. Pre-select the `recommended` one and
+  mark it "(recommended)". Use the user's words: never "session", "mapping", "group", "link" or field names.
+- Never ask the user to type a name or a value the card can offer as a choice.
+
+The reply's `next` says the same in short: follow it. **Keep the user informed:** before you start, one line of
+what you'll do ("Creating 13 fields, then 271 records, then importing 2,084 projects"), and a short line
+after each step ("13 fields created"). Never run a series of calls without a word to the user.
+
+When they answer, do what the chosen options say, in this order, without asking again:
+1. Records to create, in **one** `create_document` call with `import_session`:
+   - When the card has `create_all` and the user kept every "create" answer: pass
+     `planned_masters` = `card.create_all.planned_masters`, with `shared` from the chosen answer of a
+     `shared:` question (e.g. the customer group). It creates every planned record (an option with
+     `create_planned` too), so don't send any `create` list besides.
+   - Otherwise: `documents` = every chosen option's `create` records together. They are the client's own
+     records (a company's departments are created for that company).
+2. One `dry_run_import` with every chosen option's `fixes` together.
+3. An option with `then` says what to call first (e.g. switch to new records). `custom_fields` come
+   **first**: one `create_document` call per field (doctype Custom Field), **all in ONE response as parallel
+   tool calls** (never one after another's approval), so the user approves them on one card ("N changes go
+   live"); never in `records` or `documents`,
+   which refuse a customisation. Then `set_column_mapping` for those columns, and `dry_run_import` again: records
+   to create come from a check of the current mapping (one from before is refused). An option with
+   `fix_in_file`: tell the user what to correct in the file and stop; they upload it again.
+
+Then show the new check's headline in one line. If it has a `card` again, it holds only what is left.
+
+Repeated names (`make_unique`): ERPNext allows a name only once, so the later rows can get the row's ID
+(`add: "id"`, e.g. "Accenture - COVID (PMSF_0074_01)") or a number added. Offer it before leaving rows out.
+A column whose values the site doesn't have and isn't needed (`drop_column`): every row is kept and the
+field stays empty. Prefer it to leaving rows out. Leaving rows out is the user's choice, never yours.
+
+### Without a card (a plan's check)
+
 Ask every entry of `decisions` at once, in one message: one question per decision (a field and a cause, e.g. "Status: Finished, In process, Created aren't choices"), each value with its `suggested` answer first (`suggested_for_all` when one answer fits every value; `create` for planned masters, made with `planned_masters`). Then call `dry_run_import` again with every answer as `fixes` (each value's `group`), in one call: they're applied together, then the file is checked once. Use a group's `explanation` and `fixes` for detail.
 
 | `action` | For | What it does |
@@ -111,6 +152,8 @@ Ask every entry of `decisions` at once, in one message: one question per decisio
 | `create` | Missing link, when the record is a simple master | **Not sent in `fixes`.** Create every missing master at once with `create_document`: `documents` from `masters_plan`, with `import_session` (one table, one approval), then call `dry_run_import` again without `fixes`: the rows that needed them now pass. Customers and suppliers are in `masters_plan` too when Selling or Buying Settings name a new one by its name: each comes with its type and the Settings' default group and territory; when an entry has `choose`, ask the user once which group (or territory) for all of them. With more than a few masters, don't list them: pass `planned_masters` with `count` (how many `masters_plan` has) and `shared` (the group or territory the user chose) instead of `documents`, and the tool creates exactly that list in one approval. Never change a Settings default for an import. A group without this fix has `cannot_create` saying why. |
 | `fill` | A required value the rows leave blank, or that no column of the file has | Every row that starts a record gets `value` for that field (one HSN code for every item, say), where it is blank. A field with no column gets one added to the file's rows; the file isn't changed. A link must be an existing record, or one an earlier file of the plan creates. Only offered when the group's `fixes` has it, with the field. |
 | `leave_out` | Any group | Its rows are skipped by the import and listed in its report, with the reason. |
+| `make_unique` | A name repeated in the file | The later rows' name gets the row's ID (`add: "id"`) or a number (`add: "number"`) added, never a name the file or the site has. Every row is kept. |
+| `drop_column` | A column whose values the site doesn't have (or aren't choices) and that isn't required | The column stays empty in every row; no row is left out. |
 
 Any other problem (a bad date, a duplicate, a rule ERPNext enforces) is corrected in the file: tell the user which rows and what to change, then start again with the new file. The group says so with `"fix_in_file": true`.
 
@@ -242,11 +285,11 @@ When some rows can't be fixed in chat, or the user would rather fix them in Exce
   "rows": 3,
   "file_url": "/private/files/IMP-2026-00012-failed-rows.xlsx",
   "download_url": "https://erp.example.com/private/files/IMP-2026-00012-failed-rows.xlsx",
-  "message": "3 rows in an Excel file, with the user's columns, then 'FACO Original Row' ... and 'FACO Error' ..."
+  "message": "3 rows in an Excel file, with the user's columns, then 'Row in your file' ... and 'Error' ..."
 }
 ```
 
-Give the user the `download_url`. The file has the user's own columns (with the fixes made in chat), then **FACO Original Row** (the row's number in their file), **FACO Error** and, when FACO has one for any row, **FACO Fix** ("Use 'Distributors'"). Every cell is text, so codes keep their leading zeros and nothing runs as a formula. Rows left out say "Left out: <reason>", so a **Completed** import's left-out rows can be corrected and imported too. It works before an import as well: then it holds the rows the last check failed.
+Give the user the `download_url`. The file has the user's own columns (with the fixes made in chat), then **Row in your file** (the row's number in their file), **Error** and, when FACO has one for any row, **Fix** ("Use 'Distributors'"). When the user's own columns already have one of those names, that column is called **FACO Original Row**, **FACO Error** or **FACO Fix** instead. Every cell is text, so codes keep their leading zeros and nothing runs as a formula. A row left out keeps what the check found wrong with it, and its fix: "Item Group 'Hand Tols' doesn't exist. You left this row out." So a **Completed** import's left-out rows can be corrected and imported too. When leaving rows out, pass `reason` only for a reason of the user's own (a closed shop); for "leave the failing rows out" leave it empty. It works before an import as well: then it holds the rows the last check failed.
 
 ### The corrected file
 

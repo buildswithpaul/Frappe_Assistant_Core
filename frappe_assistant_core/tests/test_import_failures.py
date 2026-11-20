@@ -26,7 +26,7 @@ import openpyxl
 
 from frappe_assistant_core.tests.test_import_run import MAPPING, ImportRunCase
 from frappe_assistant_core.utils import import_fixes, import_run
-from frappe_assistant_core.utils.import_failures import REASON_COLUMN, ROW_COLUMN
+from frappe_assistant_core.utils.import_failures import FIX_COLUMN, REASON_COLUMN, ROW_COLUMN
 from frappe_assistant_core.utils.import_session import FileProblem, read_sheet_rows
 
 GROUP_NODE = "Cannot select a Group type Customer Group"
@@ -229,8 +229,9 @@ class TestImportFailures(ImportRunCase):
             (file_doc.is_private, file_doc.attached_to_doctype, file_doc.attached_to_name),
             (1, "FAC Import Session", session),
         )
-        self.assertEqual(rows[0], [*MAPPING, ROW_COLUMN, REASON_COLUMN])
-        self.assertEqual(rows[1], [n["beta"], f"Nowhere {self.tag}", "Company", "3", "Left out: Closed shop"])
+        self.assertEqual(rows[0], [*MAPPING, ROW_COLUMN, REASON_COLUMN, FIX_COLUMN])
+        left_out = f"Customer Group 'Nowhere {self.tag}' doesn't exist. You left this row out: Closed shop"
+        self.assertEqual(rows[1][:5], [n["beta"], f"Nowhere {self.tag}", "Company", "3", left_out])
         self.assertEqual(rows[2][:4], [n["gamma"], self.held, "Company", "4"])  # with the map made in chat
         self.assertIn(GROUP_NODE, rows[2][4])
         self.assertEqual(len(rows), 3)
@@ -251,8 +252,6 @@ class TestImportFailures(ImportRunCase):
     # -- #34417: the file is Excel, every cell text, with FACO's fix -----------------------------
 
     def test_a_likely_misspelling_comes_with_its_fix(self):
-        from frappe_assistant_core.utils.import_failures import FIX_COLUMN
-
         n = self._names()
         misspelt = f"Imprted {self.tag}"  # the test's group is "Imported <tag>"
         lines = [",".join(MAPPING), f"{n['alpha']},{misspelt},Company"]
@@ -267,6 +266,98 @@ class TestImportFailures(ImportRunCase):
         self.assertEqual(rows[0], [*MAPPING, ROW_COLUMN, REASON_COLUMN, FIX_COLUMN])
         self.assertEqual(rows[1][-1], f"Use '{self.group}'")
         self.assertIn(FIX_COLUMN, out["message"])
+
+    # -- the file read by someone who doesn't know FACO (#34417, manual test 2026-11-17) ----------
+
+    def test_the_added_columns_are_named_for_the_client(self):
+        session, _checked, _first = self._partly_imported()
+
+        _out, _file_doc, rows = self._failed_rows(session)
+
+        self.assertEqual(rows[0][len(MAPPING) : len(MAPPING) + 2], ["Row in your file", "Error"])
+
+    def test_a_row_left_out_says_what_the_check_found_and_its_fix(self):
+        # "Leave the failing rows out" gave "Left out: Leave out the 2 failing rows and import the
+        # rest.": the request, not what to correct in the row
+        n = self._names()
+        misspelt = f"Imprted {self.tag}"  # the test's group is "Imported <tag>"
+        lines = [",".join(MAPPING), f"{n['alpha']},{self.group},Company", f"{n['beta']},{misspelt},Company"]
+        file_doc = self._file("customers.csv", ("\n".join(lines) + "\n").encode())
+        session = self._run("start_import_session", {"file_url": file_doc.file_url})["result"]["session_id"]
+        self._run("set_column_mapping", {"session": session, "mapping": MAPPING, "doctype": "Customer"})
+        group = next(g for g in self._check(session)["groups"] if g.get("value") == misspelt)
+        checked = self._check(session, fixes=[{"group": group["id"], "action": "leave_out"}])
+        with self._each_row_commits():
+            self.assertTrue(self._import(session, checked)["success"])
+
+        _out, _file_doc, rows = self._failed_rows(session)
+
+        error, fix = rows[1][-2:]
+        self.assertIn(misspelt, error)
+        self.assertTrue(error.endswith("You left this row out."), error)
+        self.assertEqual(fix, f"Use '{self.group}'")
+
+    def test_the_file_reads_easily(self):
+        # Manual test 2026-11-17: columns cut off ("Item Cod"), FACO's notes looked like data
+        session, _checked, _first = self._partly_imported()
+        out = self._check(session, failed_rows_file=True)
+        content = frappe.get_doc("File", {"file_url": out["file_url"]}).get_content()
+        sheet = openpyxl.load_workbook(io.BytesIO(content)).active
+        header = [cell.value for cell in sheet[1]]
+        notes = header.index("Row in your file")
+
+        self.assertEqual(sheet.freeze_panes, "A2")
+        self.assertTrue(all(cell.font.bold for cell in sheet[1]))
+        shaded = [cell.fill.fgColor.rgb.endswith("FFF2CC") for cell in sheet[2]]
+        self.assertEqual(shaded, [False] * notes + [True] * (len(header) - notes))
+        name_width = sheet.column_dimensions["A"].width
+        self.assertGreaterEqual(name_width, len(sheet["A2"].value))
+        self.assertEqual({cell.data_type for row in sheet.iter_rows() for cell in row if cell.value}, {"s"})
+
+    def test_a_value_with_no_close_name_still_says_what_to_do(self):
+        session, _checked, _first = self._partly_imported()
+
+        _out, _file_doc, rows = self._failed_rows(session)
+
+        beta = next(row for row in rows if row[1] == f"Nowhere {self.tag}")
+        self.assertEqual(
+            beta[-1], f"Pick an existing Customer Group, or create 'Nowhere {self.tag}' in ERPNext first"
+        )
+
+    def test_a_reason_that_only_repeats_the_request_is_not_kept(self):
+        # Manual test 2026-11-17: FACO passed "Leave out the Pipe Wrench row." as the reason
+        from frappe_assistant_core.utils.import_failures import _left_out
+
+        saved = {"4": {"error": "Item Group 'Hand Tols' doesn't exist.", "fix": "Use 'Hand Tools'"}}
+        for reason, said in (
+            ("Leave out the Pipe Wrench row.", "You left this row out."),
+            ("Skip the failing rows and import the rest", "You left this row out."),
+            ("We stopped selling it.", "You left this row out: We stopped selling it."),
+        ):
+            with self.subTest(reason=reason):
+                error, fix = _left_out(4, reason, saved)
+                self.assertEqual(error, f"Item Group 'Hand Tols' doesn't exist. {said}")
+                self.assertEqual(fix, "Use 'Hand Tools'")
+
+    def test_a_users_own_error_column_is_told_apart_from_faco_s(self):
+        from frappe_assistant_core.utils.import_failures import added_columns, own_columns
+
+        self.assertEqual(added_columns(["Name", "error"], True), ["Row in your file", "FACO Error", "Fix"])
+        self.assertEqual(own_columns(["Name", "Error"]), ["Name", "Error"])
+        self.assertEqual(
+            own_columns(["Name", "Error", "Row in your file", "FACO Error", "Fix"]), ["Name", "Error"]
+        )
+
+    def test_a_file_given_with_the_old_names_still_comes_back(self):
+        from frappe_assistant_core.utils.import_failures import own_columns
+
+        for added in (
+            ["FACO Original Row", "FACO Error", "FACO Fix"],
+            ["FACO Original Row", "FACO Failure Reason"],
+            ["FACO Error"],  # its row number column deleted
+        ):
+            with self.subTest(added=added):
+                self.assertEqual(own_columns(["Name", "Group", *added]), ["Name", "Group"])
 
     def test_every_cell_of_the_file_is_text(self):
         # Excel dropped leading zeros (00123 became 123) and ran a cell that starts with "=" (#34417)
@@ -444,7 +535,8 @@ class TestImportFailures(ImportRunCase):
             self._import(session, checked)
         self.assertEqual(self._doc(session).status, "Completed")
         _out, _file_doc, rows = self._failed_rows(session)
-        self.assertEqual([row[3:] for row in rows[1:]], [["3", "Left out: Closed shop"]])
+        left_out = f"Customer Group 'Nowhere {self.tag}' doesn't exist. You left this row out: Closed shop"
+        self.assertEqual([row[3:5] for row in rows[1:]], [["3", left_out]])
         rows[1][1] = self.group
         corrected = self._csv("corrected.csv", rows)
 

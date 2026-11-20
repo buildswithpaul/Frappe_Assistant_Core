@@ -254,7 +254,8 @@ class TestImportFixes(BaseAssistantTest):
 
         fixes = self._group(result, "Missing link")["fixes"]
 
-        self.assertEqual([f["action"] for f in fixes], ["map", "create", "leave_out"])
+        # leaving the column empty keeps every row (live, 2026-11-19: 2,083 of 2,084 left out over it)
+        self.assertEqual([f["action"] for f in fixes], ["map", "create", "drop_column", "leave_out"])
         self.assertEqual(fixes[0]["closest"][0], self.existing_group)
         self.assertNotIn("All Customer Groups", fixes[0]["closest"])  # a group node fails as a link
         self.assertEqual(
@@ -267,7 +268,8 @@ class TestImportFixes(BaseAssistantTest):
                 "parent": "All Customer Groups",
             },
         )
-        self.assertEqual(fixes[2], {"action": "leave_out", "rows": 2})
+        self.assertEqual(fixes[2]["action"], "drop_column")
+        self.assertEqual(fixes[3], {"action": "leave_out", "rows": 2})
 
     def test_a_group_node_is_never_offered_however_close(self):
         frappe.get_doc(
@@ -415,7 +417,7 @@ class TestImportFixes(BaseAssistantTest):
             )
             for g in result["groups"]
         }
-        link_fixes = ["map", "create", "leave_out"]
+        link_fixes = ["map", "create", "drop_column", "leave_out"]  # Customer Type is required: no drop
         self.assertEqual(
             found,
             {
@@ -732,7 +734,8 @@ class TestImportFixes(BaseAssistantTest):
         session, result = self._session()
         duplicate = self._group(result, "Duplicate in the file")
 
-        self.assertEqual([f["action"] for f in duplicate["fixes"]], ["leave_out"])
+        # keep every row with a unique name, or leave them out (live, 2026-11-19: 322 sub-projects)
+        self.assertEqual([f["action"] for f in duplicate["fixes"]], ["make_unique", "leave_out"])
         response = self._fix_fails(session, {"group": duplicate["id"], "action": "map", "to": "x"})
         self.assertIn("Only a missing link", response["problems"][0]["error"])
 

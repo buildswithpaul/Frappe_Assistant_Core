@@ -671,6 +671,35 @@ class TestImportMasters(BaseAssistantTest):
             self.assertEqual(frappe.db.get_value("Customer", name, "customer_group"), group.name)
         self.assertEqual(len(self._doc(session).created_records), 3)
 
+    def test_planned_masters_sent_again_say_they_were_created_before(self):
+        # Live, 2026-11-19: the chat called create_document again after it had created 264 masters, and
+        # told the user someone else must have added them
+        names = [f"Trust {i} {self.tag}" for i in range(2)]
+        session = self._projects_naming(names)
+        group = self._leaf_group()
+        call = {
+            "import_session": session,
+            "planned_masters": {"count": 2, "shared": {"Customer": {"customer_group": group.name}}},
+        }
+        self.assertTrue(self._run("create_document", call)["success"])
+
+        again = self._run("create_document", call)
+
+        self.assertTrue(again["success"], again)
+        self.assertEqual(again["result"]["created_before"], 2, again)
+
+    def test_planned_customers_need_a_group_when_the_settings_give_none(self):
+        # Live, 2026-11-19: on a new site 262 customers were created with no customer group
+        names = [f"Trust {self.tag}"]
+        frappe.db.set_single_value("Selling Settings", "customer_group", "All Customer Groups")
+        session = self._projects_naming(names)
+
+        refused = self._run("create_document", {"import_session": session, "planned_masters": {"count": 1}})
+
+        self.assertFalse(refused["success"])
+        self.assertIn("which customer_group", json.dumps(refused))
+        self.assertFalse(frappe.db.exists("Customer", names[0]))
+
     def test_planned_masters_with_another_count_is_refused_with_the_number(self):
         names = [f"Trust {i} {self.tag}" for i in range(2)]
         session = self._projects_naming(names)

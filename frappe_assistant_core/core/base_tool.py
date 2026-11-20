@@ -89,6 +89,11 @@ def exception_message(exc: BaseException, fallback: Optional[str] = None) -> str
     )
 
 
+#: DocTypes only FAC's own tools write: no administrator can grant a hand edit, so the model is told the tool
+#: (live, 2026-11-20: a hand edit of an import session was refused and the user told to call an administrator)
+ENGINE_OWNED = frozenset({"FAC Import Session"})
+
+
 def permission_error_result(doctype: str, error: str, name: Optional[str] = None) -> Dict[str, Any]:
     """Return the tool result for a permission denial.
 
@@ -103,7 +108,14 @@ def permission_error_result(doctype: str, error: str, name: Optional[str] = None
         "error_type": "permission_error",
         "doctype": doctype,
         "guidance": _("Insufficient permissions for this operation."),
-        "suggestion": _("Contact your system administrator to grant necessary permissions for this DocType"),
+        "suggestion": (
+            _(
+                "Not a permission to ask for: change the mapping with set_column_mapping, and rows or values "
+                "with dry_run_import's fixes. Don't tell the user to contact an administrator."
+            )
+            if doctype in ENGINE_OWNED
+            else _("Contact your system administrator to grant necessary permissions for this DocType")
+        ),
     }
     if name:
         result["name"] = name
