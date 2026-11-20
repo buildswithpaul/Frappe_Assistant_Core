@@ -29,6 +29,77 @@ MAX_TOPIC_LIMIT = 25
 PARTY_LINK_TARGETS = frozenset({"Customer", "Supplier", "Party Type"})
 
 
+# A Select or Autocomplete can hold thousands of options (a list of ports, say). The model gets
+# the first of them and the total, which is enough to know the shape of a value.
+OPTIONS_LIMIT = 1000
+
+# Fields that only arrange a form. A section or a tab is kept on the DocType itself, because a
+# custom field is placed after one; a child table's rows are built from data fields alone.
+_ARRANGING_ONLY = frozenset({"Column Break", "Fold"})
+_LAYOUT = frozenset({"Section Break", "Column Break", "Tab Break", "Fold", "Heading"})
+
+_RIGHTS = (
+    "select", "read", "write", "create", "delete", "submit", "cancel", "amend",
+    "report", "export", "import", "share", "print", "email",
+)  # fmt: skip
+
+
+def compact_field(field: Dict[str, Any]) -> Dict[str, Any]:
+    """A serialized field with only what is set: an absent flag is off, an absent value is empty."""
+    compact = {key: value for key, value in field.items() if value not in (None, "", 0, False)}
+    options = compact.get("options")
+    if isinstance(options, str) and len(options) > OPTIONS_LIMIT:
+        lines = options.split("\n")
+        kept = options[:OPTIONS_LIMIT].rsplit("\n", 1)[0] if len(lines) > 1 else options[:OPTIONS_LIMIT]
+        compact["options"] = kept
+        compact["options_total"] = len(lines)
+    return compact
+
+
+def _compact_permission(permission: Dict[str, Any]) -> Dict[str, Any]:
+    compact = {"role": permission.get("role"), "rights": [r for r in _RIGHTS if permission.get(r)]}
+    for key in ("permlevel", "if_owner"):
+        if permission.get(key):
+            compact[key] = permission[key]
+    return compact
+
+
+def compact_doctype_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
+    """``get_doctype_metadata``'s answer as the model needs it; a failure is returned as it is.
+
+    Sales Order's full metadata is about 22,000 tokens, most of it unset flags, columns of a
+    form, every field of seven child tables with their layout, and whole permission rows. This
+    keeps every field that holds data, with everything that is set on it:
+
+    - a field carries only what is set (see ``compact_field``)
+    - column breaks go; a child table lists data fields only
+    - ``link_fields`` goes: each Link is in ``fields`` with its target in ``options``
+    - a permission is its role and the rights it grants
+    """
+    if not metadata.get("success"):
+        return metadata
+    compact = dict(metadata)
+    compact["fields"] = [
+        compact_field(field)
+        for field in metadata.get("fields") or []
+        if field.get("fieldtype") not in _ARRANGING_ONLY
+    ]
+    compact["child_tables"] = [
+        {
+            **compact_field({key: value for key, value in table.items() if key != "fields"}),
+            "fields": [
+                compact_field(field)
+                for field in table.get("fields") or []
+                if field.get("fieldtype") not in _LAYOUT
+            ],
+        }
+        for table in metadata.get("child_tables") or []
+    ]
+    compact["permissions"] = [_compact_permission(p) for p in metadata.get("permissions") or []]
+    compact.pop("link_fields", None)
+    return compact
+
+
 class MetadataTools:
     """assistant tools for Frappe metadata operations"""
 
