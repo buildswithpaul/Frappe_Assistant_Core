@@ -40,7 +40,11 @@ class GetDoctypeInfo(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "get_doctype_info"
-        self.description = "Get DocType metadata and field information. Pass doctype for its fields, or topic to find where data lives when no report fits."
+        self.description = (
+            "Get DocType metadata and field information. Pass doctype for its fields, or topic to "
+            "find where data lives when no report fits. A field lists only what is set: no reqd, "
+            "read_only or hidden means it is off."
+        )
         self.requires_permission = None  # Permission checked dynamically per DocType
 
         self.inputSchema = {
@@ -63,10 +67,12 @@ class GetDoctypeInfo(BaseTool):
         """Execute DocType info retrieval"""
         try:
             # Import the metadata implementation
-            from .metadata_tools import MetadataTools
+            from .metadata_tools import MetadataTools, compact_doctype_metadata
 
             if arguments.get("doctype"):
-                return MetadataTools.get_doctype_metadata(doctype=arguments["doctype"])
+                return compact_doctype_metadata(
+                    MetadataTools.get_doctype_metadata(doctype=arguments["doctype"])
+                )
             if arguments.get("topic"):
                 return MetadataTools.find_doctypes_for_topic(topic=arguments["topic"])
             return {"success": False, "error": _("Provide either a doctype or a topic")}

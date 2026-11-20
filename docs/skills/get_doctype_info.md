@@ -13,8 +13,11 @@ The `get_doctype_info` tool retrieves metadata about a Frappe DocType — its fi
 
 Passing neither returns `{"success": false, "error": ...}`.
 
-The `fields`, `link_fields` and `child_tables` lists leave out fields you are not allowed to
+The `fields` and `child_tables` lists leave out fields you are not allowed to
 read, so every field listed can be used in a `list_documents` filter.
+
+The answer is compact. A field lists **only what is set**: a missing `reqd`, `read_only` or
+`hidden` means it is off, and a missing `options`, `default` or `description` means it is empty.
 
 ## Response Format
 
@@ -37,19 +40,15 @@ read, so every field listed can be used in a `list_documents` filter.
         "fieldtype": "Select",
         "options": "Company\nIndividual\nPartnership",
         "reqd": 1,
-        "read_only": 0,
-        "hidden": 0,
-        "default": "Company",
-        "description": null
+        "default": "Company"
       },
+      { "fieldname": "customer_group", "label": "Customer Group", "fieldtype": "Link", "options": "Customer Group" },
       ...
     ],
-    "link_fields": [
-      { "fieldname": "customer_group", "label": "Customer Group", "options": "Customer Group" },
-      { "fieldname": "territory", "label": "Territory", "options": "Territory" },
-      ...
-    ],
-    "permissions": [ ... ]
+    "permissions": [
+      { "role": "Sales User", "rights": ["read", "write", "create", "report", "export", "print", "email"] },
+      { "role": "Sales Manager", "permlevel": 1, "rights": ["read", "write"] }
+    ]
   }
 }
 ```
@@ -60,11 +59,14 @@ read, so every field listed can be used in a `list_documents` filter.
   - `fieldname` — the API field name (use this in filters, data, fields)
   - `fieldtype` — Data, Link, Select, Int, Currency, Table, Check, Date, etc.
   - `options` — for Select: newline-separated values; for Link: target DocType; for Table: child DocType
-  - `reqd` — 1 if mandatory
-  - `read_only` / `hidden` — field visibility
-  - `default` — default value
-- **`link_fields`** — convenience list of all Link fields with their target DocTypes
-- **`child_tables`** — every child-table field (`Table` and `Table MultiSelect`) with the child DocType's own `fields`. A Table MultiSelect entry also has `link_field`: the child field a bare value fills when you pass its values to `create_document` / `update_document`.
+  - `reqd` — 1 if mandatory; left out otherwise
+  - `read_only` / `hidden` — 1 when set; left out otherwise
+  - `default` — default value, when there is one
+  - `options_total` — only on a Select or Autocomplete with a very long list: `options` then holds the first of them and this is how many there are
+- **Sections and tabs** (`Section Break`, `Tab Break`) are listed, so a custom field can be placed after one. Column breaks are left out.
+- **Link fields** are in `fields`, with the target DocType in `options`. There is no separate list.
+- **`permissions`** — one entry per rule: its `role`, the `rights` it grants, and `permlevel` or `if_owner` when not 0.
+- **`child_tables`** — every child-table field (`Table` and `Table MultiSelect`) with the child DocType's own `fields`, data fields only. A Table MultiSelect entry also has `link_field`: the child field a bare value fills when you pass its values to `create_document` / `update_document`.
 - **`is_child_table`** / **`parent_doctypes`** — for a child DocType, `is_child_table` is true and `parent_doctypes` lists the `{doctype, fieldname}` tables it lives in that you can read. Write its rows through one of those parents.
 - **`is_submittable`** — 1 if the DocType supports submit/cancel workflow (docstatus)
 - **`naming_rule`** — how documents are named (autoname, naming series, prompt, etc.)
