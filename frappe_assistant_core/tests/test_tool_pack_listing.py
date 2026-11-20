@@ -10,6 +10,7 @@ import frappe
 
 from frappe_assistant_core.chat.doctype.fac_chat_message.fac_chat_message import FACChatMessage
 from frappe_assistant_core.core import tool_pack_listing
+from frappe_assistant_core.core.tool_packs import ToolPack
 from frappe_assistant_core.mcp.server import MCPServer
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 from frappe_assistant_core.utils.plugin_manager import PluginManager, get_plugin_manager
@@ -56,33 +57,51 @@ class TestToolPackListing(BaseAssistantTest):
         return session_id
 
     def test_tool_meta_names_its_pack(self):
-        tools = {t["name"]: t for t in self._list("start_import", "list_documents")["tools"]}
-        self.assertEqual(tools["start_import"]["_meta"], {"fac/pack": "migration"})
+        tools = {t["name"]: t for t in self._list("run_python_code", "list_documents")["tools"]}
+        self.assertEqual(tools["run_python_code"]["_meta"], {"fac/pack": "analysis"})
         self.assertNotIn("_meta", tools["list_documents"])
 
     def test_catalogue_only_for_ar_caller(self):
-        result = self._list("start_import", "list_documents")
+        result = self._list("run_python_code", "list_documents")
         self.assertNotIn("_meta", result)
-        self.assertEqual([t["name"] for t in result["tools"]], ["start_import", "list_documents"])
+        self.assertEqual([t["name"] for t in result["tools"]], ["run_python_code", "list_documents"])
 
-        with_ar = self._list("start_import", "list_documents", ar_session="s1")
+        with_ar = self._list("run_python_code", "list_documents", ar_session="s1")
         packs = {p["id"]: p for p in with_ar["_meta"]["fac/packs"]}
-        self.assertEqual(packs["migration"]["tools"], ["start_import"])
-        self.assertEqual(packs["migration"]["file_types"], ["csv", "xlsx", "xls", "xml"])
+        self.assertEqual(packs["analysis"]["tools"], ["run_python_code"])
+        self.assertEqual(packs["analysis"]["file_types"], [])
         self.assertEqual(
-            set(packs["migration"]), {"id", "title", "description", "tools", "file_types", "skills"}
+            set(packs["analysis"]), {"id", "title", "description", "tools", "file_types", "skills"}
         )
 
+    def _declare_spreadsheet_pack(self):
+        # A plugin's get_tool_packs() is how production declares a pack's file types; no pack
+        # shipped in this release declares any, so one is declared here.
+        pack = ToolPack(
+            id="sheets",
+            title="Sheets",
+            description="sheets",
+            tools=("run_python_code",),
+            file_types=("xlsx",),
+        )
+        patcher = patch.object(PluginManager, "get_tool_packs", autospec=True, return_value=[pack])
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_wanted_for_spreadsheet(self):
+        self._declare_spreadsheet_pack()
         session_id = self._chat_with_file("customers.xlsx")
-        result = self._list("start_import", ar_session=session_id)
-        self.assertEqual(result["_meta"]["fac/wanted_packs"], ["migration"])
+        result = self._list("run_python_code", ar_session=session_id)
+        self.assertEqual(result["_meta"]["fac/wanted_packs"], ["sheets"])
 
     def test_no_wanted_without_files(self):
+        self._declare_spreadsheet_pack()
         session_id = self._chat_with_file("notes.txt")
-        self.assertEqual(self._list("start_import", ar_session=session_id)["_meta"]["fac/wanted_packs"], [])
         self.assertEqual(
-            self._list("start_import", ar_session="no-such-chat")["_meta"]["fac/wanted_packs"], []
+            self._list("run_python_code", ar_session=session_id)["_meta"]["fac/wanted_packs"], []
+        )
+        self.assertEqual(
+            self._list("run_python_code", ar_session="no-such-chat")["_meta"]["fac/wanted_packs"], []
         )
 
     def test_catalogue_omits_pack_with_no_listed_tools(self):
@@ -115,16 +134,16 @@ class TestToolPackListing(BaseAssistantTest):
 
     def test_a_disabled_plugins_tools_carry_no_pack(self):
         self.enabled.return_value = {"core"}
-        listed = self._packs_listed("start_import", "test_as_user")
-        self.assertEqual(listed, {"start_import": None, "test_as_user": "builder"})
+        listed = self._packs_listed("run_python_code", "test_as_user")
+        self.assertEqual(listed, {"run_python_code": None, "test_as_user": "builder"})
 
     def test_unreadable_packs_still_list_every_tool(self):
         with patch.object(
             PluginManager, "get_tool_packs", autospec=True, side_effect=RuntimeError("bad pack")
         ):
-            result = self._list("start_import", "list_documents", ar_session="s1")
+            result = self._list("run_python_code", "list_documents", ar_session="s1")
 
-        self.assertEqual([t["name"] for t in result["tools"]], ["start_import", "list_documents"])
+        self.assertEqual([t["name"] for t in result["tools"]], ["run_python_code", "list_documents"])
         # Without the packs, AR treats every tool as base.
         self.assertNotIn("_meta", result)
         self.assertFalse(any("_meta" in t for t in result["tools"]))
@@ -133,15 +152,15 @@ class TestToolPackListing(BaseAssistantTest):
         with patch.object(
             tool_pack_listing, "wanted_packs", autospec=True, side_effect=RuntimeError("db gone")
         ):
-            result = self._list("start_import", "list_documents", ar_session="s1")
+            result = self._list("run_python_code", "list_documents", ar_session="s1")
 
-        self.assertEqual([t["name"] for t in result["tools"]], ["start_import", "list_documents"])
+        self.assertEqual([t["name"] for t in result["tools"]], ["run_python_code", "list_documents"])
         self.assertNotIn("_meta", result)
-        self.assertEqual(result["tools"][0]["_meta"], {"fac/pack": "migration"})
+        self.assertEqual(result["tools"][0]["_meta"], {"fac/pack": "analysis"})
 
     def test_tool_loading_defaults_to_dynamic(self):
         # Nothing is stored for the user: the production state until they use the toggle.
-        meta = self._list("start_import", ar_session="s1")["_meta"]
+        meta = self._list("run_python_code", ar_session="s1")["_meta"]
         self.assertEqual(meta["fac/tool_loading"], "dynamic")
 
     def test_user_choice_all_reaches_listing(self):
@@ -151,16 +170,16 @@ class TestToolPackListing(BaseAssistantTest):
         with patch.object(frappe.db, "has_column", return_value=True), patch.object(
             frappe.db, "get_value", return_value=0
         ):
-            meta = self._list("start_import", ar_session="s1")["_meta"]
+            meta = self._list("run_python_code", ar_session="s1")["_meta"]
         self.assertEqual(meta["fac/tool_loading"], "all")
 
     def test_no_tool_loading_meta_for_non_ar_callers(self):
-        self.assertNotIn("_meta", self._list("start_import"))
+        self.assertNotIn("_meta", self._list("run_python_code"))
 
     def test_unreadable_preference_sends_no_choice_but_keeps_the_catalogue(self):
         with patch(
             "frappe_assistant_core.chat.tool_loading.tool_loading_mode", side_effect=RuntimeError("db down")
         ):
-            meta = self._list("start_import", ar_session="s1")["_meta"]
+            meta = self._list("run_python_code", ar_session="s1")["_meta"]
         self.assertNotIn("fac/tool_loading", meta)
-        self.assertEqual([p["id"] for p in meta["fac/packs"]], ["migration"])
+        self.assertEqual([p["id"] for p in meta["fac/packs"]], ["analysis"])

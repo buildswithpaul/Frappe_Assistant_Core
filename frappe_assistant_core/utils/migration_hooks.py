@@ -138,10 +138,6 @@ def after_install():
     # Install skills from other apps
     _install_app_skills()
 
-    # Offer the migration plugin on a fresh install, as the v3_2 patch does on an upgraded site;
-    # before the sync, which would otherwise seed its row switched off
-    _enable_migration_plugin()
-
     # Sync plugin configurations from discovered plugins
     _sync_plugin_configurations()
 
@@ -824,15 +820,6 @@ def _install_app_skills():
 
     except Exception as e:
         frappe.logger("migration_hooks").error(f"Failed to install app skills: {str(e)}")
-
-
-def _enable_migration_plugin():
-    try:
-        from frappe_assistant_core.patches.v3_2.move_migration_tools_to_their_plugin import enable_plugin
-
-        enable_plugin()
-    except Exception as e:
-        frappe.logger("migration_hooks").error(f"Failed to enable the migration plugin: {str(e)}")
 
 
 def _sync_plugin_configurations():

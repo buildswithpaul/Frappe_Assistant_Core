@@ -48,14 +48,8 @@ class TestToolPacks(BaseAssistantTest):
         ids = [pack.id for pack in self.manager.get_tool_packs()]
         self.assertEqual(
             ids,
-            ["analysis", "browser", "builder", "crm", "dashboards", "helpdesk", "insights", "migration"],
+            ["analysis", "browser", "builder", "crm", "dashboards", "helpdesk", "insights"],
         )
-
-    def test_migration_pack_declares_files_and_skills(self):
-        pack = next(p for p in self.manager.get_tool_packs() if p.id == "migration")
-        self.assertEqual(len(pack.tools), 14)
-        self.assertEqual(pack.file_types, ("csv", "xlsx", "xls", "xml"))
-        self.assertIn("start_import", pack.tools)
 
     def test_disabled_plugin_has_no_packs(self):
         # Which tools then carry a pack in tools/list: test_tool_pack_listing.

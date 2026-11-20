@@ -28,7 +28,6 @@ from unittest import mock
 
 import frappe
 
-from frappe_assistant_core.patches.v3_2.move_migration_tools_to_their_plugin import enable_plugin
 from frappe_assistant_core.patches.v3_4 import reconcile_plugin_configuration as patch
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 from frappe_assistant_core.utils import migration_hooks
@@ -65,15 +64,15 @@ class TestPluginConfigurationReconcile(BaseAssistantTest):
 
     def test_table_exists_check_reads_rows(self):
         self._legacy_list(["core"])
-        self._row("migration", 1)
-        self.assertIn("migration", PluginPersistence().load_enabled_plugins())
+        self._row("visualization", 1)
+        self.assertIn("visualization", PluginPersistence().load_enabled_plugins())
 
     def test_reconcile_keeps_what_was_on(self):
-        self._legacy_list(["core", "migration"])
-        self._row("migration", 0)
+        self._legacy_list(["core", "visualization"])
+        self._row("visualization", 0)
         patch.execute()
-        self.assertEqual(frappe.db.get_value(ROWS, "migration", "enabled"), 1)
-        self.assertEqual(PluginPersistence().load_enabled_plugins(), {"core", "migration"})
+        self.assertEqual(frappe.db.get_value(ROWS, "visualization", "enabled"), 1)
+        self.assertEqual(PluginPersistence().load_enabled_plugins(), {"core", "visualization"})
 
     def test_reconcile_creates_missing_rows(self):
         self._legacy_list(["core", "faco"])
@@ -86,20 +85,20 @@ class TestPluginConfigurationReconcile(BaseAssistantTest):
 
     def test_reconcile_turns_off_what_the_list_omits(self):
         self._legacy_list(["core"])
-        self._row("migration", 1)
+        self._row("visualization", 1)
         patch.execute()
-        self.assertEqual(frappe.db.get_value(ROWS, "migration", "enabled"), 0)
+        self.assertEqual(frappe.db.get_value(ROWS, "visualization", "enabled"), 0)
 
     def test_reconcile_keeps_core_on_when_the_list_omits_it(self):
-        self._legacy_list(["migration"])
+        self._legacy_list(["visualization"])
         self._no_rows()
         patch.execute()
-        self.assertEqual(self._enabled_rows(), {"core", "migration"})
+        self.assertEqual(self._enabled_rows(), {"core", "visualization"})
 
     def test_reconcile_with_an_empty_list_leaves_core_only_and_is_idempotent(self):
         # An empty list is what a site that never saved one holds; production reads it as core only.
         self._legacy_list([])
-        self._row("migration", 1)
+        self._row("visualization", 1)
         self._row("data_science", 1)
         patch.execute()
         self.assertEqual(self._enabled_rows(), {"core"})
@@ -109,7 +108,7 @@ class TestPluginConfigurationReconcile(BaseAssistantTest):
 
     def test_reconcile_with_an_unreadable_list_leaves_core_only(self):
         self._legacy_list_raw("{not json")
-        self._row("migration", 1)
+        self._row("visualization", 1)
         patch.execute()
         self.assertEqual(self._enabled_rows(), {"core"})
 
@@ -137,33 +136,7 @@ class TestPluginConfigurationReconcile(BaseAssistantTest):
         self._sync()
         self.assertEqual(self._enabled_rows(), {"core", "faco"})
 
-    def test_after_install_enables_the_migration_plugin_before_the_sync_seeds_rows(self):
-        # after_install is what a fresh site runs; its other steps are stubbed, the plugin call is not.
-        manager = mock.Mock()
-        enable = mock.create_autospec(enable_plugin, name="enable_plugin")
-        sync = mock.create_autospec(migration_hooks._sync_plugin_configurations, name="sync")
-        manager.attach_mock(enable, "enable")
-        manager.attach_mock(sync, "sync")
-        steps = (
-            "_install_system_prompt_categories",
-            "_install_system_prompt_templates",
-            "_install_system_skills",
-            "_install_app_skills",
-            "_sync_tool_configurations",
-            "_set_settings_defaults",
-        )
-        with (
-            mock.patch(
-                "frappe_assistant_core.patches.v3_2.move_migration_tools_to_their_plugin.enable_plugin",
-                enable,
-            ),
-            mock.patch.object(migration_hooks, "_sync_plugin_configurations", sync),
-            mock.patch.multiple(migration_hooks, **{name: mock.DEFAULT for name in steps}),
-        ):
-            migration_hooks.after_install()
-        self.assertEqual([c[0] for c in manager.mock_calls], ["enable", "sync"])
-
     def test_core_on_without_rows(self):
-        self._legacy_list(["migration"])
+        self._legacy_list(["visualization"])
         self._no_rows()
         self.assertIn("core", PluginPersistence().load_enabled_plugins())

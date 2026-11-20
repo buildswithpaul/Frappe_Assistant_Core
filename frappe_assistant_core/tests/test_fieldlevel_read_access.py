@@ -339,17 +339,6 @@ class TestFieldLevelReadAccess(BaseAssistantTest):
         self.assertEqual(result.get("not_applied_fields"), ["priority"])
         self.assertEqual(frappe.db.get_value("ToDo", result["name"], "priority"), "Medium")
 
-    def test_import_schema_leaves_out_a_field_the_user_cannot_write(self):
-        from frappe_assistant_core.utils.import_mapping import build_import_schema
-
-        self.as_user()
-        fields = [field["fieldname"] for field in build_import_schema("ToDo")["fields"]]
-        self.assertNotIn("description", fields)
-        self.assertIn("priority", fields)
-
-        self.as_user(READER)
-        self.assertIn("description", [field["fieldname"] for field in build_import_schema("ToDo")["fields"]])
-
     def test_a_fallback_value_comes_only_from_a_field_the_user_may_read(self):
         # send_crm_email falls back on the lead's email and add_crm_activity on its phone: a
         # hidden one was sent to, or logged on a call, and returned to the user.
