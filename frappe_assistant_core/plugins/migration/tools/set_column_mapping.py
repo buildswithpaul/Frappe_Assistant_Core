@@ -136,7 +136,10 @@ def _tidied(doc, target, headers, merged, notes, re, import_fixes):
         distinct = list(dict.fromkeys(values(int(position))))[:200]
         if not distinct:
             continue
-        found = sum(1 for v in distinct if frappe.db.exists(df.options, v))
+        if not frappe.has_permission(df.options, "read"):
+            continue  # what the user can't read isn't counted, nor changed
+        # only records the user may read count (get_list applies their permissions)
+        found = len(frappe.get_list(df.options, filters={"name": ["in", distinct]}, pluck="name"))
         if found / len(distinct) >= LINK_FOUND_SHARE:
             continue
         merged[position] = DONT_IMPORT
@@ -187,6 +190,7 @@ class SetColumnMapping(BaseTool):
         self.requires_permission = None  # Checked on the session and the target DocType
         # what the user's file says reaches the model fenced (#34003)
         self.untrusted_fields = (
+            "adjusted",  # quotes the file's column headings
             "mapping",
             "child_tables",
             "not_imported",
