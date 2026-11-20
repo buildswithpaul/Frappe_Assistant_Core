@@ -492,9 +492,10 @@ def _old_ids_message(created: int, system: str, kept: Dict[str, Any]) -> str:
 #: How FACO shows the chart check (live, 2026-11-20: it wrote the lists out in a long message and asked
 #: "which mode, and keep or change the other two?" in words, with no card)
 CHART_CARD_HOW = (
-    "Show this now as ONE ask_user card and nothing else: the headline as its description, then every "
-    "question as its own single_select (its message and examples as the description), its suggested "
-    "choice pre-selected. Don't write the questions, lists, counts or tax setup out in your message, don't "
+    "Show this now as one card and nothing else: one ask_user call per question (single_select, its "
+    "message and examples as the description, the headline on the first, its suggested choice "
+    "pre-selected), ALL in the same response as parallel tool calls: the chat shows them together as one "
+    "card. Never one ask_user holding several questions. Don't write the questions, lists, counts or tax setup out in your message, don't "
     "merge questions into one and don't add your own. The user's answers are the go-ahead: call the chosen "
     "mode's tool with its arguments straight away (replace: replace_chart_of_accounts, whose approval is "
     "the only other step). A 'fix the file' answer: say what to correct and stop."

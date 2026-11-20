@@ -2187,8 +2187,9 @@ CARD_LISTED = 6  # values named in an option's label
 #: How FACO uses the card, in the reply it always reads (live, 2026-11-19: it asked one question of eight,
 #: confirmed three times, printed the mapping table twice and ran 15 calls without a word to the user).
 CARD_HOW = (
-    "Show this card now as ONE ask_user card: every question as a single_select, its recommended option "
-    "pre-selected, its title and result as the description. Don't decide, summarise or leave out any question, "
+    "Show this card now: one ask_user call per question (single_select, its recommended option "
+    "pre-selected, its title and result as the description), ALL in the same response as parallel tool "
+    "calls: the chat shows them together as one card. Never one ask_user holding several questions. Don't decide, summarise or leave out any question, "
     "don't add your own (the company again, one question summing up the others, a final 'Proceed?': the "
     "card's answers are the go-ahead), and don't print the mapping table. When the user answers, don't ask again: tell them in one line what "
     "you'll do, then do it in this order, with a short line after each step: 1) the columns option's calls: "

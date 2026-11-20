@@ -293,7 +293,7 @@ class TestChartCheckBeforeMapping(ChartCase):
         self.assertEqual(checked["accounts"], 2)
         self.assertIn("parent_account", str(checked["mapped_by_headings"]))
         self.assertEqual(list(checked)[:2], ["next", "headline"])
-        self.assertIn("ONE ask_user card", checked["next"])
+        self.assertIn("one ask_user call per question", checked["next"])
 
     def test_a_file_that_isnt_a_chart_is_still_refused(self):
         content = "Customer,City\nAcme,Pune\n"

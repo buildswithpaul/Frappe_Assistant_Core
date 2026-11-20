@@ -58,8 +58,8 @@ finds its accounts by the client's names and numbers.
      transactions, **map** is suggested and replace isn't offered (`modes.replace_refused` says why).
    - `doubtful`, `clean_names`, `categories`: the file's mismatched types, the other company's numbers and
      abbreviation, the categories to check; each with examples and its suggested answer.
-   Show it as the reply's `next` says: ONE ask_user card, the `headline` as its description, each question
-   its own single_select with the suggested choice selected; never the lists written out in a message. A
+   Show it as the reply's `next` says: one `ask_user` call per question, all in the same response (the chat
+   shows them as one card), the `headline` on the first, each a single_select with the suggested choice selected; never the lists written out in a message. A
    file not mapped yet is mapped by the check from its headings (`mapped_by_headings`): don't map it again.
    Each mode choice names its `tool` and `arguments`: **replace is `replace_chart_of_accounts`**, never a
    mode of `import_chart_of_accounts`.
@@ -83,8 +83,8 @@ finds its accounts by the client's names and numbers.
      those, or picks add.
      A mode of payment on the company's default cash account is not refused: ERPNext sets one up for every
      new company, and the replace moves it to the new chart's cash ledger (`cash_mode_of_payment_account`).
-     Afterwards show the reply's `card` (the defaults, built from `defaults_proposed`) as ONE ask_user card,
-     never one question per default: each question's suggested account is selected, the other accounts
+     Afterwards show the reply's `card` (the defaults, built from `defaults_proposed`) as one card: one `ask_user` call per
+     default, all in the same response (never one question for all, never asked one after another): each question's suggested account is selected, the other accounts
      below, and "Leave empty"; only accounts ERPNext accepts in that field are listed. Set the user's picks
      (each option's `set`) on the Company with `update_document`, all in one call. A default no account
      fits is named in the card's `left_empty` and stays empty; don't search the accounts for one. An option
