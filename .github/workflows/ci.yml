@@ -28,8 +28,9 @@ jobs:
             python-version: '3.14'
             node-version: 24
     name: Server (${{ matrix.frappe-branch }})
-    # The data-migration tests import into ERPNext for real: they take most of the run.
-    timeout-minutes: 60
+    # The data-migration tests import into ERPNext for real: they take most of the run, and
+    # version-15 passed 60 minutes on the 3.4.0 release PR.
+    timeout-minutes: 90
 
     services:
       redis-cache:
