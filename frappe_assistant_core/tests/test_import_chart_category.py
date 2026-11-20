@@ -580,14 +580,25 @@ class TestChartCard(ChartCase):
         session = self._chart(rows)
         checked = self._check(session, company=self.company)
 
-        replace = next(c for q in checked["questions"] if q["kind"] == "mode" for c in q["choices"] if c["mode"] == "replace")
+        replace = next(
+            c
+            for q in checked["questions"]
+            if q["kind"] == "mode"
+            for c in q["choices"]
+            if c["mode"] == "replace"
+        )
         self.assertEqual(replace["tool"], "replace_chart_of_accounts")
-        self.assertEqual(replace["arguments"]["accounts_removed"], checked["modes"]["replace_figures"]["accounts_removed"])
+        self.assertEqual(
+            replace["arguments"]["accounts_removed"], checked["modes"]["replace_figures"]["accounts_removed"]
+        )
 
-        sent = self._run("import_chart_of_accounts", {"session": session, "company": self.company, "mode": "replace"})
+        sent = self._run(
+            "import_chart_of_accounts", {"session": session, "company": self.company, "mode": "replace"}
+        )
         self.assertFalse(sent["success"])
-        self.assertIn("replace_chart_of_accounts", sent["result"]["error"] if "result" in sent else sent["error"])
-
+        self.assertIn(
+            "replace_chart_of_accounts", sent["result"]["error"] if "result" in sent else sent["error"]
+        )
 
     def test_a_supplier_account_of_the_wrong_type_is_offered_retyped_not_an_employees_payable(self):
         # live, 2026-11-19: "Gratuity Payable" was proposed as the default payable; "Sundry Creditors" was typed
@@ -606,13 +617,19 @@ class TestChartCard(ChartCase):
         )
         done = self._run(
             "replace_chart_of_accounts",
-            {"session": session, "company": self.company, "source_system": self.system, **{
-                k: figures[k] for k in ("accounts_removed", "accounts_created", "tax_setup_removed")
-            }},
+            {
+                "session": session,
+                "company": self.company,
+                "source_system": self.system,
+                **{k: figures[k] for k in ("accounts_removed", "accounts_created", "tax_setup_removed")},
+            },
         )
         self.assertTrue(done["success"], done)
         payable = {p["field"]: p for p in done["result"]["defaults_proposed"]}.get("default_payable_account")
         if payable:  # ERPNext may set it again itself from the new chart
             creditors = f"2100 - Sundry Creditors - {self.abbr}"
             self.assertEqual(payable["suggested"], creditors)
-            self.assertEqual((payable["change_type"]["from"], payable["change_type"]["to"]), ("Current Liability", "Payable"))
+            self.assertEqual(
+                (payable["change_type"]["from"], payable["change_type"]["to"]),
+                ("Current Liability", "Payable"),
+            )

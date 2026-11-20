@@ -172,4 +172,7 @@ class TestImportCard(ImportRunCase):
         columns = self._question(card, "columns")
         self.assertIn("Block", columns["detail"])
         create = [c["arguments"] for c in self._recommended(columns)["calls"]]
-        self.assertEqual(create, [{"doctype": "Custom Field", "data": {"dt": "Project", "label": "Block", "fieldtype": "Data"}}])
+        self.assertEqual(
+            create,
+            [{"doctype": "Custom Field", "data": {"dt": "Project", "label": "Block", "fieldtype": "Data"}}],
+        )

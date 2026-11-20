@@ -74,7 +74,6 @@ LISTING_UNVERIFIED = (
 )
 
 
-
 #: What FACO does after opening a file, said where it always reads it. Live, 2026-11-19: it asked how to
 #: handle the columns (offering Notes) and said the file's Project ID can't be the ID, before any check,
 #: having never read set_column_mapping's guidance.
@@ -87,6 +86,7 @@ NEXT = (
     "for the user, with every choice (columns to create fields for, records to create, names to make "
     "unique, values to map): follow its how. Don't print the mapping table before the check."
 )
+
 
 class StartImportSession(BaseTool):
     """Open an import session for a spreadsheet the user wants to import."""

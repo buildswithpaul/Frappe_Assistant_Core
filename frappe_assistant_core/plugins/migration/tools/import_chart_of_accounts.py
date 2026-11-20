@@ -292,6 +292,8 @@ class ImportChartOfAccounts(BaseTool):
             "categories_to_check",
             "categories_not_found",
             "ledgers_without_category",
+            "not_changed_frozen_or_not_allowed",  # account names of the client's chart
+            "by_category",
             "names_from_another_company",
             "questions",
             "add_leaves_beside",

@@ -364,3 +364,19 @@ class TestChartCheckFencing(unittest.TestCase):
         fields = DryRunImport().untrusted_fields
         self.assertIn("headline", fields)
         self.assertIn("mapped_by_headings", fields)
+
+
+@unittest.skipUnless(HAS_ERPNEXT, "needs ERPNext's Department")
+class TestSiteDenyListHoldsForDepartments(unittest.TestCase):
+    def test_a_department_a_site_never_creates_is_not_offered(self):
+        session = frappe._dict(target_doctype="Project", migration_plan=None)
+        with patch.dict(frappe.local.conf, {"fac_import_never_create_doctypes": ["Department"]}):
+            self.assertIn("doesn't allow", import_fixes.cannot_create("Department", session))
+
+    def test_the_categories_lists_of_account_names_are_fenced(self):
+        from frappe_assistant_core.plugins.migration.tools.import_chart_of_accounts import (
+            ImportChartOfAccounts,
+        )
+
+        fields = ImportChartOfAccounts().untrusted_fields
+        self.assertIn("not_changed_frozen_or_not_allowed", fields)

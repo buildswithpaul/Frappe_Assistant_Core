@@ -1292,6 +1292,9 @@ def cannot_create(doctype: str, session=None) -> str:
         return ""
     if doctype in NEVER_CREATE:
         return _(NEVER_CREATE[doctype])
+    if doctype in (frappe.conf.get("fac_import_never_create_doctypes") or []):
+        # before the company-named branch too: a site's deny list holds for a client's departments
+        return _("this site doesn't allow creating it during an import")
     if doctype in COMPANY_NAMED:
         # created for the import's company, found by "<name> - <abbr>" (_company_named)
         if not frappe.has_permission(doctype, "create"):
@@ -1299,8 +1302,6 @@ def cannot_create(doctype: str, session=None) -> str:
         if not _may_use_create_document():
             return _("creating records with FACO is turned off for you")
         return ""
-    if doctype in (frappe.conf.get("fac_import_never_create_doctypes") or []):
-        return _("this site doesn't allow creating it during an import")
     meta = frappe.get_meta(doctype)
     if meta.issingle or meta.istable or meta.is_virtual or meta.is_submittable:
         return _("it isn't a master record")
