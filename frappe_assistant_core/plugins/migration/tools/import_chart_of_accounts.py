@@ -482,6 +482,23 @@ def _old_ids_message(created: int, system: str, kept: Dict[str, Any]) -> str:
     return text
 
 
+#: What the chart check's reply starts with: the card, then the figures (a long reply is cut from its end)
+CARD_FIRST = (
+    "success",
+    "session",
+    "company",
+    "card_title",
+    "questions",
+    "names_question",
+    "message",
+    "modes",
+)
+
+
+def _card_first(out: Dict[str, Any]) -> Dict[str, Any]:
+    return {**{key: out[key] for key in CARD_FIRST if key in out}, **out}
+
+
 def check_chart(name: str, company: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """What the chart would become: read from the session, nothing written. dry_run_import's chart
     check."""
@@ -523,7 +540,7 @@ def check_chart(name: str, company: str, arguments: Dict[str, Any]) -> Dict[str,
                     "offer replace or add."
                 ).format(company, len(nodes)),
             )
-            return out
+            return _card_first(out)
         if company:
             out["company"] = company
             out["modes"] = import_chart.modes(company)
@@ -563,7 +580,7 @@ def check_chart(name: str, company: str, arguments: Dict[str, Any]) -> Dict[str,
             if pattern and arguments.get("clean_names") is None:
                 out["questions"].append(names_question(pattern))
             out["card_title"] = _("Chart of accounts: {0} accounts").format(len(nodes))
-        return out
+        return _card_first(out)
     except frappe.DoesNotExistError:
         return {"success": False, "error": _("Import session '{0}' not found.").format(name)}
     except frappe.PermissionError as e:

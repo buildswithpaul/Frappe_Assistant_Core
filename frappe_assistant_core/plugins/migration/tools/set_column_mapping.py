@@ -61,7 +61,6 @@ CHART_READ_COLUMNS = (
 )
 
 
-
 #: Said after every mapping (live, 2026-11-19: FACO remapped a column and stopped, the user had to ask for the
 #: check; it had also linked contract codes to Sales Order, which no row could satisfy).
 AFTER_MAPPING = (
@@ -105,7 +104,9 @@ def _tidied(doc, target, headers, merged, notes, re, import_fixes):
     meta = frappe.get_meta(target)
 
     def values(position: int):
-        return [cstr(r[position]).strip() for r in rows[1:] if position < len(r) and cstr(r[position]).strip()]
+        return [
+            cstr(r[position]).strip() for r in rows[1:] if position < len(r) and cstr(r[position]).strip()
+        ]
 
     def link_df(field):
         df = meta.get_field(field) if field and "." not in field else None
@@ -117,7 +118,8 @@ def _tidied(doc, target, headers, merged, notes, re, import_fixes):
             continue
         wanted = PARTY_NAME_HEADINGS[df.options]
         name_at = next(
-            (i for i, h in enumerate(headers) if str(i) != position and re.search(wanted, cstr(h).lower())), None
+            (i for i, h in enumerate(headers) if str(i) != position and re.search(wanted, cstr(h).lower())),
+            None,
         )
         if name_at is None or merged.get(str(name_at)) not in (None, DONT_IMPORT):
             continue
@@ -130,6 +132,10 @@ def _tidied(doc, target, headers, merged, notes, re, import_fixes):
     for position, field in list(merged.items()):
         df = link_df(field)
         if not df or df.options in PARTY_NAME_HEADINGS or df.options in import_fixes.COMPANY_NAMED:
+            continue
+        if df.options == target:
+            # a link to the records the file itself creates (an account's Parent Account; live, 2026-11-20:
+            # it was left out, every account looked top-level and the chart check couldn't be read)
             continue
         if df.options == "Company" or not import_fixes.cannot_create(df.options, doc):
             continue  # a company is mapped on the card; a record that can be created is offered there
@@ -154,6 +160,7 @@ def _tidied(doc, target, headers, merged, notes, re, import_fixes):
             merged[str(at)] = "name"
             notes.append(_("{0} is the records' ID, so they keep the file's IDs.").format(headers[at]))
     return merged, notes
+
 
 class SetColumnMapping(BaseTool):
     """
@@ -547,8 +554,12 @@ def _source_key(doc, headers, column, arguments):
 def _key_as_id(target: str, header: str, field) -> list:
     """The old ID column mapped to the ID of a DocType ERPNext names itself: the import would name each
     record by its old code (an Item Group 'G01', an Item 'T001' with another Item Code). Only a DocType
-    whose name is typed takes it; the key map links the old IDs without it."""
-    if field != "name" or cstr(frappe.get_meta(target).autoname).strip().lower() == "prompt":
+    whose name is typed takes it, or one whose records keep the file's IDs (ID_FROM_FILE: live, 2026-11-20,
+    a project file's "Project ID" was refused twice, the second time after the mapping put it back itself);
+    the key map links the old IDs without it."""
+    if field != "name" or target in ID_FROM_FILE:
+        return []
+    if cstr(frappe.get_meta(target).autoname).strip().lower() == "prompt":
         return []
     problem = _(
         "Column '{0}' holds the old system's IDs: don't map it to ID (name). ERPNext names {1} "

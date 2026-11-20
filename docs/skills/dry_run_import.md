@@ -128,8 +128,9 @@ When they answer, do what the chosen options say, in this order, without asking 
      records (a company's departments are created for that company).
 2. One `dry_run_import` with every chosen option's `fixes` together.
 3. An option with `then` says what to call first (e.g. switch to new records). `custom_fields` come
-   **first**: one `create_document` call per field (doctype Custom Field), **all sent together in one
-   message**, so the user approves them on one card ("Approve all"); never in `records` or `documents`,
+   **first**: one `create_document` call per field (doctype Custom Field), **all in ONE response as parallel
+   tool calls** (never one after another's approval), so the user approves them on one card ("N changes go
+   live"); never in `records` or `documents`,
    which refuse a customisation. Then `set_column_mapping` for those columns, and `dry_run_import` again: records
    to create come from a check of the current mapping (one from before is refused). An option with
    `fix_in_file`: tell the user what to correct in the file and stop; they upload it again.

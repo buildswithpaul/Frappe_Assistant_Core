@@ -189,7 +189,12 @@ class DocumentCreate(BaseTool):
             ):
                 return {
                     "success": False,
-                    "error": _("planned_masters goes with import_session, instead of documents."),
+                    "error": (
+                        # live, 2026-11-20: sent with "session", and told about documents it hadn't sent
+                        _("planned_masters goes with import_session (the session's id), not session.")
+                        if document_batch.given(arguments.get("session"))
+                        else _("planned_masters goes with import_session, instead of documents.")
+                    ),
                 }
             return self._execute_many(arguments)
         if document_batch.given(arguments.get("import_session")) and not document_batch.given(

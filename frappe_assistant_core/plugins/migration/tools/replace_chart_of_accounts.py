@@ -59,6 +59,7 @@ class ReplaceChartOfAccounts(BaseTool):
             "source_system",
             "cash_mode_of_payment_account",  # an account named by the client's chart
             "defaults_proposed",
+            "card",  # account names from the client's chart
         )
         self.inputSchema = {
             "type": "object",
@@ -157,12 +158,8 @@ class ReplaceChartOfAccounts(BaseTool):
         proposals = import_chart.default_proposals(company)
         return {
             "success": True,
-            **done,
-            "source_system": system,
-            "old_ids_kept": len(kept["written"]),
-            "defaults_proposed": proposals,
             "message": _(
-                "{0} accounts removed, {1} created. The chart is in place. The company's default accounts are empty: show defaults_proposed on ONE card (each field with its suggested account first; for one with change_type say 'change the account type from <from> to <to> and use it') and, with the user's choices, first change those accounts' type with update_document, then set them on the Company with update_document. Then ask what they want next; don't start another step."  # noqa: E501
+                "{0} accounts removed, {1} created. The chart is in place. The company's default accounts are empty: show card now as ONE ask_user card (every question a single_select, its recommended option selected; card's left_empty as its description). Don't ask them one by one and don't ask again. With the answers: first, for every chosen option with change_type, update_document on that Account's account_type, all sent together in one message; then ONE update_document on the Company with every chosen option's set. Then ask what they want next; don't start another step."  # noqa: E501
             ).format(done["removed"], done["created"])
             + (
                 " "
@@ -172,6 +169,11 @@ class ReplaceChartOfAccounts(BaseTool):
                 if done.get("tax_setup_removed")
                 else ""
             ),
+            "card": import_chart.defaults_card(company, proposals),
+            **done,
+            "source_system": system,
+            "old_ids_kept": len(kept["written"]),
+            "defaults_proposed": proposals,
         }
 
     @staticmethod

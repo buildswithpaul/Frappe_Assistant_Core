@@ -984,6 +984,11 @@ def _select_options(session, group: Dict[str, Any]) -> List[str]:
 # -- applying fixes ------------------------------------------------------------------
 
 
+#: The ids of the groups whose fixes are saved: one sent again is said saved, not refused as unknown
+FIXED_GROUPS = "fixed_groups"
+FIXED_GROUPS_KEPT = 2000
+
+
 def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str, Any]]) -> List[str]:
     """Check every fix, then store them all on the session, or none if any is wrong.
 
@@ -1001,9 +1006,16 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
     renamed = renames(session)
     dropped_fields = dropped(session)
     post_at_cutoff = bool(_rules(session).get("post_at_cutoff"))
+    saved_before = list(_rules(session).get(FIXED_GROUPS) or [])
+    fixed_now = []
     done, problems, planned = [], [], []
     for fix in fixes:
         group = groups.get(cstr(fix.get("group")))
+        if not group and cstr(fix.get("group")) in saved_before:
+            # live, 2026-11-20: the same fixes sent again after the check that applied them; that check no
+            # longer has their groups (they're fixed), so they were refused and the call made a third time
+            done.append(_("The fix for {0} was already saved.").format(fix.get("group")))
+            continue
         try:
             if not group:
                 # live, 2026-11-19: a fix from an earlier check listed all 280 groups, five times
@@ -1014,6 +1026,7 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
                     ).format(fix.get("group"))
                 )
             group = _with_target(session, group)
+            fixed_now.append(group["id"])
             action = fix.get("action")
             if group.get("cause") == opening_balances.CAUSE_NOT_BALANCED:
                 raise FixProblem(
@@ -1120,6 +1133,7 @@ def apply_fixes(session, groups: Dict[str, Dict[str, Any]], fixes: List[Dict[str
         "post_at_cutoff": post_at_cutoff,
         "renames": renamed,
         "dropped_fields": dropped_fields,
+        FIXED_GROUPS: list(dict.fromkeys(saved_before + fixed_now))[-FIXED_GROUPS_KEPT:],
     }
     rules = {key: value for key, value in rules.items() if value}
     # what the fixes don't own stays: the column that holds the old ID, and the references it translates
@@ -1681,7 +1695,9 @@ def _planned_company_record(session, plan, doctype: str, data: Dict[str, Any]) -
     if others:
         raise FixProblem(
             _("A missing {0} takes {1} only (as masters_plan's data has them), not {2}.").format(
-                _(doctype), ", ".join(f for f in (name_field, company_field, parent_field) if f), ", ".join(others)
+                _(doctype),
+                ", ".join(f for f in (name_field, company_field, parent_field) if f),
+                ", ".join(others),
             )
         )
     value, company = cstr(data.get(name_field)).strip(), cstr(data.get(company_field)).strip()
@@ -1696,7 +1712,9 @@ def _planned_company_record(session, plan, doctype: str, data: Dict[str, Any]) -
             )
         )
     if frappe.db.exists(doctype, name):
-        raise AlreadyThere(_("{0} '{1}' already exists. Check the file again with dry_run_import.").format(_(doctype), name))
+        raise AlreadyThere(
+            _("{0} '{1}' already exists. Check the file again with dry_run_import.").format(_(doctype), name)
+        )
     planned = {name_field: value, company_field: company}
     # the parent is checked as for any master (a group the user may read), and is of no other company
     parent = _parent(doctype, cstr(data.get(parent_field)).strip() if parent_field else "")
@@ -2160,12 +2178,17 @@ CARD_LISTED = 6  # values named in an option's label
 CARD_HOW = (
     "Show this card now as ONE ask_user card: every question as a single_select, its recommended option "
     "pre-selected, its title and result as the description. Don't decide, summarise or leave out any question, "
-    "and don't print the mapping table. When the user answers, don't ask again: tell them in one line what "
+    "don't add your own (the company again, one question summing up the others, a final 'Proceed?': the "
+    "card's answers are the go-ahead), and don't print the mapping table. When the user answers, don't ask again: tell them in one line what "
     "you'll do, then do it in this order, with a short line after each step: 1) the columns option's calls: "
-    "each its own create_document call (never a list: records and documents refuse a Custom Field), ALL sent "
-    "together in one message so the user approves them on one card, then set_column_mapping for those columns and dry_run_import again (the records to create come from a check of the current mapping); 2) records to create in one create_document call with import_session (create_all's "
-    "planned_masters with the chosen shared values, or the chosen options' create as documents); 3) one "
-    "dry_run_import with every chosen option's fixes; 4) if it is ready, start_import. An option with "
+    "one create_document call per field (never a list: records and documents refuse a Custom Field), ALL in "
+    "ONE response as parallel tool calls, never one after another's approval: the chat then shows them on one "
+    "card ('N changes go live') approved once. Then set_column_mapping for those columns and dry_run_import "
+    "with every chosen option's fixes (the records to create come from a check of the current mapping); 2) "
+    "records to create in one create_document call with import_session (create_all's planned_masters with the "
+    "chosen shared values, or the chosen options' create as documents); 3) dry_run_import (with the chosen "
+    "fixes if step 1 didn't send them; fixes once saved needn't be sent again); 4) if it is ready, "
+    "start_import. An option with "
     "fix_in_file: tell the user what to correct and stop."
 )
 CARD_CREATE_LISTED = 10  # records an option lists to create; more are created by planned_masters, by count
@@ -2456,7 +2479,9 @@ def _columns_question(session) -> Optional[Dict[str, Any]]:
     from frappe_assistant_core.utils.import_dry_run import read_sheet_rows
 
     try:
-        rows = apply_value_maps(session, read_sheet_rows(readable_session_file(session), session.sheet or None))
+        rows = apply_value_maps(
+            session, read_sheet_rows(readable_session_file(session), session.sheet or None)
+        )
     except Exception:
         return None
     if not rows:
@@ -2475,7 +2500,9 @@ def _columns_question(session) -> Optional[Dict[str, Any]]:
         heading = cstr(rows[0][position]).strip()
         if position in mapped or position in skip or not heading or not any(values):
             continue
-        if any(values == other for p, other in columns.items() if p != position and (p in mapped or p < position)):
+        if any(
+            values == other for p, other in columns.items() if p != position and (p in mapped or p < position)
+        ):
             continue  # a copy of another column
         if heading.casefold() in labels:
             continue  # the DocType has a field of that name: a mapping question, not a new field
@@ -2490,7 +2517,9 @@ def _columns_question(session) -> Optional[Dict[str, Any]]:
         "options": [
             {
                 "label": _("Create a text field on {0} for each, and import them").format(_(doctype)),
-                "effect": _("{0} new fields on the {1} form; their values come in.").format(len(left), _(doctype)),
+                "effect": _("{0} new fields on the {1} form; their values come in.").format(
+                    len(left), _(doctype)
+                ),
                 "recommended": True,
                 "calls": [
                     {
@@ -2516,6 +2545,19 @@ def _columns_question(session) -> Optional[Dict[str, Any]]:
     }
 
 
+#: The group a new party that is a company most likely belongs to, when no existing party says otherwise
+BUSINESS_GROUPS = {"customer_group": ("Commercial",)}
+
+
+def _likeliest_first(doctype: str, field: str, values: List[str]) -> List[str]:
+    """``values`` with the one the site's own records use most first, then the usual one for a business (a
+    customer group of Commercial), then as listed. Live, 2026-11-20: 262 CSR clients were offered
+    "Government" as recommended, only because it was listed first."""
+    used = {v: frappe.db.count(doctype, {field: v}) for v in values}
+    usual = {_(v) for v in BUSINESS_GROUPS.get(field, ())} | set(BUSINESS_GROUPS.get(field, ()))
+    return sorted(values, key=lambda v: (-used[v], v not in usual, values.index(v)))
+
+
 def _shared_question(masters: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """For new customers or suppliers the site has no default group or territory for: which one, once for
     all of them (masters_plan's ``choose``), as one question of the card."""
@@ -2527,6 +2569,7 @@ def _shared_question(masters: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if not wanted:
         return None
     (doctype, field), values = next(iter(wanted.items()))
+    values = _likeliest_first(doctype, field, values)
     count = sum(1 for m in masters if m["doctype"] == doctype)
     label = _(frappe.get_meta(doctype).get_label(field))
     return {

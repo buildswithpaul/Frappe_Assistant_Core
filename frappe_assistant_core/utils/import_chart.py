@@ -32,6 +32,9 @@ ACCOUNT = "Account"
 ROOT_TYPES = ("Asset", "Liability", "Equity", "Income", "Expense")
 MAX_ACCOUNTS = 5000
 OUTLINE_DEPTH = 2
+#: Accounts the outline lists at most: a flat file (or one whose parents were lost) has every account at the
+#: top (live, 2026-11-20: 1,043 accounts, a 69K-token reply FACO couldn't read the card from)
+OUTLINE_SHOWN = 60
 #: Headings of the column that gives each account's parent by number (ERPNext's importer template), as _key keeps them
 PARENT_NUMBER_HEADINGS = ("parent account number", "parent number")
 
@@ -946,18 +949,21 @@ def summary(nodes: List[Dict[str, Any]], classes: List[Dict[str, Any]]) -> Dict[
                     "from": c["source"],
                 }
             )
+    unclassified = [
+        {"row": n["row"], "account": n["name"], "parent": n["parent_name"] or None}
+        for n, c in zip(nodes, classes)
+        if not c["root_type"]
+    ]
     out = {
         "accounts": len(nodes),
         "groups": sum(1 for n in nodes if n["is_group"]),
         "ledgers": sum(1 for n in nodes if not n["is_group"]),
         "by_root_type": roots,
         "classified_from": sources,
-        "outline": outline,
-        "unclassified": [
-            {"row": n["row"], "account": n["name"], "parent": n["parent_name"] or None}
-            for n, c in zip(nodes, classes)
-            if not c["root_type"]
-        ],
+        "outline": outline[:OUTLINE_SHOWN],
+        **({"outline_more": len(outline) - OUTLINE_SHOWN} if len(outline) > OUTLINE_SHOWN else {}),
+        "unclassified": unclassified[:CATEGORIES_SHOWN],
+        **({"unclassified_count": len(unclassified)} if len(unclassified) > CATEGORIES_SHOWN else {}),
         "problems": problems(nodes),
         "doubtful": doubtful(nodes, classes),
         "parents_not_in_the_file": sorted({n["outside_parent"] for n in nodes if n["outside_parent"]}),
@@ -1203,6 +1209,11 @@ DEFAULT_FIELDS: Tuple[Tuple[str, Tuple[str, ...], str, Tuple[str, ...], str], ..
 )
 
 
+#: A name narrowed to one thing ("Depreciation on Networking Equipment", "Creditors for Expenses"): such an
+#: account isn't retyped to be the company's default for all of them (live, 2026-11-19)
+NARROWED = re.compile(r"\b(on|of|for)\b|[-(/]")
+
+
 def default_proposals(company: str) -> List[Dict[str, Any]]:
     """For each empty default-account field of the company, the ledgers ERPNext accepts there (root type and
     account type as it checks them), the likeliest first: the field's own account type, then words in the
@@ -1239,6 +1250,7 @@ def default_proposals(company: str) -> List[Dict[str, Any]]:
                     if (not roots or a.root_type in roots)
                     and a.account_type != account_type
                     and re.search(words, _key(a.account_name))
+                    and not NARROWED.search(_key(a.account_name))
                 ),
                 None,
             )
@@ -1276,6 +1288,50 @@ def default_proposals(company: str) -> List[Dict[str, Any]]:
             )
         out.append(entry)
     return out
+
+
+def defaults_card(company: str, proposals: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """default_proposals as ONE card: a question per default with an account to offer, its suggested one
+    selected, and "leave empty"; the defaults nothing fits are only named. Live, 2026-11-19: the seven
+    defaults were asked one after another."""
+    questions, empty = [], []
+    for entry in proposals:
+        if not entry["choices"]:
+            empty.append(entry["label"])
+            continue
+        retype = entry.get("change_type") or {}
+        options = []
+        for account in entry["choices"]:
+            option = {
+                "label": account,
+                "recommended": account == entry["suggested"],
+                "set": {entry["field"]: account},
+            }
+            if retype.get("account") == account:
+                option["label"] = _("{0} (its type changes from {1} to {2})").format(
+                    account, retype.get("from") or _("none"), retype["to"]
+                )
+                option["change_type"] = {"account": account, "account_type": retype["to"]}
+            options.append(option)
+        options.append({"label": _("Leave empty"), "recommended": False, "set": {}})
+        questions.append(
+            {
+                "id": f"default:{entry['field']}",
+                "title": entry["label"],
+                **({"detail": retype["note"]} if retype.get("note") else {}),
+                "options": options,
+            }
+        )
+    card = {
+        "title": _("Default accounts for {0}").format(company),
+        "intro": _("The suggested account is selected for each; ERPNext accepts every one listed."),
+        "questions": questions,
+    }
+    if empty:
+        card["left_empty"] = _("Left empty, as no account of the new chart fits: {0}.").format(
+            ", ".join(empty)
+        )
+    return card
 
 
 # -- add and map ---------------------------------------------------------------------------------------
