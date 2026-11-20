@@ -2152,7 +2152,9 @@ def report(session, summary: Dict[str, Any]) -> Dict[str, Any]:
     if choices:
         out["card"] = choices
         out["next"] = _(CARD_HOW)  # outside the card: the card quotes the file and is fenced
-        if len(json.dumps(out, default=str)) > REPLY_BUDGET:
+        if len(json.dumps(out, default=str)) > REPLY_BUDGET and not dry_run.special_engine(session):
+            # an opening file's groups carry fixes no card question has (account twice, negative
+            # amount): its reply keeps them all
             # live, 2026-11-19: replies set aside by FAC Cloud (130,000, then 20,000 characters): FACO read parts,
             # missed the card and typed the questions. The card carries every fix: the lists go, counts stay.
             out["groups"] = out["groups"][:GROUPS_DETAILED]
@@ -2193,7 +2195,9 @@ CARD_HOW = (
     "calls: the chat shows them together as one card. Never one ask_user holding several questions. Don't decide, summarise or leave out any question, "
     "don't add your own (the company again, one question summing up the others, a final 'Proceed?': the "
     "card's answers are the go-ahead), and don't print the mapping table. When the user answers, don't ask again: tell them in one line what "
-    "you'll do, then do it in this order, with a short line after each step: 1) the columns option's calls: "
+    "you'll do, then do it in this order, with a short line after each step: 0) the named option's "
+    "set_column_mapping call, then dry_run_import after its reply (its questions are of the mapped file); "
+    "1) the columns option's calls: "
     "one create_document call per field (never a list: records and documents refuse a Custom Field), ALL in "
     "ONE response as parallel tool calls, never one after another's approval: the chat then shows them on one "
     "card ('N changes go live') approved once. Then set_column_mapping for those columns and, after its reply, "
@@ -2280,6 +2284,9 @@ def card(session, summary: Dict[str, Any], masters: List[Dict[str, Any]]) -> Opt
                     ],
                 }
             )
+    named = _named_question(session)
+    if named:
+        questions.append(named)
     unplaced = _columns_question(session)
     if unplaced:
         questions.append(unplaced)
@@ -2482,6 +2489,74 @@ def _option_question(session, groups, label, rows, skip) -> Dict[str, Any]:
         "title": _("{0} values in the file aren't ERPNext's choices for {1}").format(len(groups), label),
         "detail": _("{0} rows.").format(rows),
         "options": options,
+    }
+
+
+def _named_question(session) -> Optional[Dict[str, Any]]:
+    """The file's columns, with values, named as a field of the DocType but not mapped to it: map them, or
+    leave them out. Asked, never mapped unasked: only what the user mapped is imported. Live, 2026-11-20:
+    "Department" was left out of a project file's mapping and 2,084 projects came in without one; the
+    columns question skips a column named as a field, so nothing asked about it."""
+    from frappe_assistant_core.utils.import_dry_run import read_sheet_rows
+
+    try:
+        rows = read_sheet_rows(readable_session_file(session), session.sheet or None)
+    except Exception:
+        return None
+    if not rows:
+        return None
+    mapped = _column_targets(session)
+    taken = {field for _parent, field in mapped.values()}
+    key = import_keys.source_key(session)
+    skip = {int(key["position"])} if key else set()
+    ids = id_column(session, rows)
+    if ids is not None:
+        skip.add(ids)
+    meta = frappe.get_meta(session.target_doctype)
+    fields = {
+        cstr(df.label).strip().casefold(): df
+        for df in meta.fields
+        if df.label
+        and not df.read_only
+        and not df.hidden
+        and df.fieldtype not in no_value_fields
+        and df.fieldtype not in table_fields
+    }
+    # a column the user set to Don't Import stays out: only one left out of the mapping is asked about
+    chosen_out = {
+        int(p)
+        for p, f in dry_run.column_to_field_map(session).items()
+        if str(p).isdigit() and f == "Don't Import"
+    }
+    skip |= chosen_out
+    found = {}
+    for position, heading in enumerate(rows[0]):
+        df = fields.get(cstr(heading).strip().casefold())
+        if not df or position in mapped or position in skip or df.fieldname in taken:
+            continue
+        if not any(cstr(r[position]).strip() for r in rows[1:] if position < len(r)):
+            continue
+        found[cstr(heading).strip()] = df.fieldname
+        taken.add(df.fieldname)
+    if not found:
+        return None
+    doctype = session.target_doctype
+    return {
+        "id": "named",
+        "title": _("{0} columns are named as a field of {1} but not mapped").format(len(found), _(doctype)),
+        "detail": ", ".join(found),
+        "options": [
+            {
+                "label": _("Map each to its field: {0}").format(", ".join(found)),
+                "effect": _("Their values come in; the check is run again."),
+                "recommended": True,
+                "calls": [
+                    {"tool": "set_column_mapping", "arguments": {"session": session.name, "mapping": found}}
+                ],
+                "then": _("after set_column_mapping's reply, call dry_run_import again"),
+            },
+            {"label": _("Don't import these columns"), "effect": _("Their values stay only in the file.")},
+        ],
     }
 
 

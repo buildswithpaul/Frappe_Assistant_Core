@@ -312,13 +312,22 @@ class TestColumnsFACOLeftOut(ImportRunCase):
 
     _session = TestProjectFileOnTheEconomyModel._session
 
-    def test_a_column_named_as_a_field_is_mapped_when_left_out(self):
+    def test_a_column_named_as_a_field_left_out_is_asked_about_on_the_card(self):
+        session = self._session()
         mapped = self._run(
             "set_column_mapping",
-            {"session": self._session(), "doctype": "Project", "mapping": {"Project": "project_name"}},
+            {"session": session, "doctype": "Project", "mapping": {"Project": "project_name"}},
         )
         self.assertTrue(mapped["success"], mapped)
-        self.assertIn("'department'", str(mapped["result"]["mapping"]).replace('"', "'"))
+        self.assertNotIn("'department'", str(mapped["result"]["mapping"]).replace('"', "'"))  # never unasked
+
+        card = self._run("dry_run_import", {"session": session})["result"]["card"]
+
+        named = next(q for q in card["questions"] if q["id"] == "named")
+        call = named["options"][0]["calls"][0]
+        self.assertEqual(
+            (call["tool"], call["arguments"]["mapping"]), ("set_column_mapping", {"Department": "department"})
+        )
 
     def test_documents_with_a_doctype_that_only_repeats_theirs_are_read(self):
         from frappe_assistant_core.utils import document_batch
