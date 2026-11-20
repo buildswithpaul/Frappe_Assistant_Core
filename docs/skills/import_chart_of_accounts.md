@@ -90,7 +90,7 @@ finds its accounts by the client's names and numbers.
      fits is named in the card's `left_empty` and stays empty; don't search the accounts for one. An option
      with `change_type`: the right account has another type in the file (the client's "Sundry Creditors"
      typed Current Liability); its label says so. If picked, `update_document` that Account's
-     `account_type` first, then set the default. And, when
+     `account_type` first and set the default only after its reply (never in the same response). And, when
      `tax_setup_removed` is there, help the user set the tax setup up again on the new chart's own tax
      accounts (GST Settings accounts, tax templates, tax withholding accounts), asking which accounts.
      Replace once. If an answer seems lost, check the company's accounts before calling again: a call

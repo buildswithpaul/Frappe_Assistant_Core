@@ -159,7 +159,7 @@ class ReplaceChartOfAccounts(BaseTool):
         return {
             "success": True,
             "message": _(
-                "{0} accounts removed, {1} created. The chart is in place. The company's default accounts are empty: show card now as ONE ask_user card (every question a single_select, its recommended option selected; card's left_empty as its description). Don't ask them one by one and don't ask again. With the answers: first, for every chosen option with change_type, update_document on that Account's account_type, all sent together in one message; then ONE update_document on the Company with every chosen option's set. Then ask what they want next; don't start another step."  # noqa: E501
+                "{0} accounts removed, {1} created. The chart is in place. The company's default accounts are empty: show card now as ONE ask_user card (every question a single_select, its recommended option selected; card's left_empty as its description). Don't ask them one by one and don't ask again. With the answers: first, for every chosen option with change_type, update_document on that Account's account_type; then, only after their replies (never in the same response: ERPNext refuses a default whose type isn't changed yet), ONE update_document on the Company with every chosen option's set. Then ask what they want next; don't start another step."  # noqa: E501
             ).format(done["removed"], done["created"])
             + (
                 " "
