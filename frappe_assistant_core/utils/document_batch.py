@@ -90,6 +90,14 @@ def read_documents(arguments: Dict[str, Any], single_inputs: tuple, with_name: b
     inputs, with no customisation and no internal key. Raises BatchProblem."""
     documents = arguments.get("documents")
     clashing = [key for key in single_inputs if given(arguments.get(key))]
+    if (
+        clashing == ["doctype"]
+        and isinstance(documents, list)
+        and documents
+        and all(isinstance(d, dict) and d.get("doctype") == arguments["doctype"] for d in documents)
+    ):
+        # live, 2026-11-20: documents sent with a doctype that only repeats theirs; nothing is ambiguous
+        clashing = []
     if clashing:
         raise BatchProblem(_("Pass either documents or {0}, not both.").format(" + ".join(single_inputs)))
     if not isinstance(documents, list):

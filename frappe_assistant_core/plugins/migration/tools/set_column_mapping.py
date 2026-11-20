@@ -114,6 +114,29 @@ def _tidied(doc, target, headers, merged, notes, re, import_fixes):
         df = meta.get_field(field) if field and "." not in field else None
         return df if df and df.fieldtype == "Link" else None
 
+    taken = set(merged.values())
+    for i, heading in enumerate(headers):
+        # live, 2026-11-20: "Department" was left out of the mapping, so 2,084 projects came in without one
+        # and the client's departments were never asked about; a column named as a field goes to it
+        if merged.get(str(i)) is not None:
+            continue
+        df = next(
+            (
+                d
+                for d in meta.fields
+                if d.label
+                and cstr(d.label).strip().lower() == cstr(heading).strip().lower()
+                and d.fieldtype == "Link"  # a record the row links to: left out, it's lost unasked
+                and not d.read_only
+                and not d.hidden
+                and d.fieldname not in taken
+            ),
+            None,
+        )
+        if df:
+            merged[str(i)] = df.fieldname
+            taken.add(df.fieldname)
+            notes.append(_("{0} goes to {1}, the field of that name.").format(heading, _(df.label)))
     for position, field in list(merged.items()):
         df = link_df(field)
         if not df or df.options not in PARTY_NAME_HEADINGS:

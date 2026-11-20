@@ -304,3 +304,31 @@ class TestChartCheckBeforeMapping(ChartCase):
             "dry_run_import", {"session": started["result"]["session_id"], "chart": {"company": self.company}}
         )
         self.assertFalse(checked["success"])
+
+
+@unittest.skipUnless(HAS_ERPNEXT, "needs ERPNext's Project and Department")
+class TestColumnsFACOLeftOut(ImportRunCase):
+    """Live, 2026-11-20 (IMP-2026-00107): "Department" left out of the mapping; documents sent with a doctype."""
+
+    _session = TestProjectFileOnTheEconomyModel._session
+
+    def test_a_column_named_as_a_field_is_mapped_when_left_out(self):
+        mapped = self._run(
+            "set_column_mapping",
+            {"session": self._session(), "doctype": "Project", "mapping": {"Project": "project_name"}},
+        )
+        self.assertTrue(mapped["success"], mapped)
+        self.assertIn("'department'", str(mapped["result"]["mapping"]).replace('"', "'"))
+
+    def test_documents_with_a_doctype_that_only_repeats_theirs_are_read(self):
+        from frappe_assistant_core.utils import document_batch
+
+        documents = [{"doctype": "Project Type", "data": {"project_type": f"T {self.tag}"}}]
+        read = document_batch.read_documents(
+            {"doctype": "Project Type", "documents": documents}, ("doctype", "data"), with_name=False
+        )
+        self.assertEqual(len(read), 1)
+        with self.assertRaises(document_batch.BatchProblem):
+            document_batch.read_documents(
+                {"doctype": "Customer", "documents": documents}, ("doctype", "data"), with_name=False
+            )
