@@ -29,11 +29,13 @@
 					<select
 						class="mr-select"
 						:value="col.field || ''"
-						:disabled="!review.editable || saving"
+						:disabled="!review.editable || saving || col.status === 'read_by_chart'"
 						:aria-label="__('ERPNext field for {0}', [col.column])"
 						@change="change(col, $event.target.value)"
 					>
-						<option value="" disabled>{{ __("Choose a field") }}</option>
+						<option value="" disabled>
+							{{ col.status === "read_by_chart" ? __("Read by its heading") : __("Choose a field") }}
+						</option>
 						<option v-for="option in review.options" :key="option.value" :value="option.value">
 							{{ option.label }}{{ option.required ? " *" : "" }}
 						</option>
@@ -63,6 +65,7 @@ const LABELS = {
 	mapped: () => __("Mapped"),
 	not_imported: () => __("Not imported"),
 	unmapped: () => __("No field"),
+	read_by_chart: () => __("Used by the chart import"),
 };
 const statusLabel = (status) => (LABELS[status] || (() => status))();
 
@@ -136,6 +139,7 @@ defineExpose({ load });
 .mr-status { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--ql-border); white-space: nowrap; }
 .mr-mapped { border-color: var(--ql-accent); color: var(--ql-accent); }
 .mr-unmapped { border-color: var(--ql-warning, #e0a43a); }
+.mr-read_by_chart { border-color: var(--ql-accent); color: var(--ql-accent); }
 .mr-summary { margin-top: 6px; color: var(--ql-text-muted); }
 
 /* A phone (375px): each column is a small block of its own, labels in front */

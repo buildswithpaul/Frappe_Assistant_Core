@@ -332,3 +332,26 @@ class TestColumnsFACOLeftOut(ImportRunCase):
             document_batch.read_documents(
                 {"doctype": "Customer", "documents": documents}, ("doctype", "data"), with_name=False
             )
+
+    def test_the_mapping_table_shows_root_type_and_parent_number_as_used(self):
+        from frappe_assistant_core.chat.api.imports import _review
+
+        content = (
+            "Account Name,Parent Account,Account Number,Parent Account Number,Is Group,Account Type,Root Type,Currency\n"
+            "Client Assets,,,,1,,Asset,INR\nClient Bank,Client Assets,1010,,0,Bank,Asset,INR\n"
+        )
+        started = self._run(
+            "start_import_session", {"file_url": self._file("coa2.csv", content.encode()).file_url}
+        )
+        session = started["result"]["session_id"]
+        company = frappe.get_all("Company", pluck="name", limit=1)[0]
+        checked = self._run("dry_run_import", {"session": session, "chart": {"company": company}})
+        self.assertTrue(checked["success"], checked)
+
+        statuses = {
+            c["column"]: c["status"]
+            for c in _review(frappe.get_doc("FAC Import Session", session))["columns"]
+        }
+        self.assertEqual(statuses["Root Type"], "read_by_chart")
+        self.assertEqual(statuses["Parent Account Number"], "read_by_chart")
+        self.assertEqual(statuses["Parent Account"], "mapped")

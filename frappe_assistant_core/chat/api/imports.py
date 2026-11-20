@@ -156,7 +156,11 @@ SAMPLES_SHOWN = 3
 def _review(doc) -> Dict[str, Any]:
     """The session's mapping as the review card shows it: each column with its first values, its
     field and a status, the fields it can choose from and the required fields with no column."""
-    from frappe_assistant_core.plugins.migration.tools.set_column_mapping import _mapping_refused, _samples
+    from frappe_assistant_core.plugins.migration.tools.set_column_mapping import (
+        CHART_READ_COLUMNS,
+        _mapping_refused,
+        _samples,
+    )
     from frappe_assistant_core.utils.import_mapping import (
         DONT_IMPORT,
         _mapping_targets,
@@ -180,7 +184,12 @@ def _review(doc) -> Dict[str, Any]:
     columns = []
     for position, header in enumerate(headers):
         field = mapping.get(str(position))
-        if field == DONT_IMPORT:
+        if doc.target_doctype == "Account" and " ".join(str(header).lower().split()) in CHART_READ_COLUMNS:
+            # Root Type and Parent Account Number have no field to map to, but the chart import reads
+            # them by their headings (live, 2026-11-20: shown "Not imported" / "No field", users thought
+            # they were lost)
+            status, field = "read_by_chart", None
+        elif field == DONT_IMPORT:
             status = "not_imported"
         elif field and field in targets:
             status = "mapped"
