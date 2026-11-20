@@ -282,6 +282,16 @@ class TestReadChart(ChartCase):
         misc = next(n for n in nodes if n["name"] == "Misc Income")
         self.assertEqual(nodes[misc["parent"]]["number"], "3200")
 
+    def test_the_root_type_column_is_read_without_being_named(self):
+        # Live, 2026-11-19: FACO left root_type_column out, and the check guessed the root types from the tree
+        session = self._erpnext_chart(
+            ["Client Funds,,5000,,1,,Equity", "Client Reserve,Client Funds,5100,5000,0,,Equity"]
+        )
+
+        nodes = import_chart.read_chart(frappe.get_doc("FAC Import Session", session))
+
+        self.assertEqual({n.get("root_type") for n in nodes}, {"Equity"})
+
     def test_one_name_and_one_number_twice_is_still_listed(self):
         session = self._erpnext_chart(["Rent,,5000,,0,,Expense", "Rent,,5000,,0,,Expense"])
 
@@ -335,20 +345,61 @@ class TestReadChart(ChartCase):
         self.assertEqual(modes["replace_figures"], expected)
         self.assertEqual(expected["accounts_created"], 13)
 
-    def test_the_company_must_exist(self):
-        refused = self._run(
+    def test_a_company_that_does_not_exist_is_asked_on_the_card_not_used(self):
+        # live, 2026-11-19: "(site's only company)" was passed as the name and the check failed
+        checked = self._run(
             "dry_run_import",
             {"session": self._chart(), "chart": {"company": "No Such Company"}},
         )
 
-        self.assertFalse(refused["success"])
+        self.assertTrue(checked["success"], checked)
+        self.assertNotEqual(checked["result"].get("company"), "No Such Company")
+        if frappe.db.count("Company") > 1:
+            self.assertEqual(checked["result"]["questions"][0]["kind"], "company")
+
+    def test_the_check_lists_accounts_whose_type_does_not_belong_under_their_root(self):
+        # Live, 2026-11-18: a client's chart had 13 "Stock" accounts under Equity; ERPNext books stock to them
+        session = self._chart(["Client Equity,,,,,Yes", "Share Stock,3100,Client Equity,Stock,,No"])
+
+        checked = self._check(
+            session,
+            classifications={
+                "Client Equity": {"root_type": "Equity"},
+                "Share Stock": {"root_type": "Equity", "account_type": "Stock"},
+            },
+        )
+
+        self.assertEqual(
+            [
+                (d["account"], d["account_type"], d["root_type"], d["expected_root_type"])
+                for d in checked["doubtful"]
+            ],
+            [("Share Stock", "Stock", "Equity", "Asset")],
+        )
+
+    def test_a_bank_account_under_liabilities_is_not_doubtful(self):
+        # an overdraft is a bank account and a liability
+        session = self._chart(["Client Loans,,,,,Yes", "OD Account,2010,Client Loans,Bank,,No"])
+
+        checked = self._check(
+            session,
+            classifications={
+                "Client Loans": {"root_type": "Liability"},
+                "OD Account": {"root_type": "Liability", "account_type": "Bank"},
+            },
+        )
+
+        self.assertEqual(checked["doubtful"], [])
 
     def test_on_a_site_of_one_company_the_check_uses_it_unasked(self):
         # the shared test site holds a company per test: the list a one-company site returns stands in
         real = frappe.get_list
 
         def one_company(doctype, *args, **kwargs):
-            return [self.company] if doctype == "Company" else real(doctype, *args, **kwargs)
+            # only the list of company names the check asks for: the replace check reads Company rows too
+            if doctype == "Company" and kwargs.get("pluck") == "name":
+                return [self.company]
+            return real(doctype, *args, **kwargs)
 
         with patch.object(frappe, "get_list", side_effect=one_company):
             checked = self._check(self._chart())

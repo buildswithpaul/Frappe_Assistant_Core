@@ -125,6 +125,12 @@ For many records of **one DocType**, pass `records` instead of `data`. Each reco
 - At most 100 records per call; split a larger job into several calls.
 - `mode: "all_or_nothing"` (the default) saves nothing if any record fails, and `failed_record` names the record and its error. `mode: "continue"` saves the records that pass and lists each record's outcome in `results`.
 - Customisation DocTypes (Custom Field, Property Setter, Server Script, Client Script, DocType, Workflow, Report, Print Format, Notification and similar) are refused in a batch: write them one at a time so each one is previewed.
+- **Several of them at once, one approval:** one at a time means one `create_document` call per record, but
+  send **all those calls in ONE response, as parallel tool calls**: never wait for one's approval before
+  sending the next. The chat then shows them on **one card** ("13 changes go live") with every record
+  listed, each still reviewable, approved once. Sent one after another, the user gets an approval per record
+  (live, 2026-11-19 and 2026-11-20: 13 Custom Fields, 13 approvals). Before the calls, show the user a table
+  of what is added (field, type, form, where it goes).
 - **`records` is not a way to import a user's file** either: a file goes through the import tools (see below).
 
 ## Several records at once

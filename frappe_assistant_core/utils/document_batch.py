@@ -90,6 +90,14 @@ def read_documents(arguments: Dict[str, Any], single_inputs: tuple, with_name: b
     inputs, with no customisation and no internal key. Raises BatchProblem."""
     documents = arguments.get("documents")
     clashing = [key for key in single_inputs if given(arguments.get(key))]
+    if (
+        clashing == ["doctype"]
+        and isinstance(documents, list)
+        and documents
+        and all(isinstance(d, dict) and d.get("doctype") == arguments["doctype"] for d in documents)
+    ):
+        # live, 2026-11-20: documents sent with a doctype that only repeats theirs; nothing is ambiguous
+        clashing = []
     if clashing:
         raise BatchProblem(_("Pass either documents or {0}, not both.").format(" + ".join(single_inputs)))
     if not isinstance(documents, list):
@@ -183,8 +191,9 @@ def _refuse_one_at_a_time(documents: List[Dict[str, Any]], with_name: bool) -> N
         raise BatchProblem(
             _(
                 "Nothing was written. Customisations and records that change the database schema "
-                "can't be in documents: make each of these on its own, with {0}, one call each. "
-                "The other records may still go as a list."
+                "can't be in documents: make each of these on its own, with {0}, one call each, all "
+                "sent together in the same message: the user approves them on one card. The other "
+                "records may still go as a list."
             ).format(inputs),
             problems,
             error_type="one_at_a_time",

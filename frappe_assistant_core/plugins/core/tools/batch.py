@@ -77,7 +77,10 @@ def batch_refusal(doctype: str, items: Any, field: str, mode: Any) -> Optional[D
         error = _("mode must be '{0}' or '{1}'.").format(ALL_OR_NOTHING, CONTINUE)
     elif doctype in CUSTOMISATION_DOCTYPES:
         # Each customisation write gets its own preview and approval, which a batch would skip.
-        error = _("{0} records change how the site works, so they are written one at a time.").format(doctype)
+        error = _(
+            "{0} records change how the site works, so they are written one at a time: one call each, all sent "
+            "together in the same message, and the user approves them on one card."
+        ).format(doctype)
     if error is None:
         return None
     return {"success": False, "error": error, "error_type": "invalid_batch", "doctype": doctype}

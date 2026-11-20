@@ -21,6 +21,7 @@ from frappe_assistant_core.plugins.migration.tools.import_chart_of_accounts impo
 )
 from frappe_assistant_core.utils import import_chart
 from frappe_assistant_core.utils.import_mapping import SESSION_DOCTYPE, load_session
+from frappe_assistant_core.utils.one_at_a_time import StillRunning, one_at_a_time
 
 
 class ReplaceChartOfAccounts(BaseTool):
@@ -32,14 +33,21 @@ class ReplaceChartOfAccounts(BaseTool):
         self.description = (
             "Replace a company's chart of accounts with the client's (an import session read with "
             "dry_run_import with chart). Only for a company with no general ledger entries and no submitted "
-            "documents, and only while no record outside the chart (a tax template, mode of payment, "
-            "warehouse, customer account, GST Settings...) points at its accounts: otherwise it is refused with the list, and map or add are the way. It "
+            "documents, and only while no record outside the chart (a draft document, a mode of payment, a "
+            "warehouse, a customer's account...) points at its accounts: otherwise it is refused with the "
+            "list, and map or add are the way. The company's own tax setup, made for the chart that goes "
+            "(its sales, purchase and item tax templates, and its rows in the tax withholding categories "
+            "and GST Settings), is removed with it, in the same approval: pass tax_setup_removed as the "
+            "check shows it, and after the replace help the user set them up on the new chart's tax "
+            "accounts. A template something uses (an item, a customer, a tax rule) stops the replace. It "
             "DELETES the company's accounts and creates the client's through ERPNext's own chart code, as "
             "the user (who needs to be allowed to create and delete accounts), all or nothing, then sets the "
             "company's default accounts again and lists the ones the new chart has no account for. Pass "
-            "accounts_removed and accounts_created as the check shows them (modes.replace_figures of "
-            "dry_run_import with chart), so the one approval card shows the user how many accounts go and "
-            "come; a call without them is refused with the figures. A company that already has this "
+            "accounts_removed, accounts_created and tax_setup_removed as the check shows them "
+            "(modes.replace_figures of dry_run_import with chart), so the one approval card shows the user "
+            "how many accounts and tax setup records go and come; a call without them is refused with the "
+            "figures. Never clear the tax setup, or anything else in the way, yourself first with "
+            "delete_document or update_document. A company that already has this "
             "chart is left as it is (already_in_place), so a repeated call deletes nothing. The "
             "client's account names and numbers are kept as old IDs."
         )
@@ -50,6 +58,8 @@ class ReplaceChartOfAccounts(BaseTool):
             "error",
             "source_system",
             "cash_mode_of_payment_account",  # an account named by the client's chart
+            "defaults_proposed",
+            "card",  # account names from the client's chart
         )
         self.inputSchema = {
             "type": "object",
@@ -64,13 +74,23 @@ class ReplaceChartOfAccounts(BaseTool):
                     "type": "integer",
                     "description": "How many accounts the client's chart creates.",
                 },
+                "tax_setup_removed": {
+                    "type": "integer",
+                    "description": "How many records of the company's tax setup are removed with the chart "
+                    "(modes.replace_figures.tax_setup_removed of the check; 0 when it has none).",
+                },
                 "root_type_column": {
                     "type": "string",
                     "description": "The heading of the column that holds each account's root type (Asset, Liability, Equity, Income, Expense), when the file has one: it can't be mapped, Root Type being read-only on Account.",
                 },
                 "classifications": {
                     "type": "object",
-                    "description": "{account name: {root_type, account_type}}.",
+                    "description": "{account name: {root_type, account_type, account_category}}.",
+                },
+                "clean_names": {
+                    "type": "boolean",
+                    "description": "The user's answer when the check reports names_from_another_company: "
+                    "true removes the other company's account numbers and abbreviation from the names.",
                 },
                 "source_system": {"type": "string", "description": "The system the chart comes from."},
             },
@@ -103,19 +123,26 @@ class ReplaceChartOfAccounts(BaseTool):
                 return {"success": False, "error": problem, "company": company}
             figures = import_chart.replace_figures(company, nodes)
             asked = {k: arguments.get(k) for k in ("accounts_removed", "accounts_created")}
+            asked["tax_setup_removed"] = arguments.get("tax_setup_removed") or 0
             if asked != {k: figures[k] for k in asked}:
                 return {
                     "success": False,
                     "error": _(
-                        "This deletes {accounts_removed} accounts of {company} and creates {accounts_created}. Pass "
-                        "those figures, so the approval card shows the user what goes."
+                        "This deletes {accounts_removed} accounts of {company} and creates {accounts_created}, "
+                        "and removes {tax_setup_removed} records of its tax setup. Pass those figures, so the "
+                        "approval card shows the user what goes."
                     ).format(**figures),
                     "approval": figures,
                 }
             system = source_system(session, arguments)
-            done = import_chart.replace(company, nodes, classes)
-            accounts = {n["index"]: self._account(company, n) for n in nodes}
-            kept = import_chart.keep_old_ids(name, system, nodes, {i: a for i, a in accounts.items() if a})
+            with one_at_a_time("chart", company):
+                done = import_chart.replace(company, nodes, classes)
+                accounts = {n["index"]: self._account(company, n) for n in nodes}
+                kept = import_chart.keep_old_ids(
+                    name, system, nodes, {i: a for i, a in accounts.items() if a}
+                )
+        except StillRunning as e:
+            return e.result()
         except frappe.DoesNotExistError:
             return {"success": False, "error": _("Import session '{0}' not found.").format(name)}
         except frappe.PermissionError as e:
@@ -125,14 +152,28 @@ class ReplaceChartOfAccounts(BaseTool):
         except Exception as e:
             frappe.log_error(title=_("Replace Chart Of Accounts Error"), message=frappe.get_traceback())
             return {"success": False, "error": exception_message(e)}
+        from frappe_assistant_core.plugins.migration.tools.import_chart_of_accounts import mark_done
+
+        mark_done(name)
+        proposals = import_chart.default_proposals(company)
         return {
             "success": True,
+            "message": _(
+                "{0} accounts removed, {1} created. The chart is in place. The company's default accounts are empty: show card now: one ask_user call per question (single_select, its recommended option selected; card's left_empty on the first's description), ALL in the same response as parallel tool calls, so the chat shows them as one card. Never one ask_user holding several questions or a single 'accept all'; ask nothing about left_empty and don't ask again. With the answers: first, for every chosen option with change_type, update_document on that Account's account_type; then, only after their replies (never in the same response: ERPNext refuses a default whose type isn't changed yet), ONE update_document on the Company with every chosen option's set. Then ask what they want next; don't start another step."  # noqa: E501
+            ).format(done["removed"], done["created"])
+            + (
+                " "
+                + _(
+                    "The company's tax setup was removed with the old chart (tax_setup_removed): set its tax templates, tax withholding accounts and GST Settings accounts up again on the new chart's tax accounts, asking the user which ones."  # noqa: E501
+                )
+                if done.get("tax_setup_removed")
+                else ""
+            ),
+            "card": import_chart.defaults_card(company, proposals),
             **done,
             "source_system": system,
             "old_ids_kept": len(kept["written"]),
-            "message": _(
-                "{0} accounts removed, {1} created. Set the default accounts listed in defaults_left_empty."
-            ).format(done["removed"], done["created"]),
+            "defaults_proposed": proposals,
         }
 
     @staticmethod

@@ -49,6 +49,166 @@ from frappe_assistant_core.utils.import_session import (
     readable_session_file,
 )
 
+#: Columns of a chart of accounts the chart import reads by their heading, not through a field: Root Type
+#: (read-only on Account) and the parent's number (no Account field holds it).
+CHART_READ_COLUMNS = (
+    "root_type",
+    "root type",
+    "parent_account_number",
+    "parent account number",
+    "parent_number",
+    "parent number",
+)
+
+
+#: Said after every mapping (live, 2026-11-19: FACO remapped a column and stopped, the user had to ask for the
+#: check; it had also linked contract codes to Sales Order, which no row could satisfy).
+AFTER_MAPPING = (
+    "Now call dry_run_import (this reply came first: never send the two in one response) and show its card "
+    "(all questions on one card), unless the user is still changing the mapping. Never map a column of the other system's codes to a link (Sales Order, "
+    "Department...) whose records don't exist: leave it for the card's 'create a field' question."
+)
+
+
+#: A party linked by its code while the file has its name (live, 2026-11-19: 262 customers would have been
+#: created named "C000065"): the name column is linked instead.
+PARTY_NAME_HEADINGS = {"Customer": r"\bcustomer\s*name\b", "Supplier": r"\bsupplier\s*name\b"}
+#: DocTypes whose records keep the file's own ID as their ID when it has a column of them (Project ID)
+ID_FROM_FILE = frozenset({"Project", "Task"})
+#: Headings of the column that names each record's company (the old system's legal entity)
+COMPANY_HEADINGS = r"(company|legal\s*entity|entity)(\s*(name|code))?"
+#: Share of a link column's values that must exist for the link to be kept, when none can be created
+LINK_FOUND_SHARE = 0.2
+
+
+def _tidy(doc, target: str, headers, merged: Dict[str, str]):
+    """The mapping with what the user should never have to correct: a party linked by its name column, a
+    link whose values aren't records and can't be created left for the card's new-field question, and the
+    file's own IDs as the record's ID. Returns (mapping, what was changed, said in plain words)."""
+    import re
+
+    from frappe_assistant_core.utils import import_fixes
+
+    notes = []
+    previous = doc.target_doctype
+    doc.target_doctype = target  # what is mapped to, for the helpers below; saved with the mapping anyway
+    try:
+        return _tidied(doc, target, headers, merged, notes, re, import_fixes)
+    finally:
+        doc.target_doctype = previous or target
+
+
+def _tidied(doc, target, headers, merged, notes, re, import_fixes):
+    try:
+        rows = read_sheet_rows(readable_session_file(doc), doc.sheet or None)
+    except Exception:
+        return merged, notes
+    meta = frappe.get_meta(target)
+
+    def values(position: int):
+        return [
+            cstr(r[position]).strip() for r in rows[1:] if position < len(r) and cstr(r[position]).strip()
+        ]
+
+    def link_df(field):
+        df = meta.get_field(field) if field and "." not in field else None
+        return df if df and df.fieldtype == "Link" else None
+
+    taken = set(merged.values())
+    for i, heading in enumerate(headers):
+        # live, 2026-11-20: "Department" was left out of the mapping, so 2,084 projects came in without one
+        # and the client's departments were never asked about; a column named as a field goes to it
+        if merged.get(str(i)) is not None:
+            continue
+        df = next(
+            (
+                d
+                for d in meta.fields
+                if d.label
+                and cstr(d.label).strip().lower() == cstr(heading).strip().lower()
+                and d.fieldtype == "Link"  # a record the row links to: left out, it's lost unasked
+                and not d.read_only
+                and not d.hidden
+                and d.fieldname not in taken
+            ),
+            None,
+        )
+        if df:
+            merged[str(i)] = df.fieldname
+            taken.add(df.fieldname)
+            notes.append(_("{0} goes to {1}, the field of that name.").format(heading, _(df.label)))
+    for position, field in list(merged.items()):
+        df = link_df(field)
+        if not df or df.options not in PARTY_NAME_HEADINGS:
+            continue
+        wanted = PARTY_NAME_HEADINGS[df.options]
+        name_at = next(
+            (i for i, h in enumerate(headers) if str(i) != position and re.search(wanted, cstr(h).lower())),
+            None,
+        )
+        if name_at is None or merged.get(str(name_at)) not in (None, DONT_IMPORT):
+            continue
+        merged[str(name_at)], merged[position] = field, DONT_IMPORT
+        notes.append(
+            _("{0} is linked by its name column ({1}), not by {2}, which holds codes.").format(
+                _(df.label), headers[name_at], headers[int(position)]
+            )
+        )
+    for position, field in list(merged.items()):
+        df = link_df(field)
+        if not df or df.options in PARTY_NAME_HEADINGS or df.options in import_fixes.COMPANY_NAMED:
+            continue
+        if df.options == target:
+            # a link to the records the file itself creates (an account's Parent Account; live, 2026-11-20:
+            # it was left out, every account looked top-level and the chart check couldn't be read)
+            continue
+        if df.options == "Company" or not import_fixes.cannot_create(df.options, doc):
+            continue  # a company is mapped on the card; a record that can be created is offered there
+        distinct = list(dict.fromkeys(values(int(position))))[:200]
+        if not distinct:
+            continue
+        if not frappe.has_permission(df.options, "read"):
+            continue  # what the user can't read isn't counted, nor changed
+        # only records the user may read count (get_list applies their permissions)
+        found = len(frappe.get_list(df.options, filters={"name": ["in", distinct]}, pluck="name"))
+        if found / len(distinct) >= LINK_FOUND_SHARE:
+            continue
+        merged[position] = DONT_IMPORT
+        notes.append(
+            _(
+                "{0} isn't linked to {1}: its values aren't {1} records. The check offers a field for it."
+            ).format(headers[int(position)], _(df.label))
+        )
+    company = meta.get_field("company")
+    if (
+        company
+        and company.fieldtype == "Link"
+        and company.options == "Company"
+        and "company" not in merged.values()
+    ):
+        # live, 2026-11-20: "Legal entity" (the old system's company code) was left out, the import had no
+        # company and the column was offered as a new field; mapped, its code is matched on the card
+        at = next(
+            (
+                i
+                for i, h in enumerate(headers)
+                if re.fullmatch(COMPANY_HEADINGS, cstr(h).strip().lower())
+                and merged.get(str(i)) in (None, DONT_IMPORT)
+            ),
+            None,
+        )
+        if at is not None:
+            merged[str(at)] = "company"
+            notes.append(
+                _("{0} is the company column; its values are matched to a company.").format(headers[at])
+            )
+    if target in ID_FROM_FILE and "name" not in merged.values():
+        at = import_fixes.id_column(doc, rows)
+        if at is not None and merged.get(str(at)) in (None, DONT_IMPORT):
+            merged[str(at)] = "name"
+            notes.append(_("{0} is the records' ID, so they keep the file's IDs.").format(headers[at]))
+    return merged, notes
+
 
 class SetColumnMapping(BaseTool):
     """
@@ -85,6 +245,7 @@ class SetColumnMapping(BaseTool):
         self.requires_permission = None  # Checked on the session and the target DocType
         # what the user's file says reaches the model fenced (#34003)
         self.untrusted_fields = (
+            "adjusted",  # quotes the file's column headings
             "mapping",
             "child_tables",
             "not_imported",
@@ -220,8 +381,19 @@ class SetColumnMapping(BaseTool):
 
             schema = build_import_schema(target)
             existing = session_mapping(doc) if target == current_target else {}
+            if target == "Account" and isinstance(mapping, dict):
+                # Root Type is read-only on Account, so it can't be mapped; the chart import reads its
+                # column by its heading. Live, 2026-11-19: FACO mapped it (and Parent Account Number to a field
+                # Account doesn't have), the call failed and was made again.
+                mapping = {
+                    column: (DONT_IMPORT if str(field).strip().lower() in CHART_READ_COLUMNS else field)
+                    for column, field in mapping.items()
+                }
             resolved, problems = resolve_mapping(target, schema, headers, mapping)
             merged = {**existing, **resolved}
+            adjusted = []
+            if import_type != import_update.UPDATE:
+                merged, adjusted = _tidy(doc, target, headers, merged)
             problems += duplicate_targets(merged, headers)
             key_position, key_system = None, ""
             if has_key:
@@ -285,11 +457,13 @@ class SetColumnMapping(BaseTool):
                 }
             save_mapping(doc, target, merged, described["summary"])
             result = {
+                "next": AFTER_MAPPING,
                 "success": True,
                 "session": session_name,
                 "doctype": target,
                 "status": doc.status,
                 **described,
+                **({"adjusted": adjusted} if adjusted else {}),
             }
             if key_position is not None:
                 header = headers[int(key_position)]
@@ -428,8 +602,12 @@ def _source_key(doc, headers, column, arguments):
 def _key_as_id(target: str, header: str, field) -> list:
     """The old ID column mapped to the ID of a DocType ERPNext names itself: the import would name each
     record by its old code (an Item Group 'G01', an Item 'T001' with another Item Code). Only a DocType
-    whose name is typed takes it; the key map links the old IDs without it."""
-    if field != "name" or cstr(frappe.get_meta(target).autoname).strip().lower() == "prompt":
+    whose name is typed takes it, or one whose records keep the file's IDs (ID_FROM_FILE: live, 2026-11-20,
+    a project file's "Project ID" was refused twice, the second time after the mapping put it back itself);
+    the key map links the old IDs without it."""
+    if field != "name" or target in ID_FROM_FILE:
+        return []
+    if cstr(frappe.get_meta(target).autoname).strip().lower() == "prompt":
         return []
     problem = _(
         "Column '{0}' holds the old system's IDs: don't map it to ID (name). ERPNext names {1} "

@@ -8,6 +8,11 @@ Adds a field to an existing form, such as "add a vehicle number to Delivery Note
 
 **Talk to the user in business words.** Never show field names, flags or option keys in what you tell the user unless they ask (for example a server-scripts flag, `custom_` names or "Insert after"). Say "server scripts are switched off", "after the Customer field", "the Required By date". See `setup-change-protocol`.
 
+**Several fields at once** (e.g. a file's columns that fit no field): one `create_document` call per field,
+all sent **in ONE response as parallel tool calls** (never one after another's approval), so the user
+approves them on one card ("N changes go live"). Show the table of fields first (label, type, form, placed
+after). Never in `records` or `documents`: they refuse a customisation.
+
 ## When to use
 
 - "Add a field for X on Y", "we need to capture X on every Y", "can Y have a place to enter X?"

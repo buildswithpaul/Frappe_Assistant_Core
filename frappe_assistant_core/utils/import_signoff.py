@@ -153,10 +153,7 @@ def _session_files(session) -> List[tuple]:
 
 
 def _row_column(header: List[Any]) -> Optional[int]:
-    for i, name in enumerate(header):
-        if cstr(name).strip() == import_failures.ROW_COLUMN:
-            return i
-    return None
+    return import_failures.row_column(header)
 
 
 def _int(value) -> Optional[int]:
