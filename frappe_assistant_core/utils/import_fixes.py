@@ -90,7 +90,11 @@ class FixProblem(Exception):
 
 
 class AlreadyThere(FixProblem):
-    """A planned master that exists already."""
+    """A planned master that exists already: ``record`` is (DocType, name) when it is known."""
+
+    def __init__(self, message: str, record: Optional[Tuple[str, str]] = None):
+        super().__init__(message)
+        self.record = record
 
 
 class CreatedBefore(FixProblem):
@@ -1610,14 +1614,18 @@ def check_masters(session, documents: List[Dict[str, Any]]) -> List[Dict[str, An
     plan = {(m["doctype"], m["name"]): m for m in masters_plan(session, list(last_groups(session).values()))}
     listed, named = _listed_tree(documents)
     planned, problems, seen = [], [], set()
+    # what this import created: a master sent again that it created is said done, not refused; one that
+    # exists for another reason (created by hand) is still refused as already existing
+    ours = {(r.record_doctype, r.record_name) for r in session.get("created_records") or []}
     for number, entry in enumerate(documents, start=1):
         try:
             item = _planned_master(session, plan, entry, listed, named)
             _as_sent(entry, item)
         except FixProblem as e:
+            created_here = isinstance(e, AlreadyThere) and e.record in ours
             problems.append(
                 {"document": number, "doctype": entry.get("doctype"), "error": str(e)}
-                | ({"exists": True} if isinstance(e, AlreadyThere) else {})
+                | ({"exists": True} if created_here else {})
             )
             continue
         key = (item["doctype"], _planned_name(item))
@@ -1719,7 +1727,8 @@ def _planned_company_record(session, plan, doctype: str, data: Dict[str, Any]) -
         )
     if frappe.db.exists(doctype, name):
         raise AlreadyThere(
-            _("{0} '{1}' already exists. Check the file again with dry_run_import.").format(_(doctype), name)
+            _("{0} '{1}' already exists. Check the file again with dry_run_import.").format(_(doctype), name),
+            (doctype, name),
         )
     planned = {name_field: value, company_field: company}
     # the parent is checked as for any master (a group the user may read), and is of no other company
@@ -1758,11 +1767,13 @@ def _planned_master(session, plan, entry, listed=frozenset(), named=frozenset())
                     _(doctype), name, missing
                 )
             )
-        if opening_invoices.find_party(doctype, name):
+        found = opening_invoices.find_party(doctype, name)
+        if found:
             raise AlreadyThere(
                 _("{0} '{1}' already exists. Check the file again with dry_run_import.").format(
                     _(doctype), name
-                )
+                ),
+                (doctype, found["name"]),
             )
         return {"doctype": doctype, "data": data}
     if doctype in COMPANY_NAMED:
@@ -1790,7 +1801,8 @@ def _planned_master(session, plan, entry, listed=frozenset(), named=frozenset())
         )
     if frappe.db.exists(doctype, name):
         raise AlreadyThere(
-            _("{0} '{1}' already exists. Check the file again with dry_run_import.").format(_(doctype), name)
+            _("{0} '{1}' already exists. Check the file again with dry_run_import.").format(_(doctype), name),
+            (doctype, name),
         )
     planned = {name_field: name}
     in_list = {n for d, n in listed if d == doctype}
