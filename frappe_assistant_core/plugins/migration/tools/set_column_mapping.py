@@ -81,6 +81,16 @@ COMPANY_HEADINGS = r"(company|legal\s*entity|entity)(\s*(name|code))?"
 LINK_FOUND_SHARE = 0.2
 
 
+def _never_from_a_file(doctype: str, import_fixes) -> bool:
+    """A link's records no import file brings: a transaction (Sales Order), or a record ERPNext names
+    itself (Cost Center). A column of codes linked to one is another system's: left for a new field.
+    A master that only needs more than a name (Item, Price List) may come from another file of a plan."""
+    meta = frappe.get_meta(doctype)
+    if meta.issingle or meta.istable or meta.is_virtual or meta.is_submittable:
+        return True
+    return not import_fixes._name_field(meta)
+
+
 def _tidy(doc, target: str, headers, merged: Dict[str, str]):
     """The mapping with what the user should never have to correct: a party linked by its name column, a
     link whose values aren't records and can't be created left for the card's new-field question, and the
@@ -164,6 +174,9 @@ def _tidied(doc, target, headers, merged, notes, re, import_fixes):
             continue
         if df.options == "Company" or not import_fixes.cannot_create(df.options, doc):
             continue  # a company is mapped on the card; a record that can be created is offered there
+        if not _never_from_a_file(df.options, import_fixes):
+            # a master another file of a migration plan can bring (an Item Price's Item, from items.csv)
+            continue
         distinct = list(dict.fromkeys(values(int(position))))[:200]
         if not distinct:
             continue
