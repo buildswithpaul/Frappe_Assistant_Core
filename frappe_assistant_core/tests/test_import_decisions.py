@@ -11,11 +11,13 @@ cause, with a suggested answer. Live, 2026-11-17: a file of projects failed in 2
 showed 30, and the assistant asked the rest round by round."""
 
 import unittest
+from unittest.mock import patch
 
 import frappe
 
 from frappe_assistant_core.core.tool_registry import get_tool_registry
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
+from frappe_assistant_core.utils import import_fixes
 
 STATUSES = ["Finished", "In process", "Created"]
 
@@ -29,6 +31,11 @@ class TestTheCheckGivesEveryDecision(BaseAssistantTest):
         self.track_test_files()
         self.tag = frappe.generate_hash(length=6)
         self.company = frappe.get_all("Company", pluck="name", limit=1)[0]
+        # the decisions themselves, not the reply's trimming: a big reply drops them, the card carries
+        # every choice (test_import_guardrails tests the trimming)
+        budget = patch.object(import_fixes, "REPLY_BUDGET", 10**9)
+        budget.start()
+        self.addCleanup(budget.stop)
 
     def tearDown(self):
         frappe.set_user("Administrator")
