@@ -131,10 +131,13 @@ class TestSalesSignals(BaseAssistantTest):
         self._sales_order()
         result = home_signals._late_sales_orders(self.user, COMPANY)
         self.assertEqual(result.count, before + 1)
-        self.assertEqual(result.ask, f"Which sales orders for {COMPANY} are past their delivery date?")
+        self.assertEqual(
+            result.ask,
+            f"Which submitted sales orders are past their delivery date and not fully delivered, leaving out those on hold, closed or completed? (Company: {COMPANY})",
+        )
         self.assertEqual(
             home_signals._late_sales_orders(self.user, None).ask,
-            "Which sales orders are past their delivery date?",
+            "Which submitted sales orders are past their delivery date and not fully delivered, leaving out those on hold, closed or completed?",
         )
 
     def test_s2_ignores_closed_order(self):
@@ -152,6 +155,13 @@ class TestSalesSignals(BaseAssistantTest):
         before = self._count(home_signals._stale_leads)
         self._lead(self.user)
         self.assertEqual(self._count(home_signals._stale_leads), before + 1)
+
+    def test_s3_ask_names_the_doctypes_it_counted(self):
+        # The count spans Lead, Opportunity and the CRM app's records; "my leads and opportunities"
+        # sent FACO to two of them, so the answer could miss what the card counted.
+        self._lead(self.user)
+        result = home_signals._stale_leads(self.user, None)
+        self.assertEqual(result.ask, "Which of my open records in Lead have had no activity for 14 days?")
 
     def test_s3_ignores_recently_touched_lead(self):
         before = self._count(home_signals._stale_leads)

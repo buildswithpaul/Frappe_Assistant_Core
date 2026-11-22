@@ -310,6 +310,15 @@ def _company_scoped(filters: dict, company: str | None) -> dict:
     return {**filters, "company": company} if company else filters
 
 
+def _company_ask(ask: str, company: str | None) -> str:
+    """``ask`` scoped like a ``_company_scoped`` count.
+
+    The company is labelled as the Company: "sales orders for GLOBOZOR" reads as a
+    customer, and FACO then searches for a customer of that name.
+    """
+    return _("{0} (Company: {1})").format(ask, company) if company else ask
+
+
 def _invoice_rows(doctype: str, filters: dict, user: str, extra_fields: list[str]) -> list[dict]:
     """Outstanding invoices ``user`` may read, with the figure and its own currency.
 
@@ -369,11 +378,7 @@ def _overdue_receivables(user: str, company: str | None) -> SignalResult | None:
         count=count,
         title=_("invoice overdue by 60+ days") if count == 1 else _("invoices overdue by 60+ days"),
         detail=detail,
-        ask=(
-            _("Show invoices for {0} overdue by more than 60 days, by customer").format(company)
-            if company
-            else _("Show invoices overdue by more than 60 days, by customer")
-        ),
+        ask=_company_ask(_("Show unpaid sales invoices overdue by more than 60 days, by customer"), company),
         action=_("See who owes it"),
         source=_("Sales Invoice"),
         amount=amount,
@@ -400,11 +405,7 @@ def _payables_due(user: str, company: str | None) -> SignalResult | None:
         count=count,
         title=_("bill due in the next 7 days") if count == 1 else _("bills due in the next 7 days"),
         detail=_("{0} falls due in the next 7 days").format(text) if text else _("Due in the next 7 days"),
-        ask=(
-            _("Which purchase invoices for {0} fall due in the next 7 days?").format(company)
-            if company
-            else _("Which purchase invoices fall due in the next 7 days?")
-        ),
+        ask=_company_ask(_("Which unpaid purchase invoices fall due in the next 7 days?"), company),
         action=_("See what's due"),
         source=_("Purchase Invoice"),
         amount=amount,
@@ -420,11 +421,7 @@ def _unreconciled_bank(user: str, company: str | None) -> SignalResult | None:
         count=count,
         title=_("bank line unreconciled") if count == 1 else _("bank lines unreconciled"),
         detail=_("Bank transactions not yet matched to a ledger entry"),
-        ask=(
-            _("Which bank transactions for {0} are still unreconciled?").format(company)
-            if company
-            else _("Which bank transactions are still unreconciled?")
-        ),
+        ask=_company_ask(_("Which bank transactions are still unreconciled?"), company),
         action=_("See unmatched lines"),
         source=_("Bank Transaction"),
     )
@@ -472,10 +469,12 @@ def _late_sales_orders(user: str, company: str | None) -> SignalResult | None:
         if count == 1
         else _("sales orders past their delivery date"),
         detail=_("Submitted orders that are not fully delivered"),
-        ask=(
-            _("Which sales orders for {0} are past their delivery date?").format(company)
-            if company
-            else _("Which sales orders are past their delivery date?")
+        ask=_company_ask(
+            _(
+                "Which submitted sales orders are past their delivery date and not fully delivered, "
+                "leaving out those on hold, closed or completed?"
+            ),
+            company,
         ),
         action=_("See what's holding them"),
         source=_("Sales Order"),
@@ -521,16 +520,19 @@ def _stale_sources(user: str) -> list[tuple[str, Callable[[], dict]]]:
 
 def _stale_leads(user: str, company: str | None) -> SignalResult | None:
     cutoff = add_days(today(), -STALE_LEAD_DAYS)
-    count = 0
+    counts: dict[str, int] = {}
     for doctype, build_filters in _stale_sources(user):
         try:
             if not frappe.db.exists("DocType", doctype) or not frappe.has_permission(
                 doctype, "read", user=user
             ):
                 continue
-            count += count_visible(doctype, {**build_filters(), "modified": ["<", cutoff]}, user)
+            counts[doctype] = count_visible(doctype, {**build_filters(), "modified": ["<", cutoff]}, user)
         except Exception:
             _log_signal_error(f"stale_leads {doctype}")
+    count = sum(counts.values())
+    # Named like _stale_drafts: "leads and opportunities" leaves out CRM Leads and Deals.
+    doctypes = ", ".join(_(doctype) for doctype, n in counts.items() if n)
     return SignalResult(
         count=count,
         title=(
@@ -539,7 +541,9 @@ def _stale_leads(user: str, company: str | None) -> SignalResult | None:
             else _("leads and opportunities with no activity for 14 days")
         ),
         detail=_("Records you own that nobody has touched in two weeks"),
-        ask=_("Which of my leads and opportunities have had no activity for 14 days?"),
+        ask=_("Which of my open records in {0} have had no activity for {1} days?").format(
+            doctypes, STALE_LEAD_DAYS
+        ),
         action=_("See which ones"),
         source=_("Leads and opportunities"),
     )
@@ -592,11 +596,7 @@ def _below_reorder(user: str, company: str | None) -> SignalResult | None:
         count=count,
         title=_("item below its reorder level") if count == 1 else _("items below their reorder level"),
         detail=_("Stock has fallen under the reorder level of a warehouse"),
-        ask=(
-            _("Which items are below their reorder level in the warehouses of {0}?").format(company)
-            if company
-            else _("Which items are below their reorder level?")
-        ),
+        ask=_company_ask(_("Which items are below their reorder level?"), company),
         action=_("See which items"),
         source=_("Item"),
     )
@@ -620,10 +620,12 @@ def _late_purchase_orders(user: str, company: str | None) -> SignalResult | None
         count=count,
         title=_("purchase order is late") if count == 1 else _("purchase orders are late"),
         detail=_("Submitted orders past their required date that are not fully received"),
-        ask=(
-            _("Which purchase orders for {0} are late from suppliers?").format(company)
-            if company
-            else _("Which purchase orders are late from suppliers?")
+        ask=_company_ask(
+            _(
+                "Which submitted purchase orders are past their required date and not fully received, "
+                "leaving out those on hold, closed or completed?"
+            ),
+            company,
         ),
         action=_("See which orders"),
         source=_("Purchase Order"),
@@ -638,11 +640,7 @@ def _pending_material_requests(user: str, company: str | None) -> SignalResult |
         count=count,
         title=_("material request still pending") if count == 1 else _("material requests still pending"),
         detail=_("Submitted requests that nobody has ordered or issued yet"),
-        ask=(
-            _("Show material requests for {0} that are still pending").format(company)
-            if company
-            else _("Show material requests that are still pending")
-        ),
+        ask=_company_ask(_("Show submitted material requests that are still pending"), company),
         action=_("Review them"),
         source=_("Material Request"),
     )
@@ -762,12 +760,8 @@ def _stale_drafts(user: str, company: str | None) -> SignalResult | None:
             else _("drafts you started and never submitted")
         ),
         detail=_("Mostly {0}; none touched for {1} days").format(_(top_doctype), STALE_DRAFT_DAYS),
-        ask=(
-            _("Which of my draft {0} for {1} have not been touched for {2} days?").format(
-                doctypes, company, days
-            )
-            if company
-            else _("Which of my draft {0} have not been touched for {1} days?").format(doctypes, days)
+        ask=_company_ask(
+            _("Which of my draft {0} have not been touched for {1} days?").format(doctypes, days), company
         ),
         action=_("Finish or delete them"),
         source=_(top_doctype),
@@ -793,12 +787,11 @@ def _delivered_not_billed(user: str, company: str | None) -> SignalResult | None
         count=count,
         title=(_("delivery not yet invoiced") if count == 1 else _("deliveries not yet invoiced")),
         detail=_("Goods delivered to customers that are not fully billed"),
-        ask=(
-            _("Which delivery notes for {0} are not fully billed, leaving out internal transfers?").format(
-                company
-            )
-            if company
-            else _("Which delivery notes are not fully billed, leaving out internal transfers?")
+        ask=_company_ask(
+            _(
+                "Which submitted delivery notes are not fully billed, leaving out returns and internal transfers?"
+            ),
+            company,
         ),
         action=_("Bill them"),
         source=_("Delivery Note"),

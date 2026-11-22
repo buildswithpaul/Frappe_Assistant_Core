@@ -125,7 +125,10 @@ class TestAccountsSignals(BaseAssistantTest):
         self.assertEqual(result.currency, "INR")
         name = frappe.db.get_value("Customer", self.customer, "customer_name")
         self.assertTrue(result.detail.endswith(f", all from {name}"), result.detail)
-        self.assertEqual(result.ask, f"Show invoices for {COMPANY} overdue by more than 60 days, by customer")
+        self.assertEqual(
+            result.ask,
+            f"Show unpaid sales invoices overdue by more than 60 days, by customer (Company: {COMPANY})",
+        )
         self.assertEqual(result.action, "See who owes it")
 
     def test_a1_detail_names_top_two_customers_by_outstanding(self):
@@ -174,7 +177,7 @@ class TestAccountsSignals(BaseAssistantTest):
         # With no default company nothing is filtered and the ask does not name one.
         unscoped = home_signals._overdue_receivables(self.user, None)
         self.assertEqual(unscoped.count, 1)
-        self.assertEqual(unscoped.ask, "Show invoices overdue by more than 60 days, by customer")
+        self.assertEqual(unscoped.ask, "Show unpaid sales invoices overdue by more than 60 days, by customer")
 
     def test_a1_runs_through_user_default_company(self):
         self._invoice(90)
@@ -295,7 +298,9 @@ class TestAccountsSignals(BaseAssistantTest):
         self.assertEqual(result.count, 1)
         self.assertEqual(result.amount, 70)
         self.assertEqual(result.currency, "INR")
-        self.assertEqual(result.ask, f"Which purchase invoices for {COMPANY} fall due in the next 7 days?")
+        self.assertEqual(
+            result.ask, f"Which unpaid purchase invoices fall due in the next 7 days? (Company: {COMPANY})"
+        )
         self.assertEqual(result.action, "See what's due")
 
     def _bank_account(self) -> str:

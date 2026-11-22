@@ -219,3 +219,32 @@ class TestCountVisible(unittest.TestCase):
         self.assertEqual(mocked.call_count, 2)
         self.assertEqual(mocked.call_args.kwargs["order_by"], "")
         self.assertEqual(mocked.call_args.kwargs["user"], "u@example.com")
+
+
+class TestAsksNameTheCompany(unittest.TestCase):
+    """Support ticket: "sales orders for GLOBOZOR" sent FACO looking for a customer named GLOBOZOR."""
+
+    def test_company_ask_labels_the_company(self):
+        self.assertEqual(home_signals._company_ask("Which X?", "Acme"), "Which X? (Company: Acme)")
+        self.assertEqual(home_signals._company_ask("Which X?", None), "Which X?")
+
+    def test_every_ask_that_uses_the_company_goes_through_company_ask(self):
+        # Reads the shipped source, so a new card that formats the company itself fails here.
+        import ast
+        import inspect
+
+        tree = ast.parse(inspect.getsource(home_signals))
+        offenders = []
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and getattr(node.func, "id", None) == "SignalResult"):
+                continue
+            for keyword in node.keywords:
+                if keyword.arg != "ask":
+                    continue
+                ask = keyword.value
+                wrapped = isinstance(ask, ast.Call) and getattr(ask.func, "id", None) == "_company_ask"
+                # Inside the wrapper only the question itself is checked; the company is its 2nd argument.
+                question = ask.args[0] if wrapped else ask
+                if any(isinstance(n, ast.Name) and n.id == "company" for n in ast.walk(question)):
+                    offenders.append(ask.lineno)
+        self.assertEqual(offenders, [], "asks that format the company themselves, by line")

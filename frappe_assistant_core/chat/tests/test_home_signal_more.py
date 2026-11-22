@@ -114,7 +114,7 @@ class TestStaleDrafts(BaseAssistantTest):
         self._draft(self.user, untouched_days=10)
         result = home_signals._stale_drafts(self.user, COMPANY)
         self.assertIn("Material Request", result.ask)
-        self.assertIn(COMPANY, result.ask)
+        self.assertTrue(result.ask.endswith(f"(Company: {COMPANY})"), result.ask)
 
     def test_a_draft_for_another_company_is_not_counted(self):
         self._draft(self.user, untouched_days=10)
@@ -213,7 +213,14 @@ class TestDeliveredNotBilled(BaseAssistantTest):
 
     def test_counts_a_submitted_delivery_with_no_invoice(self):
         self._deliver()
-        self.assertGreaterEqual(home_signals._delivered_not_billed(self.user, COMPANY).count, 1)
+        result = home_signals._delivered_not_billed(self.user, COMPANY)
+        self.assertGreaterEqual(result.count, 1)
+        # The count leaves out returns too; an ask that didn't say so could list more notes.
+        self.assertEqual(
+            result.ask,
+            "Which submitted delivery notes are not fully billed, leaving out returns and internal "
+            f"transfers? (Company: {COMPANY})",
+        )
 
     def test_a_closed_delivery_drops_out(self):
         before = home_signals._delivered_not_billed(self.user, COMPANY).count
