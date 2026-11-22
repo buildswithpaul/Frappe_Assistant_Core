@@ -160,9 +160,7 @@ class TestStockSignals(BaseAssistantTest):
     def test_k1_ask_names_the_company_it_counts_for(self):
         # Redmine #34383: the count is limited to the company's warehouses, so the question must be too.
         result = home_signals._below_reorder(self.user, COMPANY)
-        self.assertEqual(
-            result.ask, f"Which items are below their reorder level in the warehouses of {COMPANY}?"
-        )
+        self.assertEqual(result.ask, f"Which items are below their reorder level? (Company: {COMPANY})")
 
     def test_k1_ignores_item_above_reorder(self):
         before = self._count(home_signals._below_reorder)
@@ -211,7 +209,10 @@ class TestStockSignals(BaseAssistantTest):
         self._purchase_order(item)
         result = home_signals._late_purchase_orders(self.user, COMPANY)
         self.assertEqual(result.count, before + 1)
-        self.assertEqual(result.ask, f"Which purchase orders for {COMPANY} are late from suppliers?")
+        self.assertEqual(
+            result.ask,
+            f"Which submitted purchase orders are past their required date and not fully received, leaving out those on hold, closed or completed? (Company: {COMPANY})",
+        )
         self.assertEqual(home_signals._late_purchase_orders(self.user, "Some Other Company").count, 0)
 
     def test_k2_ignores_order_not_yet_due(self):
@@ -226,7 +227,9 @@ class TestStockSignals(BaseAssistantTest):
         self._material_request(item)
         result = home_signals._pending_material_requests(self.user, COMPANY)
         self.assertEqual(result.count, before + 1)
-        self.assertEqual(result.ask, f"Show material requests for {COMPANY} that are still pending")
+        self.assertEqual(
+            result.ask, f"Show submitted material requests that are still pending (Company: {COMPANY})"
+        )
 
     def test_stock_signals_registered_after_sales_with_stock_lens(self):
         ids = [signal.id for signal in home_signals.CATALOGUE]
