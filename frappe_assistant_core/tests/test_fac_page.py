@@ -25,6 +25,7 @@ import textwrap
 from unittest.mock import patch
 
 import frappe
+from bs4 import BeautifulSoup
 from frappe.client import delete, set_value
 from frappe.share import add as share_with
 
@@ -502,12 +503,18 @@ class TestPersonalFACPage(BaseAssistantTest):
         with patch("frappe_assistant_core.api.fac_page.sanitize_html", sanitize_html_before_15_122):
             served = [get_page(personal)["html"], get_page(draft)["html"]]
 
+        # v15's bleach escapes a tag it does not allow into inert text, where v16's nh3 drops it,
+        # so check the elements and attributes the html parses to, not its text.
         for page_html in served:
-            for unsafe in ("onerror", "javascript:", "alert(", "<iframe", "<meta"):
-                self.assertNotIn(unsafe, page_html)
-            self.assertIn('class="mk-card"', page_html)
+            soup = BeautifulSoup(page_html, "html.parser")
+            self.assertEqual(soup.find_all(["script", "iframe", "meta"]), [])
+            for element in soup.find_all(True):
+                for attr, value in element.attrs.items():
+                    self.assertFalse(attr.startswith("on"), page_html)
+                    self.assertNotIn("javascript:", str(value), page_html)
+            self.assertIsNotNone(soup.find(class_="mk-card"))
         # A draft previews in an empty sandbox, so only a personal page also loses SVG animation
-        self.assertNotIn("<animate", served[0])
+        self.assertIsNone(BeautifulSoup(served[0], "html.parser").find("animate"))
 
     def test_blocked_tags_leave_no_text_behind(self):
         # Frappe v15's sanitize_html escapes a blocked tag into text the page shows; v16 removes it
