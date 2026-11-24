@@ -16,6 +16,7 @@
 
 """Read endpoint for FAC Page records, shown by the ``fac-pages`` Desk page."""
 
+import inspect
 import re
 
 import frappe
@@ -395,11 +396,7 @@ def _personal_html(html: str | None) -> str | None:
     The page's code may only live in ``script``. Its frame runs no inline handler either (its
     policy allows only scripts carrying that render's nonce); this keeps the html inert anywhere else.
     """
-    html = sanitize_html(
-        _without_tags(html, PERSONAL_DISALLOWED_TAGS),
-        always_sanitize=True,
-        disallowed_tags=PERSONAL_DISALLOWED_TAGS,
-    )
+    html = _sanitized(html, PERSONAL_DISALLOWED_TAGS)
     if not html or "style=" not in html:
         return html
     # An inline style shows at once too, so it gets the stylesheet's rules: nothing off this site.
@@ -420,11 +417,7 @@ def _draft_html(html: str | None) -> str | None:
     iframe, where none of these could run or submit. A link could still navigate that frame to a
     remote page, so anchors and image-map areas lose their href.
     """
-    html = sanitize_html(
-        _without_tags(html, DRAFT_DISALLOWED_TAGS),
-        always_sanitize=True,
-        disallowed_tags=DRAFT_DISALLOWED_TAGS,
-    )
+    html = _sanitized(html, DRAFT_DISALLOWED_TAGS)
     if not html:
         return html
     soup = BeautifulSoup(html, "html.parser")
@@ -432,6 +425,18 @@ def _draft_html(html: str | None) -> str | None:
         for attr in ("href", "xlink:href", "target", "ping"):
             link.attrs.pop(attr, None)
     return str(soup)
+
+
+def _sanitized(html: str | None, tags: list[str]) -> str | None:
+    """``html`` through sanitize_html, without these tags.
+
+    Frappe v15 before 15.122 has no ``disallowed_tags`` and allows some of these tags, so the
+    output is cleaned of them again in case its parser found one that BeautifulSoup did not.
+    """
+    html = _without_tags(html, tags)
+    if "disallowed_tags" in inspect.signature(sanitize_html).parameters:
+        return sanitize_html(html, always_sanitize=True, disallowed_tags=tags)
+    return _without_tags(sanitize_html(html, always_sanitize=True), tags)
 
 
 def _without_tags(html: str | None, tags: list[str]) -> str | None:

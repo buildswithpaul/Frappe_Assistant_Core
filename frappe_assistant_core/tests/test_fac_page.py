@@ -482,6 +482,33 @@ class TestPersonalFACPage(BaseAssistantTest):
         ):
             self.assertIn(kept, served)
 
+    def test_pages_render_on_a_frappe_without_disallowed_tags(self):
+        # Frappe v15 before 15.122 ships sanitize_html without disallowed_tags (#35250)
+        from frappe.utils.html_utils import sanitize_html
+
+        def sanitize_html_before_15_122(html, linkify=False, always_sanitize=False):
+            return sanitize_html(html, linkify=linkify, always_sanitize=always_sanitize)
+
+        html = (
+            '<div class="mk-card"><img src="x" onerror="alert(1)">'
+            '<svg><animate attributeName="href" to="javascript:alert(2)"></animate></svg>'
+            '<iframe src="https://evil.example/"></iframe><meta http-equiv="refresh" content="0">'
+            "<script>alert(3)</script></div>"
+        )
+        owner = self._desk_user("fac-page-old-frappe", roles=("System Manager",))
+        personal = self._build(owner, html=html)
+        draft = _insert_shared_page(published=0, html=html)
+
+        with patch("frappe_assistant_core.api.fac_page.sanitize_html", sanitize_html_before_15_122):
+            served = [get_page(personal)["html"], get_page(draft)["html"]]
+
+        for page_html in served:
+            for unsafe in ("onerror", "javascript:", "alert(", "<iframe", "<meta"):
+                self.assertNotIn(unsafe, page_html)
+            self.assertIn('class="mk-card"', page_html)
+        # A draft previews in an empty sandbox, so only a personal page also loses SVG animation
+        self.assertNotIn("<animate", served[0])
+
     def test_blocked_tags_leave_no_text_behind(self):
         # Frappe v15's sanitize_html escapes a blocked tag into text the page shows; v16 removes it
         html = (
