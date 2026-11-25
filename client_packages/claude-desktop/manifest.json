@@ -101,7 +101,7 @@
     },
     {
       "name": "get_document",
-      "description": "Retrieve detailed information about a specific document by name"
+      "description": "Retrieve a specific document by name, with only its filled-in fields"
     },
     {
       "name": "create_document",

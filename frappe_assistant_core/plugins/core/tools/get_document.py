@@ -19,13 +19,52 @@ Document Retrieval Tool for Core Plugin.
 Retrieves detailed information about specific Frappe documents.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import frappe
 from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool
 from frappe_assistant_core.utils.untrusted_output import fence_document
+
+# Repeated on every child row and already known from the parent, so they only cost tokens (#35274)
+CHILD_ROW_BOOKKEEPING = frozenset(
+    {
+        "owner",
+        "creation",
+        "modified",
+        "modified_by",
+        "docstatus",
+        "parent",
+        "parentfield",
+        "parenttype",
+        "doctype",
+    }
+)
+
+
+def _is_empty(value: Any) -> bool:
+    return value is None or value == "" or value == [] or value == {}
+
+
+def compact_record(data: Dict[str, Any], fields: List[str] | None = None) -> Dict[str, Any]:
+    """``data`` without empty values or child-row bookkeeping; only ``fields`` (and name) when given.
+
+    Zeros stay: an outstanding amount of 0 means paid, not unknown.
+    """
+    wanted = set(fields) | {"name"} if fields else None
+    compact = {}
+    for key, value in data.items():
+        if _is_empty(value) or (wanted is not None and key not in wanted):
+            continue
+        if isinstance(value, list):
+            value = [_compact_row(row) if isinstance(row, dict) else row for row in value]
+        compact[key] = value
+    return compact
+
+
+def _compact_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: v for k, v in row.items() if k not in CHILD_ROW_BOOKKEEPING and not _is_empty(v)}
 
 
 class DocumentGet(BaseTool):
@@ -41,7 +80,10 @@ class DocumentGet(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "get_document"
-        self.description = "Retrieve detailed information about a specific Frappe document. Use when users ask for details about a particular record they know the name/ID of."
+        self.description = (
+            "Retrieve a specific Frappe document by its name/ID, with its child tables. Empty fields are "
+            "left out, so a field that is missing is empty. Pass fields to get only those fields."
+        )
         self.requires_permission = None  # Permission checked dynamically per DocType
 
         self.inputSchema = {
@@ -54,6 +96,11 @@ class DocumentGet(BaseTool):
                 "name": {
                     "type": "string",
                     "description": "The document name/ID (e.g., 'CUST-00001', 'SINV-00001'). This is the unique identifier for the document.",
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Only these fields (a child table's fieldname returns its rows). Omit for all.",
                 },
             },
             "required": ["doctype", "name"],
@@ -97,7 +144,7 @@ class DocumentGet(BaseTool):
             doc = frappe.get_doc(doctype, name)
 
             # Only the fields the user may read: permlevel as on Desk (#390), then FAC's sensitive fields
-            filtered_doc = readable_doc_dict(doc, user_role)
+            filtered_doc = compact_record(readable_doc_dict(doc, user_role), arguments.get("fields"))
             # what a user's file said, kept on the record, reaches the model fenced (#34003)
             filtered_doc = fence_document(doctype, filtered_doc)
 
