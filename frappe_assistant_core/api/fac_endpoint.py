@@ -376,7 +376,8 @@ def handle_mcp():
     MCP server implementation which properly handles JSON serialization.
 
     Endpoint: /api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp
-    Protocol: MCP 2025-06-18 StreamableHTTP
+    Protocol: MCP StreamableHTTP, both eras: the initialize handshake (up to 2025-06-18)
+    and the stateless 2026-07-28 revision (see ``mcp/protocol.py``).
 
     Supports two authentication methods:
     1. OAuth 2.0 Bearer tokens: "Authorization: Bearer <token>" (for web clients)
