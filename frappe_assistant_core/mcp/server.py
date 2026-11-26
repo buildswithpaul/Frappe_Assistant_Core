@@ -37,6 +37,7 @@ from typing import Any, Dict, Optional
 from werkzeug.wrappers import Request, Response
 
 from frappe_assistant_core.mcp import confirmation, protocol, skills
+from frappe_assistant_core.mcp.tool_result import finish_tool_result
 from frappe_assistant_core.utils.mcp_caller import request_is_from_fac_cloud
 
 # TEMPORARY: old tool names still accepted by tools/call, mapped to their new name.
@@ -474,75 +475,7 @@ class MCPServer:
                 f"MCP Tool {tool_name} executed successfully, result type: {type(result).__name__}"
             )
 
-            is_error = False
-            own_message = False  # an error FAC wrote itself, with nothing of the user's file in it
-            if tool.get("safeExecuteEnvelope") and isinstance(result, dict):
-                if result.get("success") is True and "result" in result:
-                    result = result["result"]
-                elif result.get("success") is False:
-                    is_error = True
-                    inner = result.get("result")
-                    own_message = bool(result.get("own_message"))
-                    result = (
-                        inner
-                        if isinstance(inner, dict)
-                        else {
-                            "success": False,
-                            "error": result.get("error") or "Tool execution failed",
-                            "error_type": result.get("error_type") or "ExecutionError",
-                        }
-                    )
-
-            # Extract image content for vision API (e.g., screenshot tool).
-            # Tools can include _image_content in their result to have the LLM
-            # see the image directly via vision, rather than just getting metadata.
-            image_content = None
-            if isinstance(result, dict):
-                image_content = result.pop("_image_content", None)
-
-            # The user's file content, fenced so the model reads it as data (#34003).
-            if isinstance(result, dict):
-                from frappe_assistant_core.utils.untrusted_output import fence_fields, with_notice
-
-                if tool.get("untrustedFields"):
-                    fenced = [f for f in tool["untrustedFields"] if not (own_message and f == "error")]
-                    result = fence_fields(result, fenced)
-                # once per reply, for its fields and the records get_document fenced itself
-                result = with_notice(result)
-
-            # Serialize the text result (default=str handles datetime, Decimal, etc.)
-            if isinstance(result, str):
-                result_text = result
-            else:
-                result_text = json.dumps(
-                    result,
-                    default=str,
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                )
-
-            # Build MCP content blocks
-            content = [{"type": "text", "text": result_text}]
-
-            # Add image block for vision API if tool provided one
-            if image_content and isinstance(image_content, dict):
-                mime_map = {
-                    "jpeg": "image/jpeg",
-                    "jpg": "image/jpeg",
-                    "png": "image/png",
-                    "gif": "image/gif",
-                    "webp": "image/webp",
-                }
-                fmt = image_content.get("format", "jpeg")
-                content.append(
-                    {
-                        "type": "image",
-                        "mimeType": mime_map.get(fmt, f"image/{fmt}"),
-                        "data": image_content["data"],
-                    }
-                )
-
-            return {"content": content, "isError": is_error}
+            return finish_tool_result(tool, result)
 
         except Exception as e:
             error_text = f"Error executing {tool_name}: {str(e)}"
