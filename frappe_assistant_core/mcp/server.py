@@ -36,8 +36,7 @@ from typing import Any, Dict, Optional
 
 from werkzeug.wrappers import Request, Response
 
-from frappe_assistant_core.mcp import confirmation, protocol, skills
-from frappe_assistant_core.mcp.tool_result import finish_tool_result
+from frappe_assistant_core.mcp import confirmation, protocol, skills, tasks
 from frappe_assistant_core.utils.mcp_caller import request_is_from_fac_cloud
 
 # TEMPORARY: old tool names still accepted by tools/call, mapped to their new name.
@@ -243,6 +242,8 @@ class MCPServer:
                 result = self._handle_resources_read(params, request_id)
             elif era == "modern" and method in skills.MODERN_METHODS:
                 result = skills.MODERN_METHODS[method](params)
+            elif era == "modern" and method in tasks.METHODS:
+                result = tasks.handle(method, params, tool_registry)
             elif method == "resources/templates/list":
                 result = {"resourceTemplates": []}
             elif method == "prompts/list":
@@ -475,7 +476,8 @@ class MCPServer:
                 f"MCP Tool {tool_name} executed successfully, result type: {type(result).__name__}"
             )
 
-            return finish_tool_result(tool, result)
+            # After _safe_execute's deadlock retries, so a queued call makes one task row at most.
+            return tasks.finish_call(tool_name, tool, arguments, result)
 
         except Exception as e:
             error_text = f"Error executing {tool_name}: {str(e)}"
