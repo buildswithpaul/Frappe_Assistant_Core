@@ -122,6 +122,16 @@ def permission_error_result(doctype: str, error: str, name: Optional[str] = None
     return result
 
 
+def one_line(value: Any, limit: int = 80) -> str:
+    """Return ``value`` as one bounded line of plain text, for a question shown to a person.
+
+    Argument values are data: newlines and runs of whitespace collapse to single spaces and a
+    long value is cut with an ellipsis, so a value cannot add lines or bury the question.
+    """
+    text = " ".join(str(value if value is not None else "").split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
 class InvalidArguments(frappe.ValidationError):
     """A call's arguments don't fit the tool's input schema. The message is FAC's own, so the MCP
     server doesn't fence it as file content (#34003)."""
@@ -155,6 +165,8 @@ class BaseTool(ABC):
         dependencies: List of required dependencies
         default_config: Default configuration values
         audit_executions: Whether each call writes an Assistant Audit Log row
+        confirmation_verb: The one word on the button of the confirmation form ("Delete", "Send").
+            Empty for a tool that never asks.
         retry_on_deadlock: Whether a call the database undid (frappe.QueryDeadlockError) is run
             again from the start. Only for a tool whose work is all in the database, so a call
             run twice leaves what one call would: nothing it does outside is lost or doubled.
@@ -182,6 +194,7 @@ class BaseTool(ABC):
         # the write it checks, which that write's own row already records.
         self.audit_executions: bool = True
         self.retry_on_deadlock: bool = False
+        self.confirmation_verb: str = ""
         self.logger = frappe.logger(self.__class__.__module__)
         self._config_cache: Optional[Dict[str, Any]] = None
 
@@ -201,6 +214,15 @@ class BaseTool(ABC):
             frappe.ValidationError: If arguments are invalid
         """
         pass
+
+    def confirmation(self, arguments: Dict[str, Any]) -> Optional[str]:
+        """Return the question to put to the user before this call runs, or None to run it at once.
+
+        Called with the raw arguments, before validation, so it must never raise: a lookup that
+        fails or arguments that don't fit answer None, and the tool's own validation reports them.
+        The question is one line of data-safe text; wrap values with ``one_line()``.
+        """
+        return None
 
     def validate_arguments(self, arguments: Dict[str, Any]) -> None:
         """

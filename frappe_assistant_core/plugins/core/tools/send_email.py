@@ -26,8 +26,11 @@ from typing import Any
 import frappe
 from frappe import _
 
-from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.core.base_tool import BaseTool, one_line
 from frappe_assistant_core.utils.message_body import as_html_body
+
+#: How many recipients the confirmation question names before it says "and N more".
+MAX_LISTED_RECIPIENTS = 5
 
 
 class SendEmail(BaseTool):
@@ -52,6 +55,7 @@ class SendEmail(BaseTool):
         self.source_app = "frappe_assistant_core"
         self.category = "Communication"
         self.requires_permission = None
+        self.confirmation_verb = _("Send")
 
         self.inputSchema = {
             "type": "object",
@@ -82,6 +86,19 @@ class SendEmail(BaseTool):
             },
             "required": ["recipients", "subject", "message"],
         }
+
+    def confirmation(self, arguments: dict[str, Any]) -> str | None:
+        """Always asks: an email can't be recalled."""
+        recipients = arguments.get("recipients")
+        if isinstance(recipients, str):
+            recipients = [recipients]
+        elif not isinstance(recipients, (list, tuple)):
+            recipients = []
+        recipients = [one_line(r, 60) for r in recipients if r and str(r).strip()]
+        listed = ", ".join(recipients[:MAX_LISTED_RECIPIENTS])
+        if len(recipients) > MAX_LISTED_RECIPIENTS:
+            listed = _("{0} and {1} more").format(listed, len(recipients) - MAX_LISTED_RECIPIENTS)
+        return _("Send the email '{0}' to {1}?").format(one_line(arguments.get("subject")), listed)
 
     def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Queue email via frappe.sendmail() using the site's Email Account."""

@@ -37,8 +37,9 @@ def build_tool_dict(tool_instance) -> Dict[str, Any]:
         tool_instance: Instance of BaseTool or compatible class
 
     Returns:
-        Dict with keys: name, description, inputSchema, annotations, fn and
-        safeExecuteEnvelope
+        Dict with keys: name, description, inputSchema, annotations, fn,
+        safeExecuteEnvelope, confirmation (a callable returning the question or None)
+        and confirmationVerb ("" when the tool never asks)
     """
 
     def tool_wrapper(**arguments):
@@ -52,6 +53,8 @@ def build_tool_dict(tool_instance) -> Dict[str, Any]:
         "annotations": getattr(tool_instance, "annotations", None),
         "safeExecuteEnvelope": True,
         "untrustedFields": tuple(getattr(tool_instance, "untrusted_fields", ()) or ()),
+        "confirmation": tool_instance.confirmation,
+        "confirmationVerb": getattr(tool_instance, "confirmation_verb", "") or "",
         "fn": tool_wrapper,
     }
 

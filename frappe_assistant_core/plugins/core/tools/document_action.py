@@ -19,7 +19,7 @@ Document Action Tool for Core Plugin.
 Submits draft documents, cancels submitted documents and amends cancelled ones.
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import frappe
 from frappe import _
@@ -27,6 +27,7 @@ from frappe import _
 from frappe_assistant_core.core.base_tool import (
     BaseTool,
     exception_message,
+    one_line,
     permission_error_result,
 )
 from frappe_assistant_core.utils.savepoint import (
@@ -44,6 +45,13 @@ VALID_ACTIONS = ("submit", "cancel", "amend")
 _SAVEPOINT = "fac_document_action"
 
 
+def cancel_question(doctype: Any, name: Any) -> str:
+    """The question put to the user before a document is cancelled (also by run_workflow)."""
+    return _("Cancel {0} {1}? Its accounting and stock entries will be reversed.").format(
+        one_line(doctype), one_line(name)
+    )
+
+
 class DocumentAction(BaseTool):
     """
     Tool for submitting, cancelling and amending documents.
@@ -59,6 +67,7 @@ class DocumentAction(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "document_action"
+        self.confirmation_verb = _("Cancel")
         self.description = (
             "Submit, cancel or amend one document. Choose the action from what the user asked for.\n"
             "- 'submit' (default): draft -> submitted. Only when the user explicitly asks to submit. "
@@ -112,6 +121,12 @@ class DocumentAction(BaseTool):
             },
             "required": ["doctype", "name"],
         }
+
+    def confirmation(self, arguments: Dict[str, Any]) -> Optional[str]:
+        """Asks only for a cancel; submit and amend run at once."""
+        if str(arguments.get("action") or "").strip().lower() != "cancel":
+            return None
+        return cancel_question(arguments.get("doctype"), arguments.get("name"))
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Submit, cancel or amend a document"""
