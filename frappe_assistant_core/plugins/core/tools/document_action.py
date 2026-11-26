@@ -124,13 +124,24 @@ class DocumentAction(BaseTool):
         }
 
     def confirmation(self, arguments: Dict[str, Any]) -> Optional[str]:
-        """Asks only for a cancel; submit and amend run at once."""
+        """Asks only for a cancel; submit and amend run at once.
+
+        A DocType with an active Workflow is not asked: execute refuses the cancel and points to
+        run_workflow, which asks itself, so asking here too would ask the user twice.
+        """
         if not isinstance(arguments, dict):
             return None
         if str(arguments.get("action") or "").strip().lower() != "cancel":
             return None
         doctype, name = arguments.get("doctype"), arguments.get("name")
         if not (isinstance(doctype, str) and doctype.strip() and isinstance(name, str) and name.strip()):
+            return None
+        try:
+            from frappe.model.workflow import get_workflow_name
+
+            if get_workflow_name(doctype):
+                return None
+        except Exception:
             return None
         return cancel_question(doctype, name)
 

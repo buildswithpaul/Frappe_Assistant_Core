@@ -133,7 +133,7 @@ Cancel or amend on a non-submittable DocType:
 
 ## Confirmation by the user's client
 
-A `cancel` is confirmed; `submit` and `amend` are not. When the MCP client can show the user a confirmation form, the first call changes nothing: the client asks the user "Cancel Sales Invoice ACC-SINV-0001? Its accounting and stock entries will be reversed." and sends the call again with their answer. Your call returns only after the user has answered.
+A `cancel` is confirmed; `submit` and `amend` are not. A DocType with an active Workflow is not asked here, because `document_action` refuses that cancel and `run_workflow` asks instead. When the MCP client can show the user a confirmation form, the first call changes nothing: the client asks the user "Cancel Sales Invoice ACC-SINV-0001? Its accounting and stock entries will be reversed." and sends the call again with their answer. Your call returns only after the user has answered.
 
 - **Accepted** — the call runs once, as normal.
 - **Declined** — the result is an error: "The user did not confirm, so nothing was changed." Do not retry the call; ask the user what they want instead.

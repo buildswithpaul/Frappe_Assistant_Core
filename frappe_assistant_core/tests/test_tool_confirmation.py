@@ -240,6 +240,17 @@ class TestRunWorkflowConfirmation(BaseAssistantTest):
         )
         self.assertIsNone(self.tool.confirmation({**base, "action": "No Such Action"}))
 
+    def test_document_action_cancel_on_a_workflow_doctype_answers_none(self):
+        """execute refuses the cancel and sends the model to run_workflow, which asks once itself."""
+        doc = frappe.get_doc(
+            {"doctype": DOCTYPE, "date": frappe.utils.nowdate(), "deposit": 10, "description": "FAC test"}
+        ).insert()
+        arguments = {"doctype": DOCTYPE, "name": doc.name, "action": "cancel"}
+        self.assertIsNotNone(DocumentAction().confirmation(arguments))
+
+        self.make_workflow()
+        self.assertIsNone(DocumentAction().confirmation(arguments))
+
     def test_lookup_failures_answer_none(self):
         self.assertIsNone(self.tool.confirmation({}))
         self.assertIsNone(self.tool.confirmation({"doctype": DOCTYPE, "name": "nope", "action": CANCEL}))
