@@ -158,6 +158,20 @@ class SkillManager:
 
         return skill_doc.content
 
+    def get_accessible_skill(self, skill_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Return a Published skill row, including ``content``, when the session user may read it.
+
+        Returns None when it does not exist or is not accessible, so a caller cannot tell the two
+        apart. Reuses ``get_user_accessible_skills`` for the permission and ``requires_app`` rules.
+        """
+        for skill in self.get_user_accessible_skills():
+            if skill.skill_id == skill_id and skill.status == "Published":
+                row = dict(skill)
+                row["content"] = frappe.db.get_value("FAC Skill", skill.name, "content") or ""
+                return row
+        return None
+
     def get_skill_by_tool(self, tool_name: str, user: str = None) -> Optional[Dict[str, Any]]:
         """
         Find the Published skill linked to ``tool_name`` that ``user`` can see.
