@@ -260,6 +260,21 @@ class TestMcpConfirmationFlow(BaseAssistantTest):
         self.assertFalse(payload["result"]["isError"])
         self.assertFalse(frappe.db.exists("ToDo", name))
 
+    def test_fac_cloud_declaring_elicitation_is_not_asked(self):
+        """Even on the modern era with form elicitation declared, FAC Chat is never asked twice."""
+        if not frappe.db.exists("OAuth Client", FAC_CLOUD_OAUTH_CLIENT_ID):
+            _make_oauth_client(FAC_CLOUD_OAUTH_CLIENT_ID)
+        token = _mint(frappe.session.user, FAC_CLOUD_OAUTH_CLIENT_ID)
+        name = self._todo()
+        body, headers = _first_call({"doctype": "ToDo", "name": name})
+        headers["Authorization"] = f"Bearer {token}"
+
+        _response, payload = self._call(body, headers)
+
+        self.assertEqual(payload["result"]["resultType"], "complete")
+        self.assertFalse(payload["result"]["isError"])
+        self.assertFalse(frappe.db.exists("ToDo", name))
+
     def test_handshake_ignores_retry_fields(self):
         name = self._todo()
         params = {

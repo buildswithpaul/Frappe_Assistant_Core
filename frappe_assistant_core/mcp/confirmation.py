@@ -37,6 +37,7 @@ from frappe.utils import now_datetime
 from frappe.utils.password import get_encryption_key
 
 from frappe_assistant_core.mcp.protocol import ERR_INVALID_PARAMS, ProtocolError
+from frappe_assistant_core.utils.mcp_caller import request_is_from_fac_cloud
 
 STATE_TTL_SECONDS = 600
 INPUT_KEY = "confirm"
@@ -109,6 +110,9 @@ def gate(tool_name: str, tool: dict, params: dict) -> Optional[dict]:
     """
     question = _question(tool, params)
     if question is None:
+        return None
+    if request_is_from_fac_cloud():
+        # FAC Chat shows its own approval card before calling, whatever AR declares.
         return None
 
     user = frappe.session.user
