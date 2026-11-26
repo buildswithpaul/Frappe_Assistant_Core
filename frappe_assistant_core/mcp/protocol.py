@@ -37,8 +37,19 @@ TASKS_EXT = "io.modelcontextprotocol/tasks"
 META_VERSION = "io.modelcontextprotocol/protocolVersion"
 META_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities"
 META_SERVER_INFO = "io.modelcontextprotocol/serverInfo"
+META_CLIENT_INFO = "io.modelcontextprotocol/clientInfo"
 
 LIST_TTL_MS = 300_000
+READ_TTL_MS = 60_000
+# Results a client may cache, and for how long. The tool list depends on the caller's roles, so
+# the scope is always "private".
+_TTL_MS = {
+    "tools/list": LIST_TTL_MS,
+    "prompts/list": LIST_TTL_MS,
+    "resources/list": LIST_TTL_MS,
+    "resources/templates/list": LIST_TTL_MS,
+    "resources/read": READ_TTL_MS,
+}
 
 ERR_HEADER_MISMATCH = -32020
 ERR_UNSUPPORTED_VERSION = -32022
@@ -106,6 +117,8 @@ def _meta(body: dict) -> dict:
 
 
 def validate_modern_request(headers: Mapping[str, str], body: dict) -> None:
+    if not isinstance(body.get("params", {}), dict):
+        raise ProtocolError(400, ERR_INVALID_PARAMS, _("params must be an object"))
     meta = _meta(body)
     if meta.get(META_VERSION) != _header(headers, "MCP-Protocol-Version"):
         raise ProtocolError(
@@ -141,8 +154,49 @@ def client_caps(body: dict) -> ClientCaps:
     )
 
 
+def resolve_request(headers: Mapping[str, str], body: dict) -> tuple[str, ClientCaps]:
+    """Decide a request's era and, in the modern era, check its headers and read its capabilities.
+
+    Raises ProtocolError for an unknown version or a malformed modern request.
+    """
+    era = era_of(body.get("method"), _header(headers, "MCP-Protocol-Version"))
+    if era == "handshake":
+        return era, ClientCaps()
+    validate_modern_request(headers, body)
+    return era, client_caps(body)
+
+
+def session_id(headers: Mapping[str, str], era: str) -> str | None:
+    """The caller's own session id, or None. Nothing is minted: a random id groups nothing.
+
+    The modern era has no Mcp-Session-Id; FAC Chat names its conversation in X-AR-Session-Id.
+    """
+    names = ["X-Assistant-Session-Id"]
+    names = ["X-AR-Session-Id"] + names if era == "modern" else ["Mcp-Session-Id"] + names
+    return next((value for value in (_header(headers, name) for name in names) if value), None)
+
+
+def declared_client_name(headers: Mapping[str, str], body: dict) -> str | None:
+    """The client's name: the explicit header, else ``clientInfo`` from initialize params or, in the
+    modern era, from every request's ``_meta``."""
+    explicit = _header(headers, "X-Assistant-Client-Id")
+    if explicit:
+        return explicit
+    params = body.get("params")
+    if not isinstance(params, dict):
+        return None
+    for info in (params.get("clientInfo"), _meta(body).get(META_CLIENT_INFO)):
+        if isinstance(info, dict) and info.get("name"):
+            return info["name"]
+    return None
+
+
 def _server_info(server_name: str, server_version: str) -> dict:
     return {"name": server_name, "version": server_version}
+
+
+def ttl_ms_for(method: str) -> int | None:
+    return _TTL_MS.get(method)
 
 
 def decorate_result(

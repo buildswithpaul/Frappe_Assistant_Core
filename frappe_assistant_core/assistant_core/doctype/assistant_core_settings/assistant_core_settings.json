@@ -312,7 +312,7 @@
    "label": "MCP Protocol Version",
    "read_only": 1,
    "default": "2025-06-18",
-   "description": "MCP specification version this server implements. Currently supports 2025-06-18."
+   "description": "Newest MCP revision this server speaks; older clients are served on their own revision."
   },
   {
    "fieldname": "mcp_transport_type",
