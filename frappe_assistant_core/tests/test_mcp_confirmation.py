@@ -12,17 +12,17 @@
 # GNU Affero General Public License for more details.
 #
 # You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """Tests for the signed, single-use consent token behind MCP tool confirmations."""
 
 import base64
 import json
-from datetime import timedelta
+import time
 from pathlib import Path
 from unittest.mock import patch
 
 import frappe
-from frappe.utils import now_datetime
 
 from frappe_assistant_core.mcp import confirmation
 from frappe_assistant_core.mcp.confirmation import (
@@ -129,15 +129,15 @@ class TestMcpConfirmation(BaseAssistantTest):
 
     def test_expired_refused(self):
         # A user who waits more than STATE_TTL_SECONDS before answering the prompt.
-        eleven_minutes_ago = now_datetime() - timedelta(minutes=11)
-        with patch.object(confirmation, "now_datetime", return_value=eleven_minutes_ago):
+        eleven_minutes_ago = time.time() - 11 * 60
+        with patch.object(confirmation.time, "time", return_value=eleven_minutes_ago):
             state = self._issue()
         with self.assertRaises(ConsentRefused):
             consume_state(state, USER, TOOL, ARGS)
 
     def test_not_yet_expired_accepted(self):
-        nine_minutes_ago = now_datetime() - timedelta(minutes=9)
-        with patch.object(confirmation, "now_datetime", return_value=nine_minutes_ago):
+        nine_minutes_ago = time.time() - 9 * 60
+        with patch.object(confirmation.time, "time", return_value=nine_minutes_ago):
             state = self._issue()
         consume_state(state, USER, TOOL, ARGS)
 

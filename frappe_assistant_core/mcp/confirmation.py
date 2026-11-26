@@ -12,6 +12,7 @@
 # GNU Affero General Public License for more details.
 #
 # You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
 Signed, single-use consent for destructive MCP tool calls (MRTR elicitation).
@@ -28,12 +29,12 @@ import hashlib
 import hmac
 import json
 import secrets
+import time
 from typing import Optional
 
 import frappe
 import redis
 from frappe import _
-from frappe.utils import now_datetime
 from frappe.utils.password import get_encryption_key
 
 from frappe_assistant_core.mcp.protocol import ERR_INVALID_PARAMS, ProtocolError
@@ -239,7 +240,8 @@ def _arguments_digest(arguments: dict) -> str:
 
 
 def _now_timestamp() -> int:
-    return int(now_datetime().timestamp())
+    """Epoch seconds. Not now_datetime(): that is naive local time, which skews across a DST change."""
+    return int(time.time())
 
 
 def _b64encode(raw: bytes) -> str:
