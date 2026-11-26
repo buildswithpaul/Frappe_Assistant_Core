@@ -56,20 +56,18 @@ class _QueuedTool(BaseTool):
         self.reference_name = reference_name
         self.deadlocks = deadlocks
         self.calls = 0
+        self.marker = {
+            "reference_doctype": "ToDo",
+            "reference_name": reference_name,
+            "status_message": "Preparing General Ledger",
+        }
 
     def execute(self, arguments: Dict[str, Any]) -> Any:
         self.calls += 1
         if self.deadlocks:
             self.deadlocks -= 1
             raise frappe.QueryDeadlockError("Deadlock found when trying to get lock")
-        return {
-            "queued": True,
-            tasks.TASK_MARKER: {
-                "reference_doctype": "ToDo",
-                "reference_name": self.reference_name,
-                "status_message": "Preparing General Ledger",
-            },
-        }
+        return {"queued": True, tasks.TASK_MARKER: self.marker}
 
     def log_execution(self, *args, **kwargs):
         return None  # the audit row is not what these tests are about
@@ -256,3 +254,52 @@ class TestMcpTasks(BaseAssistantTest):
         tasks.delete_expired()
 
         self.assertEqual(self._rows(), [fresh])
+
+    def test_completed_stays_completed(self):
+        task_id = self._new_task()
+        self.progress = tasks.Progress(status="completed", raw_result={"rows": [], "count": 0})
+        self.assertEqual(self._task("tasks/get", task_id)["result"]["status"], "completed")
+        # What an import adapter reads once a retried session goes back to Importing.
+        self.progress = tasks.Progress(status="working", status_message="Importing again")
+
+        result = self._task("tasks/get", task_id)["result"]
+
+        self.assertEqual(result["status"], "failed")
+        self.assertTrue(result["error"]["message"])
+        self.assertNotIn("result", result)
+        row = frappe.db.get_value("FAC MCP Task", task_id, ["status", "status_message"], as_dict=True)
+        self.assertEqual(row.status, "completed")
+        self.assertNotEqual(row.status_message, "Importing again")
+        self.progress = tasks.Progress(status="completed", raw_result={"rows": [], "count": 0})
+        self.assertEqual(self._task("tasks/get", task_id)["result"]["status"], "completed")
+
+    def test_tool_lost_is_failed_without_polling(self):
+        task_id = self._new_task()
+        # The user's roles changed after the call: the tool is gone from their registry.
+        self.registry = OrderedDict()
+
+        result = self._task("tasks/get", task_id)["result"]
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(self.polls, [])
+        self.assertEqual(frappe.db.get_value("FAC MCP Task", task_id, "status"), "working")
+
+    def test_invalid_marker_falls_back_to_result(self):
+        invalid = {
+            "no name": {"reference_doctype": "ToDo"},
+            "blank name": {"reference_doctype": "ToDo", "reference_name": ""},
+            "name not a string": {"reference_doctype": "ToDo", "reference_name": 7},
+            "unknown doctype": {"reference_doctype": "No Such DocType", "reference_name": "x"},
+            "not a dict": "ToDo",
+        }
+        for label, marker in invalid.items():
+            with self.subTest(label), patch.object(frappe, "log_error") as log_error:
+                self.tool.marker = marker
+
+                result = self._call()["result"]
+
+                self.assertEqual(result["resultType"], "complete")
+                self.assertFalse(result["isError"])
+                self.assertEqual(json.loads(result["content"][0]["text"]), {"queued": True})
+                self.assertEqual(self._rows(), [])
+                log_error.assert_called_once()

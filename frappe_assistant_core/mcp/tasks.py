@@ -62,7 +62,13 @@ _ADAPTERS: dict[str, Callable[[str, str, dict], Progress]] = {}
 
 
 def register_adapter(tool_name: str, poll: Callable[[str, str, dict], Progress]) -> None:
-    """``poll(reference_doctype, reference_name, arguments)`` answers the task's progress."""
+    """``poll(reference_doctype, reference_name, arguments)`` answers the task's progress.
+
+    For a completed task, ``raw_result`` is the tool's inner result dict, as ``execute`` returns
+    it, not the ``_safe_execute`` envelope. ``{"success": False, ...}`` in it marks an error
+    result, as on the synchronous path; ``own_message`` is not available here, so an error's
+    text is fenced like any other untrusted field.
+    """
     _ADAPTERS[tool_name] = poll
 
 
@@ -77,9 +83,27 @@ def finish_call(tool_name: str, tool: dict, arguments: dict, raw: Any) -> dict:
     tasks, otherwise the normal result. The marker never reaches the client."""
     result, is_error, own_message = unwrap_tool_result(tool, raw)
     marker = result.pop(TASK_MARKER, None) if isinstance(result, dict) else None
-    if isinstance(marker, dict) and not is_error and tasks_requested():
-        return create(tool_name, arguments, marker)
+    if marker is not None and not is_error and tasks_requested():
+        if _valid_marker(marker):
+            return create(tool_name, arguments, marker)
+        # The work is already queued: answer with the tool's own result, never an error.
+        frappe.log_error(
+            title=f"FAC MCP task: {tool_name} returned an invalid task marker", message=repr(marker)
+        )
     return finish_unwrapped(tool, result, is_error, own_message)
+
+
+def _valid_marker(marker: Any) -> bool:
+    if not isinstance(marker, dict):
+        return False
+    doctype, name = marker.get("reference_doctype"), marker.get("reference_name")
+    return (
+        isinstance(doctype, str)
+        and bool(doctype)
+        and isinstance(name, str)
+        and bool(name)
+        and bool(frappe.db.exists("DocType", doctype))
+    )
 
 
 def create(tool_name: str, arguments: dict, marker: dict) -> dict:
@@ -103,20 +127,33 @@ def create(tool_name: str, arguments: dict, marker: dict) -> dict:
 def get(params: dict, tool_registry: dict) -> dict:
     """tasks/get: the task's state, with the finished result once it has completed."""
     doc = _load(params)
-    progress = None
-    if doc.status in ("working", "completed"):
-        progress = _poll(doc)
+    if doc.status in ("failed", "cancelled"):
+        return _answer(doc)
+    tool = tool_registry.get(doc.tool)
+    if tool is None:
+        # Not saved: the user may be given the tool back.
+        return _answer(doc, failed=_error(_("This tool is no longer available to you.")))
+    progress = _poll(doc)
+    if doc.status == "working":
         _apply(doc, progress)
+    elif progress.status != "completed":
+        # A completed task stays completed; only this answer lacks the result.
+        unavailable = _error(_("The result of this task is no longer available."))
+        return _answer(doc, failed=progress.error or unavailable)
+    return _answer(doc, tool, progress)
 
+
+def _answer(
+    doc, tool: dict | None = None, progress: Progress | None = None, failed: dict | None = None
+) -> dict:
+    """The tasks/get result for the row, or ``failed`` for this answer only."""
     out = {"resultType": "complete", **_wire(doc)}
-    if doc.status == "completed":
-        tool = tool_registry.get(doc.tool)
-        if tool is None:
-            out.update(status="failed", error=_error(_("This tool is no longer available to you.")))
-        else:
-            raw = progress.raw_result
-            is_error = isinstance(raw, dict) and raw.get("success") is False
-            out["result"] = finish_unwrapped(tool, raw, is_error)
+    if failed is not None:
+        out.update(status="failed", error=failed)
+    elif doc.status == "completed":
+        raw = progress.raw_result
+        is_error = isinstance(raw, dict) and raw.get("success") is False
+        out["result"] = finish_unwrapped(tool, raw, is_error)
     elif doc.status == "failed":
         out["error"] = _json_field(doc.error) or _error(_("The task failed."))
     return out
