@@ -19,6 +19,7 @@ from typing import Any, Dict
 
 import frappe
 from frappe import _
+from frappe.utils import now_datetime, time_diff_in_seconds
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
 from frappe_assistant_core.mcp.tasks import TASK_MARKER, Progress, failed, tasks_requested
@@ -200,15 +201,26 @@ def _importing_message(session, data_import: str) -> str:
     return _("Importing {0} records (Data Import {1})").format(_(session.target_doctype), data_import)
 
 
+#: How long a Pending Data Import with no job yet counts as starting. A job enqueued after its
+#: request's commit (the next level of a tree, say) is briefly not enqueued at all.
+START_GRACE_SECONDS = 120
+
+
+def _starting(status: str, modified) -> bool:
+    """A Data Import saved moments ago whose job is about to be enqueued."""
+    return status == "Pending" and time_diff_in_seconds(now_datetime(), modified) < START_GRACE_SECONDS
+
+
 def import_task_progress(reference_doctype: str, reference_name: str, arguments: dict) -> Progress:
     """start_import's MCP task adapter (see ``tasks.register_adapter``).
 
     Polled as the task's owner: the session is loaded through ``load_session``, as the tool loads
     it, and its latest Data Import read through ``result_of``, which refuses another user's. The
-    task is working while a job imports the session. An Importing session nothing runs any more
-    is not left working: one whose Data Import ran to its end is answered with its result, one
-    that stopped short (``import_run.continues``: the worker died, or the job timed out) fails,
-    pointing to start_import, which continues it.
+    task is working while a job imports the session, or while its Data Import was saved moments
+    ago and its job is still to be enqueued. An Importing session nothing runs any more is not
+    left working: one whose Data Import ended, refused or run to its end, is answered with its
+    result (``result_of`` says which); one that stopped short (``import_run.continues``: the
+    worker died, or the job timed out) fails, pointing to start_import, which continues it.
     """
     if reference_doctype != SESSION_DOCTYPE:
         return failed(_("This task does not follow an import session."))
@@ -219,6 +231,11 @@ def import_task_progress(reference_doctype: str, reference_name: str, arguments:
         data_import = session.data_imports[-1].data_import
         if session.status == import_run.IMPORTING:
             if import_run.job_running(session):
+                return Progress("working", status_message=_importing_message(session, data_import))
+            status, modified = frappe.db.get_value("Data Import", data_import, ["status", "modified"])
+            if status in import_run.FINISHED_STATUS:
+                return Progress("completed", raw_result=session_result(session, data_import))
+            if _starting(status, modified):
                 return Progress("working", status_message=_importing_message(session, data_import))
             if import_run.continues(session):
                 return failed(

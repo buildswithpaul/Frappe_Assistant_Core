@@ -170,6 +170,44 @@ class TestImportTasks(run_tests.ImportRunCase):
         self.assertEqual(result["status"], "failed", result)
         self.assertIn("start_import", result["error"]["message"])
 
+    def test_a_level_saved_moments_ago_is_working_before_its_job_is_queued(self):
+        """A tree's next level: its Data Import is committed by one job and enqueued after it."""
+        _session, task_id, data_import = self._import_task()
+        # _import_task queued no job (enqueue patched), exactly the gap between commit and enqueue.
+        self.assertEqual(frappe.db.get_value("Data Import", data_import, "status"), "Pending")
+
+        result = self._get(task_id)
+
+        self.assertEqual(result["status"], "working", result)
+
+    def test_a_pending_import_whose_job_never_came_is_failed(self):
+        session, task_id, data_import = self._import_task()
+        # A worker killed mid-job leaves the Data Import Pending, last touched when it started.
+        long_ago = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-10)
+        frappe.db.set_value("Data Import", data_import, "modified", long_ago, update_modified=False)
+
+        result = self._get(task_id)
+
+        self.assertEqual(result["status"], "failed", result)
+        self.assertIn("start_import", result["error"]["message"])
+
+    def test_a_refused_import_is_completed_with_its_reason(self):
+        session, task_id, data_import = self._import_task()
+        # Frappe's importer refuses the whole file before importing a record: Data Import ends in
+        # Error with template_warnings and no Data Import Log.
+        warning = [{"type": "error", "message": "Column Customer Group is mandatory"}]
+        frappe.db.set_value(
+            "Data Import", data_import, {"status": "Error", "template_warnings": json.dumps(warning)}
+        )
+        self.assertFalse(frappe.db.exists("Data Import Log", {"data_import": data_import}))
+
+        result = self._get(task_id)
+
+        self.assertEqual(result["status"], "completed", result)
+        payload = json.loads(result["result"]["content"][0]["text"])
+        self.assertEqual(payload["state"], "refused", payload)
+        self.assertNotIn("start_import again", payload["message"])
+
     def test_import_task_of_another_user_is_failed(self):
         session, task_id, data_import = self._import_task()
         with self._each_row_commits():
