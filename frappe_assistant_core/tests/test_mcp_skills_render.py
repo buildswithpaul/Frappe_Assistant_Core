@@ -12,6 +12,7 @@
 # GNU Affero General Public License for more details.
 #
 # You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """Tests for SKILL.md rendering, Agent Skills name rules and FAC Skill validation."""
 
@@ -39,6 +40,29 @@ def _frontmatter(raw: bytes) -> dict:
     assert text.startswith("---\n")
     block = text[4:].split("\n---\n", 1)[0]
     return yaml.safe_load(block)
+
+
+def _line_frontmatter(raw: bytes) -> dict:
+    """Read the frontmatter the way the MCP TS SDK's built-in parser does: one `key: value` per
+    line, a quoted value must close on its own line.
+    """
+    lines = raw.decode("utf-8").split("\n")
+    end = lines.index("---", 1)
+    assert lines[0] == "---" and end == 3, lines[:end]
+    values = {}
+    for line in lines[1:end]:
+        key, sep, value = line.partition(": ")
+        assert sep and value, line
+        if value[0] == "'":
+            assert value.endswith("'") and len(value) > 1, line
+            value = value[1:-1].replace("''", "'")
+        elif value[0] == '"':
+            assert value.endswith('"') and len(value) > 1, line
+            value = json.loads(value)
+        else:
+            assert ": " not in value and " #" not in value, line
+        values[key] = value
+    return values
 
 
 class TestMcpSkillsRender(BaseAssistantTest):
@@ -84,12 +108,36 @@ class TestMcpSkillsRender(BaseAssistantTest):
         self.assertFalse(is_listable({"skill_id": "bad_id", "description": "d"}))
 
     def test_frontmatter_round_trips(self):
-        for description in ("a: b", "# x", "- y", "line1\nline2", 'say "hi"'):
+        for description in ("a: b", "# x", "- y", 'say "hi"', "yes", "null"):
             raw = render_skill_md("my-skill", description, "Body text")
             front = _frontmatter(raw)
             self.assertEqual(front["name"], "my-skill")
             self.assertEqual(front["description"], description)
             self.assertTrue(raw.decode().endswith("---\n\nBody text"))
+
+    def test_frontmatter_is_one_line_per_key(self):
+        # FAC Skill.description is Small Text, so users can store newlines, tabs and long prose.
+        cases = {
+            "long": ("Use when a FAC Page shows figures a report already computes, " * 5).strip(),
+            "newline": "First line\nsecond line\r\nthird line",
+            "colon": "Totals: the figures a report computes",
+            "hash": "# heading-like description",
+            "padded": "  trailing and leading space \t ",
+            "quotes": 'it\'s "quoted" text',
+        }
+        for label, description in cases.items():
+            with self.subTest(label):
+                expected = " ".join(description.split())
+                raw = render_skill_md("my-skill", description, "Body")
+                lines = _line_frontmatter(raw)
+                self.assertEqual(lines, {"name": "my-skill", "description": expected})
+                self.assertEqual(_frontmatter(raw), lines)
+                entry = skill_entry("my-skill", description, "Body")
+                self.assertEqual(entry["frontmatter"], lines)
+                self.assertEqual(entry["resources"][0]["digest"], "sha256:" + hashlib.sha256(raw).hexdigest())
+
+    def test_is_listable_reads_the_description_it_serves(self):
+        self.assertFalse(is_listable({"skill_id": "ok", "description": " \n\t "}))
 
     def test_render_is_deterministic(self):
         self.assertEqual(render_skill_md("a", "d", "c"), render_skill_md("a", "d", "c"))

@@ -12,6 +12,7 @@
 # GNU Affero General Public License for more details.
 #
 # You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
 Agent Skills rendering for the MCP skills extension: name rules, the SKILL.md bytes and the
@@ -54,14 +55,33 @@ def is_valid_description(description: str) -> bool:
 def is_listable(skill: dict) -> bool:
     """True when a skill row can be advertised to MCP clients."""
     return is_valid_skill_name(skill.get("skill_id") or "") and is_valid_description(
-        skill.get("description") or ""
+        _one_line(skill.get("description") or "")
     )
 
 
+def _one_line(text: str) -> str:
+    """Collapse every run of whitespace, newlines included, to one space.
+
+    Clients read the frontmatter line by line (the TS SDK's built-in parser refuses a value that
+    spans lines), and FAC Skill.description is Small Text, so a stored newline must not survive.
+    """
+    return " ".join(text.split())
+
+
+def _frontmatter(skill_id: str, description: str) -> dict:
+    """The frontmatter values, identical in the SKILL.md bytes and the manifest entry."""
+    return {"name": skill_id, "description": _one_line(description)}
+
+
 def render_skill_md(skill_id: str, description: str, content: str) -> bytes:
-    """Render the SKILL.md bytes: YAML frontmatter, a blank line, then the content."""
+    """Render the SKILL.md bytes: YAML frontmatter, a blank line, then the content.
+
+    One line per key: width=inf stops PyYAML folding a long value, and any value plain YAML
+    cannot hold on one line (": ", a leading "#", yes/null) is single-line quoted, which the
+    TS SDK parser unquotes.
+    """
     frontmatter = yaml.safe_dump(
-        {"name": skill_id, "description": description}, sort_keys=False, allow_unicode=True
+        _frontmatter(skill_id, description), sort_keys=False, allow_unicode=True, width=float("inf")
     )
     return f"---\n{frontmatter}---\n\n{content}".encode()
 
@@ -72,7 +92,7 @@ def skill_entry(skill_id: str, description: str, content: str) -> dict:
     uri = SKILL_URI.format(skill_id=skill_id)
     return {
         "uri": uri,
-        "frontmatter": {"name": skill_id, "description": description},
+        "frontmatter": _frontmatter(skill_id, description),
         "resources": [{"uri": uri, "digest": "sha256:" + hashlib.sha256(raw).hexdigest(), "size": len(raw)}],
     }
 
