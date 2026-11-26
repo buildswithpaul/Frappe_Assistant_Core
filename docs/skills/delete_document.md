@@ -39,6 +39,14 @@ Each record goes through the single-delete path. With `all_or_nothing`, a record
 - `mode: "all_or_nothing"` (the default) saves nothing if any record fails, and `failed_record` names the record and its error. `mode: "continue"` saves the records that pass and lists each record's outcome in `results`.
 - Customisation DocTypes (Custom Field, Property Setter, Server Script, Client Script, DocType, Workflow, Report, Print Format, Notification and similar) are refused in a batch: write them one at a time so each one is previewed.
 
+## Confirmation by the user's client
+
+Every delete is confirmed. When the MCP client can show the user a confirmation form, the first call changes nothing: the client asks the user "Delete ToDo abc123? This can't be undone." and sends the call again with their answer. Your call returns only after the user has answered.
+
+- **Accepted** — the call runs once, as normal.
+- **Declined** — the result is an error: "The user did not confirm, so nothing was changed." Do not retry the call; ask the user what they want instead.
+- Clients without a confirmation form run the call at once, and so does FAC Chat, which shows its own approval card. Still confirm with the user before calling.
+
 ## Best Practices
 
 1. **Always confirm with the user** — deletion is permanent.
