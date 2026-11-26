@@ -22,7 +22,7 @@ Deletes existing Frappe documents.
 from typing import Any, Dict, Optional
 
 import frappe
-from frappe import _
+from frappe import _, _lt
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, one_line
 
@@ -44,7 +44,8 @@ class DocumentDelete(BaseTool):
         self.name = "delete_document"
         self.description = "Delete an existing Frappe document. Use when users want to remove a record from the system. Always check for dependencies before deletion. To delete many records of one DocType, pass 'names' (at most 100) instead of 'name'."
         self.requires_permission = None  # Permission checked dynamically per DocType
-        self.confirmation_verb = _("Delete")
+        # Lazy: tool instances outlive a request, so it is translated when read, in that request's language.
+        self.confirmation_verb = _lt("Delete")
 
         self.inputSchema = {
             "type": "object",
@@ -74,15 +75,24 @@ class DocumentDelete(BaseTool):
 
     def confirmation(self, arguments: Dict[str, Any]) -> Optional[str]:
         """Always asks: a delete can't be undone."""
-        doctype = one_line(arguments.get("doctype"))
-        names = arguments.get("names")
-        if isinstance(names, (list, tuple)):
+        if not isinstance(arguments, dict):
+            return None
+        doctype, name, names = arguments.get("doctype"), arguments.get("name"), arguments.get("names")
+        if not (isinstance(doctype, str) and doctype.strip()):
+            return None
+        if ("name" in arguments) == ("names" in arguments):
+            return None
+        if "names" in arguments:
+            if not (isinstance(names, list) and names):
+                return None
             shown = ", ".join(one_line(n, 40) for n in names[:3])
             more = "…" if len(names) > 3 else ""
             return _("Delete {0} {1} records ({2}{3})? This can't be undone.").format(
-                len(names), doctype, shown, more
+                len(names), one_line(doctype), shown, more
             )
-        return _("Delete {0} {1}? This can't be undone.").format(doctype, one_line(arguments.get("name")))
+        if not (isinstance(name, str) and name.strip()):
+            return None
+        return _("Delete {0} {1}? This can't be undone.").format(one_line(doctype), one_line(name))
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Delete one document, or several from ``names``"""

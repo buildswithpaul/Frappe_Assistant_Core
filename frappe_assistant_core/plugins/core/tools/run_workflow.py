@@ -22,7 +22,7 @@ Handles all workflow complexities: permissions, conditions, notifications, docum
 from typing import Any, Dict, Optional
 
 import frappe
-from frappe import _
+from frappe import _, _lt
 
 from frappe_assistant_core.core.base_tool import BaseTool, permission_error_result
 from frappe_assistant_core.plugins.core.tools.document_action import cancel_question
@@ -60,7 +60,8 @@ class RunWorkflow(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "run_workflow"
-        self.confirmation_verb = _("Cancel")
+        # Lazy: tool instances outlive a request, so it is translated when read, in that request's language.
+        self.confirmation_verb = _lt("Cancel")
         self.description = "Execute workflow actions on documents (Submit, Approve, Reject, etc.). Use this for business process automation - NOT for simple field updates. This tool properly handles workflow permissions, notifications, state transitions, and business rules. Always use this instead of directly updating workflow_state fields, as it ensures proper workflow execution with all side effects (emails, status changes, validations). If action fails, tool shows available actions for current state."
         self.requires_permission = None  # Dynamic permission checking
 
@@ -92,6 +93,9 @@ class RunWorkflow(BaseTool):
         """
         try:
             from frappe.model.workflow import get_transitions, get_workflow_name
+
+            if not isinstance(arguments, dict):
+                return None
 
             doctype, name, action = (arguments.get(k) for k in ("doctype", "name", "action"))
             if not (isinstance(doctype, str) and isinstance(name, str) and isinstance(action, str)):

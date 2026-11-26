@@ -53,9 +53,21 @@ class TestToolConfirmation(BaseAssistantTest):
         self.assertNotIn("\n", question)
         self.assertLess(len(question), 200)
 
-    def test_delete_malformed_arguments_do_not_raise(self):
-        self.assertIsInstance(DocumentDelete().confirmation({}), str)
-        self.assertIsInstance(DocumentDelete().confirmation({"doctype": ["x"], "names": "abc"}), str)
+    def test_delete_malformed_arguments_answer_none(self):
+        tool = DocumentDelete()
+        for arguments in (
+            {},
+            {"name": "C-1"},
+            {"doctype": "", "name": "C-1"},
+            {"doctype": ["x"], "name": "C-1"},
+            {"doctype": "Customer"},
+            {"doctype": "Customer", "name": "C-1", "names": ["C-2"]},
+            {"doctype": "Customer", "name": ""},
+            {"doctype": "Customer", "name": 5},
+            {"doctype": "Customer", "names": []},
+            {"doctype": "Customer", "names": "abc"},
+        ):
+            self.assertIsNone(tool.confirmation(arguments), arguments)
 
     def test_document_action_cancel_normalised(self):
         tool = DocumentAction()
@@ -80,7 +92,51 @@ class TestToolConfirmation(BaseAssistantTest):
         self.assertIn("u0@example.com", question)
         self.assertNotIn("u19@example.com", question)
         self.assertIn("15 more", question)
-        self.assertIsInstance(tool.confirmation({}), str)
+
+    def test_send_email_shows_cc(self):
+        question = SendEmail().confirmation(
+            {"recipients": ["a@example.com"], "cc": ["boss@example.com", "c2@example.com"], "subject": "s"}
+        )
+        self.assertEqual(
+            question, "Send the email 's' to a@example.com, cc boss@example.com, c2@example.com?"
+        )
+        # A cc given as a bare string, or as something malformed, is still shown.
+        self.assertIn(
+            "cc x@example.com",
+            SendEmail().confirmation(
+                {"recipients": ["a@example.com"], "cc": "x@example.com", "subject": "s"}
+            ),
+        )
+        self.assertIn(
+            "cc 5", SendEmail().confirmation({"recipients": ["a@example.com"], "cc": 5, "subject": "s"})
+        )
+
+    def test_send_email_cap_counts_each_field(self):
+        many = [f"c{i}@example.com" for i in range(9)]
+        question = SendEmail().confirmation({"recipients": ["a@example.com"], "cc": many, "subject": "s"})
+        self.assertIn("c4@example.com and 4 more", question)
+        self.assertNotIn("c5@example.com", question)
+
+    def test_send_email_without_usable_recipients_answers_none(self):
+        tool = SendEmail()
+        for recipients in ([], ["", "  "], None):
+            self.assertIsNone(tool.confirmation({"recipients": recipients, "subject": "s"}), recipients)
+
+    def test_document_action_cancel_without_target_answers_none(self):
+        tool = DocumentAction()
+        for arguments in (
+            {"action": "cancel"},
+            {"action": "cancel", "doctype": "Sales Invoice"},
+            {"action": "cancel", "doctype": "", "name": "S-1"},
+            {"action": "cancel", "doctype": "Sales Invoice", "name": " "},
+            {"action": "cancel", "doctype": ["x"], "name": 5},
+        ):
+            self.assertIsNone(tool.confirmation(arguments), arguments)
+
+    def test_non_dict_arguments_never_raise(self):
+        for tool in (DocumentDelete(), DocumentAction(), SendEmail(), RunWorkflow(), DocumentGet()):
+            for arguments in (None, "x", ["a"], 5):
+                self.assertIsNone(tool.confirmation(arguments), (tool.name, arguments))
 
     def test_other_tools_none(self):
         self.assertIsNone(DocumentGet().confirmation({"doctype": "Customer", "name": "CUST-0001"}))
@@ -91,6 +147,7 @@ class TestToolConfirmation(BaseAssistantTest):
         self.assertIn("Delete", tool_dict["confirmation"]({"doctype": "Customer", "name": "C"}))
         self.assertEqual(build_tool_dict(SendEmail())["confirmationVerb"], "Send")
         self.assertEqual(build_tool_dict(DocumentAction())["confirmationVerb"], "Cancel")
+        self.assertIs(type(tool_dict["confirmationVerb"]), str)
         plain = build_tool_dict(DocumentGet())
         self.assertEqual(plain["confirmationVerb"], "")
         self.assertIsNone(plain["confirmation"]({}))

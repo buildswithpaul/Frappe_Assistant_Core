@@ -54,7 +54,7 @@ def build_tool_dict(tool_instance) -> Dict[str, Any]:
         "safeExecuteEnvelope": True,
         "untrustedFields": tuple(getattr(tool_instance, "untrusted_fields", ()) or ()),
         "confirmation": tool_instance.confirmation,
-        "confirmationVerb": getattr(tool_instance, "confirmation_verb", "") or "",
+        "confirmationVerb": str(getattr(tool_instance, "confirmation_verb", "") or ""),
         "fn": tool_wrapper,
     }
 

@@ -220,6 +220,7 @@ class BaseTool(ABC):
 
         Called with the raw arguments, before validation, so it must never raise: a lookup that
         fails or arguments that don't fit answer None, and the tool's own validation reports them.
+        A non-dict argument value or a missing field is malformed too: answer None.
         The question is one line of data-safe text; wrap values with ``one_line()``.
         """
         return None

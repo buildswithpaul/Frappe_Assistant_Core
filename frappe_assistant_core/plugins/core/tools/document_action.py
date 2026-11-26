@@ -22,7 +22,7 @@ Submits draft documents, cancels submitted documents and amends cancelled ones.
 from typing import Any, Dict, List, Optional
 
 import frappe
-from frappe import _
+from frappe import _, _lt
 
 from frappe_assistant_core.core.base_tool import (
     BaseTool,
@@ -67,7 +67,8 @@ class DocumentAction(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "document_action"
-        self.confirmation_verb = _("Cancel")
+        # Lazy: tool instances outlive a request, so it is translated when read, in that request's language.
+        self.confirmation_verb = _lt("Cancel")
         self.description = (
             "Submit, cancel or amend one document. Choose the action from what the user asked for.\n"
             "- 'submit' (default): draft -> submitted. Only when the user explicitly asks to submit. "
@@ -124,9 +125,14 @@ class DocumentAction(BaseTool):
 
     def confirmation(self, arguments: Dict[str, Any]) -> Optional[str]:
         """Asks only for a cancel; submit and amend run at once."""
+        if not isinstance(arguments, dict):
+            return None
         if str(arguments.get("action") or "").strip().lower() != "cancel":
             return None
-        return cancel_question(arguments.get("doctype"), arguments.get("name"))
+        doctype, name = arguments.get("doctype"), arguments.get("name")
+        if not (isinstance(doctype, str) and doctype.strip() and isinstance(name, str) and name.strip()):
+            return None
+        return cancel_question(doctype, name)
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Submit, cancel or amend a document"""
