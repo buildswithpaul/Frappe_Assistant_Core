@@ -432,8 +432,8 @@ class MCPServer:
         """
         Handle tools/call request.
 
-        This is the CRITICAL method that fixes the serialization issue.
-        Uses json.dumps with default=str to handle datetime, Decimal, etc.
+        The result is serialised and shaped by ``mcp/tool_result.py`` (``finish_tool_result``), or
+        becomes a task through ``mcp/tasks.py`` when the client takes tasks.
         """
         import frappe
 
