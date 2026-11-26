@@ -366,7 +366,6 @@ def _install_system_prompt_categories():
                 doc.color = cat_data.get("color")
                 doc.is_group = cat_data.get("is_group", 0)
                 doc.flags.ignore_permissions = True
-                doc.flags[FROM_APP_MANIFEST_FLAG] = True
                 doc.insert()
                 created_count += 1
 
@@ -632,6 +631,7 @@ def _install_system_skills():
                 doc.requires_app = skill_data.get("requires_app")
 
                 doc.flags.ignore_permissions = True
+                doc.flags[FROM_APP_MANIFEST_FLAG] = True
                 doc.insert()
                 created_count += 1
                 frappe.logger("migration_hooks").debug(f"Created system skill: {skill_id}")

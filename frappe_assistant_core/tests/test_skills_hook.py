@@ -360,6 +360,41 @@ class TestResourcesHandlers(BaseAssistantTest):
             self.assertIn("contents", result)
 
 
+class TestSystemSkillInstallFlag(BaseAssistantTest):
+    """First-time create and update of a system skill must both carry the manifest flag."""
+
+    def test_create_and_update_carry_manifest_flag(self):
+        from frappe_assistant_core.assistant_core.doctype.fac_skill.fac_skill import FACSkill
+        from frappe_assistant_core.utils.migration_hooks import _install_system_skills
+
+        skill_id = "list-documents-usage"
+        name = frappe.db.get_value("FAC Skill", {"skill_id": skill_id}, "name")
+        if name:
+            doc = frappe.get_doc("FAC Skill", name)
+            doc.flags.allow_system_delete = True
+            doc.delete(ignore_permissions=True)
+
+        seen = []
+        real_validate = FACSkill.validate
+
+        def spy(self):
+            seen.append((self.skill_id, self.is_new(), bool(self.flags.get("from_app_manifest"))))
+            return real_validate(self)
+
+        # Production reaches the create branch on the first migrate after a manifest gains a skill.
+        with patch.object(FACSkill, "validate", autospec=True, side_effect=spy):
+            _install_system_skills()
+            created = [row for row in seen if row[0] == skill_id]
+            self.assertEqual(created, [(skill_id, True, True)])
+
+            # Production reaches the update branch when a shipped skill's text changes.
+            frappe.db.set_value("FAC Skill", {"skill_id": skill_id}, "title", "stale title")
+            seen.clear()
+            _install_system_skills()
+        updated = [row for row in seen if row[0] == skill_id]
+        self.assertEqual(updated, [(skill_id, False, True)])
+
+
 class TestBeforeAppUninstall(BaseAssistantTest):
     """Tests for before_app_uninstall cleanup."""
 
