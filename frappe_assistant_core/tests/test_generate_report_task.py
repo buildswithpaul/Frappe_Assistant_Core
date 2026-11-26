@@ -29,7 +29,9 @@ from unittest.mock import patch
 import frappe
 from frappe.core.doctype.prepared_report.prepared_report import create_json_gz_file, make_prepared_report
 from frappe.desk.query_report import generate_report_result
+from frappe.utils import set_request
 
+from frappe_assistant_core.api.fac_endpoint import handle_mcp
 from frappe_assistant_core.mcp import tasks
 from frappe_assistant_core.mcp.tool_adapter import build_tool_dict
 from frappe_assistant_core.mcp.tool_result import finish_tool_result
@@ -37,6 +39,7 @@ from frappe_assistant_core.plugins.core.tools.generate_report import GenerateRep
 from frappe_assistant_core.plugins.core.tools.report_tools import ReportTools
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 from frappe_assistant_core.tests.report_fixtures import PROBE_DESCRIPTION, make_todo_query_report
+from frappe_assistant_core.tests.test_fac_cloud_only_tools import MCP_PATH, _make_oauth_client, _mint
 from frappe_assistant_core.tests.test_mcp_modern_era import _json, _modern, _send
 from frappe_assistant_core.tests.test_mcp_tasks import TASK_CAPS
 
@@ -150,6 +153,34 @@ class TestGenerateReportTask(BaseAssistantTest):
         self.assertEqual(sync["prepared_report_name"], prepared_report)
         self.assertEqual(result["result"], finish_tool_result(self.registry[TOOL], sync))
         self.assertEqual(len(sync["data"]), self.rows)
+
+    def _post(self, method: str, params: dict, token: str) -> dict:
+        """POST to the whitelisted endpoint, which authenticates and builds the registry itself."""
+        body, headers = _modern(method, params, caps=TASK_CAPS)
+        headers.update({"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+        set_request(method="POST", path=MCP_PATH, headers=headers, data=json.dumps(body))
+        response = handle_mcp()
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return _json(response)["result"]
+
+    def test_task_polls_to_completed_through_the_endpoint(self):
+        # A client the user connected themselves, signed in over OAuth.
+        token = _mint("Administrator", _make_oauth_client(f"dcr-client-{frappe.generate_hash(length=8)}"))
+        params = {"name": TOOL, "arguments": {"report_name": self.report}}
+        with patch.object(time, "sleep", side_effect=_no_sleep):
+            created = self._post("tools/call", params, token)
+        self.assertEqual(created["resultType"], "task", created)
+        task_id = created["taskId"]
+
+        working = self._post("tasks/get", {"taskId": task_id}, token)
+        self.assertEqual(working["status"], "working", working)
+
+        self._complete(frappe.db.get_value("FAC MCP Task", task_id, "reference_name"))
+        completed = self._post("tasks/get", {"taskId": task_id}, token)
+
+        self.assertEqual(completed["status"], "completed", completed)
+        payload = json.loads(completed["result"]["content"][0]["text"])
+        self.assertEqual(len(payload["data"]), self.rows)
 
     def test_task_error_is_failed(self):
         task_id, prepared_report = self._new_task()

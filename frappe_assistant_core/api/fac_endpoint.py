@@ -26,6 +26,7 @@ from typing import Optional
 import frappe
 from frappe import _
 
+from frappe_assistant_core.mcp import tasks
 from frappe_assistant_core.mcp.server import MCPServer
 from frappe_assistant_core.utils.mcp_caller import forget_fac_cloud_caller
 
@@ -54,8 +55,9 @@ def _check_assistant_enabled(user: str) -> bool:
         return False
 
 
-# Only these JSON-RPC methods touch a tool, so only they need the registry built.
-_REGISTRY_METHODS = frozenset({"tools/list", "tools/call"})
+# Only these JSON-RPC methods touch a tool, so only they need the registry built. tasks/get
+# finishes a task's result with its tool, so the tasks module says which of its methods do.
+_REGISTRY_METHODS = frozenset({"tools/list", "tools/call", *tasks.REGISTRY_METHODS})
 
 
 def _build_tool_registry():

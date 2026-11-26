@@ -178,6 +178,8 @@ def cancel(params: dict) -> dict:
 
 # tasks/update is not served (no tool needs input mid-task), so it answers method-not-found.
 METHODS = ("tasks/get", "tasks/cancel")
+# The tasks/* methods that read the tool registry; the endpoint builds one only for these.
+REGISTRY_METHODS = ("tasks/get",)
 
 
 def handle(method: str, params: dict, tool_registry: dict) -> dict:
