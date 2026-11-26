@@ -67,8 +67,23 @@ def request_is_from_fac_cloud() -> bool:
     to establish the identity also answers False, so the restriction this gates
     fails closed — a tool stays hidden rather than leaking to an unidentified
     caller.
+
+    The answer is kept on ``frappe.local.fac_cloud_caller`` so the token is read once per
+    request. It is stored with the token and user it was worked out for and reused only for
+    that same pair; ``mcp.protocol.set_request_state`` clears it at the start of each request.
     """
     token = presented_bearer_token()
+    user = frappe.session.user
+    memo = getattr(frappe.local, "fac_cloud_caller", None)
+    if memo and memo[0] == token and memo[1] == user:
+        return memo[2]
+
+    answer = _token_is_fac_clouds(token, user)
+    frappe.local.fac_cloud_caller = (token, user, answer)
+    return answer
+
+
+def _token_is_fac_clouds(token: Optional[str], user: str) -> bool:
     if not token:
         return False
 
@@ -82,7 +97,7 @@ def request_is_from_fac_cloud() -> bool:
     except Exception:
         return False
 
-    if not row or row.status != "Active" or row.user != frappe.session.user:
+    if not row or row.status != "Active" or row.user != user:
         return False
 
     return row.client == FAC_CLOUD_OAUTH_CLIENT_ID

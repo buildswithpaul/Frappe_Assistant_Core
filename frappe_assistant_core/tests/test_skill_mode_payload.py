@@ -3,10 +3,16 @@ import json
 import frappe
 
 from frappe_assistant_core.api.fac_endpoint import _build_tool_registry, mcp
-from frappe_assistant_core.tests.base_test import BaseAssistantTest
+from frappe_assistant_core.tests.test_fac_cloud_only_tools import FacCloudCallerTestCase, _mint
 
 
-class TestSkillModePayload(BaseAssistantTest):
+class TestSkillModePayload(FacCloudCallerTestCase):
+    def setUp(self):
+        super().setUp()
+        # Replace mode only shortens for FAC Cloud, so these payloads are FAC Cloud's: its
+        # chat connects with a bearer token of this OAuth client.
+        self._as_caller(_mint(self.user, self.fac_cloud_client))
+
     def _tools_list(self, mode):
         settings = frappe.get_single("Assistant Core Settings")
         original = settings.skill_mode

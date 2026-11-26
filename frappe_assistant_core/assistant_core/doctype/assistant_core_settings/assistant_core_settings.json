@@ -329,7 +329,7 @@
   },
   {
    "default": "supplementary",
-   "description": "Supplementary: tools keep full descriptions, skills provide additional guidance. Replace: tool descriptions are minimized when a skill exists, saving tokens.",
+   "description": "Supplementary: tools keep full descriptions, skills provide additional guidance. Replace: FAC Chat gets one-line tool descriptions and loads the matching skill when needed, saving tokens. Other AI clients always get full tool descriptions.",
    "fieldname": "skill_mode",
    "fieldtype": "Select",
    "label": "Skill Mode",

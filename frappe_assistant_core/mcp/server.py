@@ -37,6 +37,7 @@ from typing import Any, Dict, Optional
 from werkzeug.wrappers import Request, Response
 
 from frappe_assistant_core.mcp import protocol, skills
+from frappe_assistant_core.utils.mcp_caller import request_is_from_fac_cloud
 
 # TEMPORARY: old tool names still accepted by tools/call, mapped to their new name.
 # Resolved before the tool is looked up, so an old name gets exactly the new tool's
@@ -325,11 +326,11 @@ class MCPServer:
 
         tools_list = []
 
-        # Check skill_mode for token optimization
+        # Replace mode is for FAC Chat, which loads the skill through get_skill; other clients keep full text.
         skill_replace_map = {}
         try:
             settings = frappe.get_single("Assistant Core Settings")
-            if getattr(settings, "skill_mode", "supplementary") == "replace":
+            if getattr(settings, "skill_mode", "supplementary") == "replace" and request_is_from_fac_cloud():
                 from frappe_assistant_core.api.handlers.resources import get_skill_manager
 
                 skill_replace_map = get_skill_manager().get_tool_skill_map(user=frappe.session.user)
