@@ -164,7 +164,6 @@ def set_request_state(era: str = "handshake", caps: ClientCaps | None = None) ->
 
     frappe.local.mcp_era = era
     frappe.local.mcp_client_caps = caps or ClientCaps()
-    frappe.local.fac_cloud_caller = None
 
 
 def resolve_request(headers: Mapping[str, str], body: dict) -> tuple[str, ClientCaps]:

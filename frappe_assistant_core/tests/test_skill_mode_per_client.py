@@ -30,7 +30,7 @@ from unittest.mock import patch
 import frappe
 from frappe.utils import set_request
 
-from frappe_assistant_core.api.fac_endpoint import _build_tool_registry, mcp
+from frappe_assistant_core.api.fac_endpoint import _build_tool_registry, handle_mcp, mcp
 from frappe_assistant_core.mcp import protocol
 from frappe_assistant_core.tests.test_fac_cloud_only_tools import (
     MCP_PATH,
@@ -38,7 +38,9 @@ from frappe_assistant_core.tests.test_fac_cloud_only_tools import (
     _make_oauth_client,
     _mint,
 )
+from frappe_assistant_core.utils import mcp_caller
 from frappe_assistant_core.utils.mcp_caller import FAC_CLOUD_OAUTH_CLIENT_ID as FAC_CLOUD_CLIENT
+from frappe_assistant_core.utils.mcp_caller import forget_fac_cloud_caller
 
 SNAPSHOT_PATH = os.path.join(os.path.dirname(__file__), "fixtures", "mcp_fac_cloud_replace_snapshot.json")
 SKILL_TOOL = "list_documents"
@@ -126,7 +128,7 @@ class TestSkillModePerClient(FacCloudCallerTestCase):
     def test_token_looked_up_once(self):
         self._as_caller(_mint(self.user, self.fac_cloud_client))
         _tools_list("replace", self.registry)  # sets replace mode
-        protocol.set_request_state()  # a new request: the first call's memo is gone
+        forget_fac_cloud_caller()  # a new request: the endpoint drops the first call's memo
         real = frappe.db.get_value
 
         with patch.object(frappe.db, "get_value", wraps=real) as spy:
@@ -135,6 +137,28 @@ class TestSkillModePerClient(FacCloudCallerTestCase):
 
         token_reads = [c for c in spy.call_args_list if c.args and c.args[0] == "OAuth Bearer Token"]
         self.assertEqual(len(token_reads), 1)
+
+    def test_one_token_lookup_per_request_through_the_endpoint(self):
+        """The registry build and tools/list both ask who is calling; only the first reads the token."""
+        settings = frappe.get_single("Assistant Core Settings")
+        settings.skill_mode = "replace"  # an administrator picks replace mode in FAC Admin
+        settings.save(ignore_permissions=True)
+        token = _mint(self.user, self.fac_cloud_client)
+        body = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+        set_request(
+            method="POST",
+            path=MCP_PATH,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            data=json.dumps(body),
+        )
+
+        real = mcp_caller._token_is_fac_clouds
+        with patch.object(mcp_caller, "_token_is_fac_clouds", wraps=real) as spy:
+            response = handle_mcp()
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertIn("tools", json.loads(response.get_data(as_text=True))["result"])
+        self.assertEqual(spy.call_count, 1)
 
     def test_a_second_request_with_another_token_gets_its_own_answer(self):
         """frappe.local survives between simulated requests; the memo must not leak across them."""

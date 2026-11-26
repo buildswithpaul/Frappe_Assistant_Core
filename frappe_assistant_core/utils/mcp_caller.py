@@ -69,8 +69,9 @@ def request_is_from_fac_cloud() -> bool:
     caller.
 
     The answer is kept on ``frappe.local.fac_cloud_caller`` so the token is read once per
-    request. It is stored with the token and user it was worked out for and reused only for
-    that same pair; ``mcp.protocol.set_request_state`` clears it at the start of each request.
+    request: the registry build and tools/list both ask. It is stored with the token and user it
+    was worked out for and reused only for that same pair; ``forget_fac_cloud_caller`` clears it
+    when the MCP endpoint starts a request.
     """
     token = presented_bearer_token()
     user = frappe.session.user
@@ -81,6 +82,11 @@ def request_is_from_fac_cloud() -> bool:
     answer = _token_is_fac_clouds(token, user)
     frappe.local.fac_cloud_caller = (token, user, answer)
     return answer
+
+
+def forget_fac_cloud_caller() -> None:
+    """Drop the remembered answer, so the next request works its own out."""
+    frappe.local.fac_cloud_caller = None
 
 
 def _token_is_fac_clouds(token: Optional[str], user: str) -> bool:
