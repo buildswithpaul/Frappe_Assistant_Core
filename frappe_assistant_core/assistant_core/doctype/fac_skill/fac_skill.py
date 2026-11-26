@@ -11,13 +11,13 @@ Skill DocType controller.
 Handles validation and lifecycle management for skills.
 """
 
-import re
 from typing import Any, Dict, List
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from frappe_assistant_core.mcp.skills import is_valid_description, is_valid_skill_name
 from frappe_assistant_core.utils.permissions import check_assistant_admin_permission
 
 #: Fields an admin implicitly signs off on when publishing a skill beyond its
@@ -35,6 +35,7 @@ class FACSkill(Document):
     def validate(self):
         """Validate skill before save."""
         self.validate_skill_id()
+        self.validate_description()
         self.validate_visibility_settings()
         self.validate_linked_tool()
         self.validate_publish_permission()
@@ -148,14 +149,26 @@ class FACSkill(Document):
         if not self.skill_id:
             frappe.throw(_("Skill ID is required"))
 
-        if not re.match(r"^[a-z0-9_-]+$", self.skill_id):
-            frappe.throw(_("Skill ID must contain only lowercase letters, numbers, underscores, and hyphens"))
+        if (self.is_new() or self.has_value_changed("skill_id")) and not is_valid_skill_name(self.skill_id):
+            frappe.throw(
+                _(
+                    "Skill ID must be 1-64 characters: lowercase letters, numbers and single hyphens, "
+                    "not starting or ending with a hyphen"
+                )
+            )
 
         existing = frappe.db.get_value(
             "FAC Skill", {"skill_id": self.skill_id, "name": ["!=", self.name or ""]}, "name"
         )
         if existing:
             frappe.throw(_("Skill ID '{0}' already exists").format(self.skill_id))
+
+    def validate_description(self):
+        """Keep the description within the Agent Skills 1-1024 character limit."""
+        if (self.is_new() or self.has_value_changed("description")) and not is_valid_description(
+            self.description
+        ):
+            frappe.throw(_("Description must be between 1 and 1024 characters"))
 
     def validate_visibility_settings(self):
         """Validate visibility and sharing configuration."""
