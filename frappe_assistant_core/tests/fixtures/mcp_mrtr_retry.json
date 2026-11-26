@@ -1,0 +1,74 @@
+{
+  "source": "@modelcontextprotocol/client 2.4.0 (node 24.9.0), captured 2026-11-26",
+  "cross_checked_with": [
+    "mcp (Python SDK) 2.3.0: identical params and Mcp-* headers; clientCapabilities.elicitation was {form: {}, url: {}}",
+    "schema/2026-07-28/schema.ts @ modelcontextprotocol/modelcontextprotocol 2bbace557bbf2cb5d03d6f9b48905415cd7607b0",
+    "specification/2026-07-28/basic/patterns/mrtr"
+  ],
+  "note": "Not captured from Claude Code: the installed 2.1.267 predates 2026-07-28 support. The client answered a throwaway server whose first tools/call result was spec 7.3's input_required result with requestState FAC_REQUEST_STATE_PLACEHOLDER; tests substitute a real signed token for body.params.requestState. Transport headers (host, connection, content-length, accept-encoding, accept-language, sec-fetch-mode) are dropped.",
+  "request_state_placeholder": "FAC_REQUEST_STATE_PLACEHOLDER",
+  "first_call_result": {
+    "resultType": "input_required",
+    "inputRequests": {
+      "confirm": {
+        "method": "elicitation/create",
+        "params": {
+          "mode": "form",
+          "message": "Delete ToDo abc123? This can't be undone.",
+          "requestedSchema": {
+            "type": "object",
+            "properties": {
+              "confirm": {
+                "type": "boolean",
+                "title": "Delete"
+              }
+            },
+            "required": ["confirm"]
+          }
+        }
+      }
+    },
+    "requestState": "FAC_REQUEST_STATE_PLACEHOLDER"
+  },
+  "headers": {
+    "mcp-protocol-version": "2026-07-28",
+    "mcp-method": "tools/call",
+    "mcp-name": "delete_document",
+    "content-type": "application/json",
+    "accept": "application/json, text/event-stream",
+    "user-agent": "node"
+  },
+  "body": {
+    "method": "tools/call",
+    "params": {
+      "name": "delete_document",
+      "arguments": {
+        "doctype": "ToDo",
+        "name": "abc123"
+      },
+      "inputResponses": {
+        "confirm": {
+          "action": "accept",
+          "content": {
+            "confirm": true
+          }
+        }
+      },
+      "requestState": "FAC_REQUEST_STATE_PLACEHOLDER",
+      "_meta": {
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientInfo": {
+          "name": "mrtr-capture",
+          "version": "0.0.1"
+        },
+        "io.modelcontextprotocol/clientCapabilities": {
+          "elicitation": {
+            "form": {}
+          }
+        }
+      }
+    },
+    "jsonrpc": "2.0",
+    "id": 1
+  }
+}
