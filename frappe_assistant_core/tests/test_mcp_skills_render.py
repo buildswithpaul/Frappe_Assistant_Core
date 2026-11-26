@@ -130,3 +130,18 @@ class TestMcpSkillsRender(BaseAssistantTest):
         doc.description = "d" * 1025
         with self.assertRaises(frappe.ValidationError):
             doc.save(ignore_permissions=True)
+
+    def test_app_manifest_installer_still_installs_underscore_id(self):
+        doc = self._skill_doc("hook_underscore", description="d" * 1025)
+        # Production reaches this through the assistant_skills hook installer, which sets this flag.
+        doc.flags.from_app_manifest = True
+        doc.insert(ignore_permissions=True)
+        self._created.append(doc.name)
+        self.assertTrue(frappe.db.exists("FAC Skill", doc.name))
+        self.assertFalse(is_listable({"skill_id": "hook_underscore", "description": "d"}))
+
+    def test_app_manifest_flag_still_refuses_unsafe_id(self):
+        doc = self._skill_doc("Bad Id")
+        doc.flags.from_app_manifest = True
+        with self.assertRaises(frappe.ValidationError):
+            doc.insert(ignore_permissions=True)

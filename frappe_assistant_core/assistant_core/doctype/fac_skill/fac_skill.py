@@ -11,6 +11,7 @@ Skill DocType controller.
 Handles validation and lifecycle management for skills.
 """
 
+import re
 from typing import Any, Dict, List
 
 import frappe
@@ -29,6 +30,16 @@ APPROVED_CONTENT_FIELDS = ("title", "description", "content", "linked_tool")
 
 #: Visibility values that expose a Published skill to users other than its owner.
 EXPOSED_VISIBILITIES = ("Shared", "Public")
+
+
+#: Doc flag the app-manifest installers set on skills they write. It exempts those skills from
+#: the Agent Skills name and description rules: installed skills come from other apps' manifests
+#: that may predate the rules, and one rejected id would abort that app's whole skill install.
+#: Non-conforming ones still install and are served as fac:// resources; skills/list skips them.
+#: A doc flag is chosen over ``source_app`` because ``source_app`` is an ordinary field that a
+#: user could set through Desk or the admin API, while flags live only on the in-memory
+#: document and cannot be supplied by a request.
+FROM_APP_MANIFEST_FLAG = "from_app_manifest"
 
 
 class FACSkill(Document):
@@ -149,7 +160,12 @@ class FACSkill(Document):
         if not self.skill_id:
             frappe.throw(_("Skill ID is required"))
 
-        if (self.is_new() or self.has_value_changed("skill_id")) and not is_valid_skill_name(self.skill_id):
+        if self.flags.get(FROM_APP_MANIFEST_FLAG):
+            if not re.match(r"^[a-z0-9_-]+$", self.skill_id):
+                frappe.throw(
+                    _("Skill ID must contain only lowercase letters, numbers, underscores, and hyphens")
+                )
+        elif (self.is_new() or self.has_value_changed("skill_id")) and not is_valid_skill_name(self.skill_id):
             frappe.throw(
                 _(
                     "Skill ID must be 1-64 characters: lowercase letters, numbers and single hyphens, "
@@ -165,6 +181,8 @@ class FACSkill(Document):
 
     def validate_description(self):
         """Keep the description within the Agent Skills 1-1024 character limit."""
+        if self.flags.get(FROM_APP_MANIFEST_FLAG):
+            return
         if (self.is_new() or self.has_value_changed("description")) and not is_valid_description(
             self.description
         ):

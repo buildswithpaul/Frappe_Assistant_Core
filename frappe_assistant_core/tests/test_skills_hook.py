@@ -102,6 +102,8 @@ def _make_skill(
         for role in shared_roles:
             doc.append("shared_with_roles", {"role": role})
     doc.flags.ignore_permissions = True
+    # Production reaches these rows through the assistant_skills hook installer, which sets this flag.
+    doc.flags.from_app_manifest = True
     doc.insert()
     return doc
 
