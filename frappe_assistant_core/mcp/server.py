@@ -36,7 +36,7 @@ from typing import Any, Dict, Optional
 
 from werkzeug.wrappers import Request, Response
 
-from frappe_assistant_core.mcp import protocol, skills
+from frappe_assistant_core.mcp import confirmation, protocol, skills
 from frappe_assistant_core.utils.mcp_caller import request_is_from_fac_cloud
 
 # TEMPORARY: old tool names still accepted by tools/call, mapped to their new name.
@@ -464,9 +464,10 @@ class MCPServer:
 
         tool = tool_registry[tool_name]
         fn = tool["fn"]
+        if (instead := confirmation.gate(tool_name, tool, params)) is not None:
+            return instead
 
         try:
-            # Execute tool
             frappe.logger().info(f"MCP Executing tool: {tool_name}")
             result = fn(**arguments)
             frappe.logger().info(

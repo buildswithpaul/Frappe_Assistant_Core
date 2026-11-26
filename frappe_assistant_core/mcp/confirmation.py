@@ -28,11 +28,15 @@ import hashlib
 import hmac
 import json
 import secrets
+from typing import Optional
 
 import frappe
 import redis
+from frappe import _
 from frappe.utils import now_datetime
 from frappe.utils.password import get_encryption_key
+
+from frappe_assistant_core.mcp.protocol import ERR_INVALID_PARAMS, ProtocolError
 
 STATE_TTL_SECONDS = 600
 INPUT_KEY = "confirm"
@@ -59,16 +63,7 @@ def issue_state(user: str, tool: str, arguments: dict) -> str:
 
 
 def consume_state(state: str, user: str, tool: str, arguments: dict) -> None:
-    payload = _verified_payload(state)
-
-    remaining = payload["exp"] - _now_timestamp()
-    if remaining <= 0:
-        raise ConsentRefused("expired")
-    if payload["user"] != user or payload["tool"] != tool:
-        raise ConsentRefused("issued for another user or tool")
-    if not hmac.compare_digest(payload["args_sha256"], _arguments_digest(arguments)):
-        raise ConsentRefused("arguments changed")
-
+    payload, remaining = _matching_payload(state, user, tool, arguments)
     _mark_nonce_used(payload["nonce"], remaining)
 
 
@@ -101,6 +96,75 @@ def accepted(input_responses: dict) -> bool:
         return False
     content = response.get("content")
     return isinstance(content, dict) and content.get(INPUT_KEY) is True
+
+
+def gate(tool_name: str, tool: dict, params: dict) -> Optional[dict]:
+    """Decide whether this tools/call may run now.
+
+    Returns the result to send instead of running (``input_required``, or the "did not confirm"
+    error result), or None to run the tool. Only a modern-era client that declared form
+    elicitation is asked; everyone else runs as before. Raises ``ProtocolError`` (-32602) when a
+    ``requestState`` is invalid, expired, already used or for another call, so call it outside
+    the tool's own error handling, which would turn that into a tool error.
+    """
+    question = _question(tool, params)
+    if question is None:
+        return None
+
+    user = frappe.session.user
+    arguments = params.get("arguments", {})
+    state = params.get("requestState")
+    if state is None:
+        return _ask(question, tool, user, tool_name, arguments)
+
+    try:
+        responses = params.get("inputResponses")
+        if not (isinstance(responses, dict) and isinstance(responses.get(INPUT_KEY), dict)):
+            # MRTR: a verified state without an answer is asked again, with a fresh state.
+            _matching_payload(state, user, tool_name, arguments)
+            return _ask(question, tool, user, tool_name, arguments)
+        consume_state(state, user, tool_name, arguments)
+    except ConsentRefused as exc:
+        frappe.logger().info(f"MCP confirmation refused for {tool_name}: {exc}")
+        raise ProtocolError(
+            400, ERR_INVALID_PARAMS, _("confirmation expired or does not match; call the tool again")
+        ) from None
+
+    if accepted(responses):
+        return None
+    return {
+        "content": [{"type": "text", "text": _("The user did not confirm, so nothing was changed.")}],
+        "isError": True,
+    }
+
+
+def _question(tool: dict, params: dict) -> Optional[str]:
+    if getattr(frappe.local, "mcp_era", "handshake") != "modern":
+        return None
+    caps = getattr(frappe.local, "mcp_client_caps", None)
+    if not getattr(caps, "elicitation_form", False):
+        return None
+    ask = tool.get("confirmation")
+    return ask(params.get("arguments", {})) if callable(ask) else None
+
+
+def _ask(question: str, tool: dict, user: str, tool_name: str, arguments) -> dict:
+    verb = tool.get("confirmationVerb") or _("Confirm")
+    return input_required(question, verb, issue_state(user, tool_name, arguments))
+
+
+def _matching_payload(state, user: str, tool: str, arguments) -> tuple:
+    """Verify ``state`` for this exact call without claiming it; return (payload, seconds left)."""
+    payload = _verified_payload(state)
+
+    remaining = payload["exp"] - _now_timestamp()
+    if remaining <= 0:
+        raise ConsentRefused("expired")
+    if payload["user"] != user or payload["tool"] != tool:
+        raise ConsentRefused("issued for another user or tool")
+    if not hmac.compare_digest(payload["args_sha256"], _arguments_digest(arguments)):
+        raise ConsentRefused("arguments changed")
+    return payload, remaining
 
 
 def _signing_key() -> bytes:
