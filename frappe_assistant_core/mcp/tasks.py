@@ -200,7 +200,7 @@ def _load(params: dict):
 
 def _poll(doc) -> Progress:
     """Ask the tool's adapter; a reference gone or an adapter crash ends the task as failed."""
-    adapter = _ADAPTERS.get(doc.tool)
+    adapter = _adapter(doc.tool)
     if adapter is None:
         return Progress("failed", error=_error(_("This task can no longer be checked.")))
     try:
@@ -212,6 +212,15 @@ def _poll(doc) -> Progress:
     except Exception:
         frappe.log_error(title=f"FAC MCP task {doc.name}: checking {doc.tool} failed")
         return Progress("failed", error=_error(_("Checking this task failed. The error has been logged.")))
+
+
+def _adapter(tool_name: str) -> Callable[[str, str, dict], Progress] | None:
+    """The tool's adapter, registering the built-in ones first if this worker has not yet."""
+    if tool_name not in _ADAPTERS:
+        from frappe_assistant_core.mcp import task_adapters
+
+        task_adapters.register()
+    return _ADAPTERS.get(tool_name)
 
 
 def _apply(doc, progress: Progress) -> None:

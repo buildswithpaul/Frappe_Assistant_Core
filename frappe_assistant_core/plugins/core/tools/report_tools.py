@@ -21,6 +21,8 @@ import frappe
 from frappe import _
 from frappe.utils import now_datetime, time_diff_in_seconds
 
+from frappe_assistant_core.mcp.tasks import ERR_TASK_FAILED, TASK_MARKER, Progress, tasks_requested
+
 from .report_access import can_run_report
 from .report_requirements import (
     PREPARED_REPORT_WAIT_SECONDS,
@@ -88,6 +90,103 @@ def completed_prepared_report(filters, report_name: str) -> str | None:
     )
 
 
+def prepared_report_payload(
+    report_doc, filters, prepared_report_name: str, source: str, wait_time_seconds: int | None = None
+) -> dict | None:
+    """A Completed Prepared Report's stored result, shaped as the prepared-report handler returns it.
+
+    None when the result file is empty or unreadable: Frappe then leaves out the "result" key.
+    A report that matched no rows still carries it, as [] (issue #280). A report this call
+    waited for carries ``wait_time_seconds``; one read back from storage carries ``generated_at``.
+    """
+    from frappe.desk.query_report import get_prepared_report_result
+
+    result = get_prepared_report_result(report_doc, filters, dn=prepared_report_name)
+    if result is None or result.get("result") is None:
+        return None
+    if wait_time_seconds is None:
+        prepared_doc = result.get("doc")
+        timing = {"generated_at": str(prepared_doc.modified) if prepared_doc else None}
+    else:
+        timing = {"wait_time_seconds": wait_time_seconds}
+    return {
+        "result": result.get("result", []),
+        "columns": result.get("columns", []),
+        "message": result.get("message"),
+        "prepared_report": True,
+        "source": source,
+        "prepared_report_name": prepared_report_name,
+        **timing,
+        "status": "completed",
+        **_prepared_payload_extras(result, report_doc),
+    }
+
+
+def _preparing_message(report_doc) -> str:
+    return _("Preparing {0}").format(_(report_doc.name))
+
+
+def _job_error(error_message: str | None) -> str:
+    """The message line of the traceback a failed Prepared Report job stores, without the class."""
+    lines = [line for line in (error_message or "").strip().splitlines() if line.strip()]
+    if not lines:
+        return _("Unknown error during report generation")
+    return lines[-1].partition(": ")[2] if len(lines) > 1 else lines[-1]
+
+
+def _task_failed(message: str) -> Progress:
+    return Progress("failed", error={"code": ERR_TASK_FAILED, "message": message})
+
+
+def prepared_report_task_progress(reference_doctype: str, reference_name: str, arguments: dict) -> Progress:
+    """generate_report's MCP task adapter (see ``tasks.register_adapter``).
+
+    Polled as the task's owner: the report is re-opened through the same access and filter checks
+    ``execute_report`` makes, only the Prepared Report the task references is read, and only if it
+    belongs to this user and report. A Completed one is answered with exactly what the
+    synchronous tool returns for it.
+    """
+    report_name = arguments.get("report_name")
+    filters = arguments.get("filters", {})
+    report_doc, definitions, refusal = ReportTools._open_report(report_name, filters)
+    if refusal:
+        return _task_failed(refusal["error"])
+
+    prepared = frappe.get_doc(reference_doctype, reference_name)
+    if (
+        reference_doctype != "Prepared Report"
+        or prepared.owner != frappe.session.user
+        or prepared.report_name != report_doc.name
+    ):
+        return _task_failed(_("This task does not follow a report of yours."))
+
+    if prepared.status in ("Queued", "Started"):
+        return Progress("working", status_message=_preparing_message(report_doc))
+    if prepared.status != "Completed":
+        return _task_failed(_("Report generation failed: {0}").format(_job_error(prepared.error_message)))
+
+    effective_filters = dict(filters) if filters else {}
+    payload = prepared_report_payload(
+        report_doc,
+        ReportTools._prepared_report_filters(report_doc, effective_filters, definitions),
+        prepared.name,
+        "cached",
+    )
+    if payload is None:
+        return _task_failed(_("The report finished, but its result could not be read. Run it again."))
+    shaped = ReportTools._shape_result(
+        report_name,
+        report_doc,
+        payload,
+        filters,
+        effective_filters,
+        definitions,
+        max_rows=arguments.get("max_rows", DEFAULT_MAX_ROWS),
+        summary_only=bool(arguments.get("summary_only", False)),
+    )
+    return Progress("completed", raw_result=shaped)
+
+
 class ReportTools:
     """
     Shared utility class for Frappe report operations.
@@ -114,36 +213,10 @@ class ReportTools:
     ) -> Dict[str, Any]:
         """Execute a Frappe report"""
         try:
-            # Check if report exists
-            if not frappe.db.exists("Report", report_name):
-                return {"success": False, "error": f"Report '{report_name}' not found"}
+            report_doc, definitions, refusal = ReportTools._open_report(report_name, filters)
+            if refusal:
+                return refusal
 
-            # Check permissions
-            if not can_run_report(report_name):
-                return {"success": False, "error": f"No permission to access report '{report_name}'"}
-
-            # Get report document
-            report_doc = frappe.get_doc("Report", report_name)
-
-            # Resolve the report's declared filter contract once, then use it for
-            # both validation and defaulting so every code path agrees on it.
-            definitions = ReportTools._filter_definitions(report_doc)
-
-            # Validate filters before execution
-            validation_result = ReportTools._validate_filters(
-                filters or {}, report_doc, definitions if definitions is not None else {}
-            )
-            if not validation_result.get("valid"):
-                return {
-                    "success": False,
-                    "error": "Invalid filter values provided",
-                    "validation_errors": validation_result.get("errors", []),
-                    "error_details": validation_result.get("error_details", []),
-                    "suggestions": validation_result.get("suggestions", []),
-                }
-
-            # Snapshot user-provided filter keys before auto-defaults are injected
-            user_filter_keys = set((filters or {}).keys())
             # Use a single dict so auto-defaults mutate it in-place
             effective_filters = dict(filters) if filters else {}
 
@@ -162,104 +235,174 @@ class ReportTools:
             else:
                 return {"success": False, "error": f"Unsupported report type: {report_doc.report_type}"}
 
-            # Handle different result structures
-            if isinstance(result, dict):
-                # Extract the final filters that were actually used
-                final_filters = result.pop("_final_filters", effective_filters)
-
-                # Script/Query reports return {'result': [...], 'columns': [...]}
-                raw_data = result.get("result", [])
-                columns = result.get("columns", [])
-
-                # Convert frappe._dict objects to plain Python dicts for pandas compatibility
-                # This prevents "invalid __array_struct__" errors when using with pandas
-                data = [dict(row) if isinstance(row, dict) else row for row in raw_data]
-
-                # Determine which filters were auto-injected
-                auto_added = {k: v for k, v in final_filters.items() if k not in user_filter_keys}
-
-                defaulted_filters = ReportTools._defaulted_filters(final_filters, filters, definitions)
-
-                row_count = len(data)
-                has_total_row = bool(result.get("add_total_row", getattr(report_doc, "add_total_row", 0)))
-                # A report with neither a totals row nor a summary has nothing to stand in for its
-                # rows; answering with no data would send the model to add up records itself.
-                summary_unavailable = bool(summary_only) and not (
-                    has_total_row or result.get("report_summary")
-                )
-                rows = _limit_rows(
-                    data,
-                    _clamp_max_rows(max_rows),
-                    bool(summary_only) and not summary_unavailable,
-                    has_total_row,
-                )
-
-                debug_info = {
-                    "success": True,
-                    "report_name": report_name,
-                    "report_type": report_doc.report_type,
-                    "data": rows,
-                    "columns": columns,
-                    "message": result.get("message"),
-                    "filters_applied": final_filters,
-                    "filters_auto_added": auto_added if auto_added else None,
-                    "defaulted_filters": defaulted_filters,
-                    "raw_result_keys": list(result.keys()) if result else [],
-                    "row_count": row_count,
-                    "truncated": len(rows) < row_count,
-                    "summary_only": bool(summary_only),
-                    "data_count": len(rows),
-                    "result_type": type(result).__name__ if result else "None",
-                }
-                if rows:
-                    debug_info["total_count"] = row_count
-                # A failed Script Report returns its error without a status.
-                if result.get("status") == "error" or result.get("error"):
-                    return {
-                        "success": False,
-                        "error": result.get("error") or _("Report generation failed"),
-                        "status": "error",
-                        "prepared_report_name": result.get("prepared_report_name"),
-                        "suggestion": result.get("suggestion"),
-                    }
-                if result.get("status"):
-                    debug_info["status"] = result["status"]
-                if result.get("prepared_report_name"):
-                    debug_info["prepared_report_name"] = result["prepared_report_name"]
-                if result.get("report_summary"):
-                    debug_info["report_summary"] = result["report_summary"]
-                if summary_unavailable:
-                    debug_info["summary_unavailable"] = True
-                    debug_info["summary_note"] = _(
-                        "This report has no totals row or summary, so its rows are returned instead. "
-                        "Read totals from the report's own columns; do not add up rows yourself."
-                    )
-                if debug_info["truncated"] and not summary_only:
-                    debug_info["truncation_note"] = _(
-                        "Showing {0} of {1} rows. Pass max_rows (up to {2}) for more, or narrow the filters."
-                    ).format(len(rows), row_count, MAX_ROWS_CAP)
-            else:
-                return {"success": False, "error": f"Unexpected result type: {type(result).__name__}"}
-
-            # Add actionable guidance when report returns no data
-            if debug_info["row_count"] == 0 and debug_info.get("status") != "timeout":
-                debug_info["suggestion"] = (
-                    f"Report returned 0 rows. This usually means the auto-defaulted filters "
-                    f"(e.g. fiscal year dates, company) don't match any data. "
-                    f"Call report_requirements('{report_name}') to see all mandatory filters "
-                    f"with their valid options, then retry with explicit filter values."
-                )
-                if auto_added:
-                    debug_info["suggestion"] += (
-                        f" Auto-added filters were: {auto_added}. "
-                        f"Check that these values match data in your system."
-                    )
-
-            return debug_info
+            return ReportTools._shape_result(
+                report_name,
+                report_doc,
+                result,
+                filters,
+                effective_filters,
+                definitions,
+                max_rows=max_rows,
+                summary_only=summary_only,
+            )
 
         except Exception as e:
             frappe.log_error(f"assistant Execute Report Error: {str(e)}")
             return {"success": False, "error": str(e)}
+
+    @staticmethod
+    def _open_report(report_name: str, filters: dict | None):
+        """``(report_doc, definitions, None)`` when the session user may run ``report_name`` with
+        ``filters``, else ``(None, None, refusal)`` with the tool's error dict."""
+        # Check if report exists
+        if not frappe.db.exists("Report", report_name):
+            return None, None, {"success": False, "error": f"Report '{report_name}' not found"}
+
+        # Check permissions
+        if not can_run_report(report_name):
+            return None, None, {"success": False, "error": f"No permission to access report '{report_name}'"}
+
+        # Get report document
+        report_doc = frappe.get_doc("Report", report_name)
+
+        # Resolve the report's declared filter contract once, then use it for
+        # both validation and defaulting so every code path agrees on it.
+        definitions = ReportTools._filter_definitions(report_doc)
+
+        # Validate filters before execution
+        validation_result = ReportTools._validate_filters(
+            filters or {}, report_doc, definitions if definitions is not None else {}
+        )
+        if not validation_result.get("valid"):
+            return (
+                None,
+                None,
+                {
+                    "success": False,
+                    "error": "Invalid filter values provided",
+                    "validation_errors": validation_result.get("errors", []),
+                    "error_details": validation_result.get("error_details", []),
+                    "suggestions": validation_result.get("suggestions", []),
+                },
+            )
+        return report_doc, definitions, None
+
+    @staticmethod
+    def _shape_result(
+        report_name: str,
+        report_doc,
+        result,
+        filters: dict | None,
+        effective_filters: dict,
+        definitions: dict | None,
+        *,
+        max_rows: int,
+        summary_only: bool,
+    ) -> Dict[str, Any]:
+        """The tool's answer from a report run's result: rows capped, totals kept, filters named.
+
+        Shared by ``execute_report`` and the MCP task adapter, so a polled task answers exactly
+        as the synchronous call would.
+        """
+        # User-provided filter keys: auto-defaults went into effective_filters, never filters.
+        user_filter_keys = set((filters or {}).keys())
+
+        if not isinstance(result, dict):
+            return {"success": False, "error": f"Unexpected result type: {type(result).__name__}"}
+
+        # finish_call turns the marker into the task; it is not part of the report's keys.
+        task_marker = result.pop(TASK_MARKER, None)
+
+        # Extract the final filters that were actually used
+        final_filters = result.pop("_final_filters", effective_filters)
+
+        # Script/Query reports return {'result': [...], 'columns': [...]}
+        raw_data = result.get("result", [])
+        columns = result.get("columns", [])
+
+        # Convert frappe._dict objects to plain Python dicts for pandas compatibility
+        # This prevents "invalid __array_struct__" errors when using with pandas
+        data = [dict(row) if isinstance(row, dict) else row for row in raw_data]
+
+        # Determine which filters were auto-injected
+        auto_added = {k: v for k, v in final_filters.items() if k not in user_filter_keys}
+
+        defaulted_filters = ReportTools._defaulted_filters(final_filters, filters, definitions)
+
+        row_count = len(data)
+        has_total_row = bool(result.get("add_total_row", getattr(report_doc, "add_total_row", 0)))
+        # A report with neither a totals row nor a summary has nothing to stand in for its
+        # rows; answering with no data would send the model to add up records itself.
+        summary_unavailable = bool(summary_only) and not (has_total_row or result.get("report_summary"))
+        rows = _limit_rows(
+            data,
+            _clamp_max_rows(max_rows),
+            bool(summary_only) and not summary_unavailable,
+            has_total_row,
+        )
+
+        debug_info = {
+            "success": True,
+            "report_name": report_name,
+            "report_type": report_doc.report_type,
+            "data": rows,
+            "columns": columns,
+            "message": result.get("message"),
+            "filters_applied": final_filters,
+            "filters_auto_added": auto_added if auto_added else None,
+            "defaulted_filters": defaulted_filters,
+            "raw_result_keys": list(result.keys()) if result else [],
+            "row_count": row_count,
+            "truncated": len(rows) < row_count,
+            "summary_only": bool(summary_only),
+            "data_count": len(rows),
+            "result_type": type(result).__name__ if result else "None",
+        }
+        if rows:
+            debug_info["total_count"] = row_count
+        # A failed Script Report returns its error without a status.
+        if result.get("status") == "error" or result.get("error"):
+            return {
+                "success": False,
+                "error": result.get("error") or _("Report generation failed"),
+                "status": "error",
+                "prepared_report_name": result.get("prepared_report_name"),
+                "suggestion": result.get("suggestion"),
+            }
+        if result.get("status"):
+            debug_info["status"] = result["status"]
+        if result.get("prepared_report_name"):
+            debug_info["prepared_report_name"] = result["prepared_report_name"]
+        if result.get("report_summary"):
+            debug_info["report_summary"] = result["report_summary"]
+        if summary_unavailable:
+            debug_info["summary_unavailable"] = True
+            debug_info["summary_note"] = _(
+                "This report has no totals row or summary, so its rows are returned instead. "
+                "Read totals from the report's own columns; do not add up rows yourself."
+            )
+        if debug_info["truncated"] and not summary_only:
+            debug_info["truncation_note"] = _(
+                "Showing {0} of {1} rows. Pass max_rows (up to {2}) for more, or narrow the filters."
+            ).format(len(rows), row_count, MAX_ROWS_CAP)
+
+        # Add actionable guidance when report returns no data
+        if debug_info["row_count"] == 0 and debug_info.get("status") != "timeout":
+            debug_info["suggestion"] = (
+                f"Report returned 0 rows. This usually means the auto-defaulted filters "
+                f"(e.g. fiscal year dates, company) don't match any data. "
+                f"Call report_requirements('{report_name}') to see all mandatory filters "
+                f"with their valid options, then retry with explicit filter values."
+            )
+            if auto_added:
+                debug_info["suggestion"] += (
+                    f" Auto-added filters were: {auto_added}. "
+                    f"Check that these values match data in your system."
+                )
+
+        if task_marker:
+            debug_info[TASK_MARKER] = task_marker
+        return debug_info
 
     @staticmethod
     def _defaulted_filters(final_filters: dict, supplied: dict | None, definitions: dict | None):
@@ -410,36 +553,18 @@ class ReportTools:
             get_reports_in_queued_state,
             make_prepared_report,
         )
-        from frappe.desk.query_report import get_prepared_report_result, run
+        from frappe.desk.query_report import run
 
         try:
             # Check if a completed prepared report exists with these filters
             prepared_report_name = completed_prepared_report(filters, report_doc.name)
 
             if prepared_report_name:
-                # Found existing prepared report - retrieve cached data
-                result = get_prepared_report_result(report_doc, filters, dn=prepared_report_name)
-
-                # A report that matched no rows is a finished report. Frappe always
-                # puts a "result" key in the payload and leaves it [] in that case,
-                # and omits the key entirely only when the stored result file was
-                # empty or unreadable — the one case worth regenerating. Testing the
-                # key's presence keeps an empty report from being queued all over
-                # again on every call. See issue #280.
-                if result is not None and result.get("result") is not None:
-                    # Successfully retrieved cached data
-                    prepared_doc = result.get("doc")
-                    return {
-                        "result": result.get("result", []),
-                        "columns": result.get("columns", []),
-                        "message": result.get("message"),
-                        "prepared_report": True,
-                        "source": "cached",
-                        "prepared_report_name": prepared_report_name,
-                        "generated_at": str(prepared_doc.modified) if prepared_doc else None,
-                        "status": "completed",
-                        **_prepared_payload_extras(result, report_doc),
-                    }
+                # An unreadable result file (None) is the one case worth regenerating; a report
+                # that matched no rows is finished and must not be queued again (issue #280).
+                cached = prepared_report_payload(report_doc, filters, prepared_report_name, "cached")
+                if cached is not None:
+                    return cached
 
             # Get report timeout configuration
             configured_timeout = frappe.get_value("Report", report_doc.name, "timeout")
@@ -491,6 +616,17 @@ class ReportTools:
                     "name"
                 )
 
+            if tasks_requested():
+                # The client polls an MCP task instead of this request sleeping on the job.
+                return {
+                    **ReportTools._still_preparing(report_doc, prepared_report_name, 0),
+                    TASK_MARKER: {
+                        "reference_doctype": "Prepared Report",
+                        "reference_name": prepared_report_name,
+                        "status_message": _preparing_message(report_doc),
+                    },
+                }
+
             # Poll for completion with exponential backoff
             max_wait_time = min(report_timeout, PREPARED_REPORT_WAIT_SECONDS)
             poll_interval = 2.0  # Start with 2 seconds
@@ -510,24 +646,17 @@ class ReportTools:
                 prepared_doc = frappe.get_doc("Prepared Report", prepared_report_name)
 
                 if prepared_doc.status == "Completed":
-                    # Report is ready! Retrieve and return data
-                    result = get_prepared_report_result(report_doc, filters, dn=prepared_report_name)
-
-                    # Same presence test as the cached branch above: without it a
-                    # report Frappe marked Completed in seconds polls to the full
-                    # timeout purely because it found nothing. See issue #280.
-                    if result is not None and result.get("result") is not None:
-                        return {
-                            "result": result.get("result", []),
-                            "columns": result.get("columns", []),
-                            "message": result.get("message"),
-                            "prepared_report": True,
-                            "source": "background_job_completed",
-                            "prepared_report_name": prepared_report_name,
-                            "wait_time_seconds": int(elapsed_time),
-                            "status": "completed",
-                            **_prepared_payload_extras(result, report_doc),
-                        }
+                    # Same presence test as the cached branch: without it a report Frappe
+                    # marked Completed in seconds polls to the full timeout (issue #280).
+                    completed = prepared_report_payload(
+                        report_doc,
+                        filters,
+                        prepared_report_name,
+                        "background_job_completed",
+                        wait_time_seconds=int(elapsed_time),
+                    )
+                    if completed is not None:
+                        return completed
 
                 elif prepared_doc.status == "Error":
                     # Report generation failed
@@ -545,25 +674,38 @@ class ReportTools:
                 poll_interval = min(poll_interval * 1.5, max_poll_interval)
 
             # Timeout reached - report is still processing
-            return {
-                "result": [],
-                "columns": [],
-                "success": True,
-                "status": "timeout",
-                "prepared_report": True,
-                "prepared_report_name": prepared_report_name,
-                "message": _(
-                    "The report {0} is still being prepared in the background (waited {1}s). "
-                    "Call generate_report again with the same filters in a minute or two: the retry "
-                    "picks up this same report instead of starting a new one."
-                ).format(report_doc.name, int(elapsed_time)),
-                "retry_guidance": f"Use report_name='{report_doc.name}' with the same filters to retrieve results.",
-                "wait_time_seconds": int(elapsed_time),
-            }
+            return ReportTools._still_preparing(report_doc, prepared_report_name, int(elapsed_time))
 
         except Exception as e:
             frappe.log_error(f"Prepared report handling error for {report_doc.name}: {str(e)}")
             raise e
+
+    @staticmethod
+    def _still_preparing(report_doc, prepared_report_name: str, waited: int) -> dict:
+        """The answer for a prepared report whose job has not finished: retry, not empty."""
+        return {
+            "result": [],
+            "columns": [],
+            "success": True,
+            "status": "timeout",
+            "prepared_report": True,
+            "prepared_report_name": prepared_report_name,
+            "message": _(
+                "The report {0} is still being prepared in the background (waited {1}s). "
+                "Call generate_report again with the same filters in a minute or two: the retry "
+                "picks up this same report instead of starting a new one."
+            ).format(report_doc.name, waited),
+            "retry_guidance": f"Use report_name='{report_doc.name}' with the same filters to retrieve results.",
+            "wait_time_seconds": waited,
+        }
+
+    @staticmethod
+    def _prepared_report_filters(report_doc, filters: dict, definitions: dict | None) -> dict:
+        """The filters a prepared report is queued and read back with: a Script Report's are
+        normalised first, a Query Report's are passed as given."""
+        if report_doc.report_type == "Script Report":
+            return ReportTools._normalize_filter_values(filters, definitions)
+        return filters
 
     @staticmethod
     def _execute_query_report(report_doc, filters, get_columns_only=False, definitions=None):
@@ -574,7 +716,9 @@ class ReportTools:
         if getattr(report_doc, "prepared_report", False) and not getattr(
             report_doc, "disable_prepared_report", False
         ):
-            return ReportTools._handle_prepared_report_execution(report_doc, filters)
+            return ReportTools._handle_prepared_report_execution(
+                report_doc, ReportTools._prepared_report_filters(report_doc, filters, definitions)
+            )
 
         try:
             # Add default filters for common requirements and clean None values
@@ -678,7 +822,7 @@ class ReportTools:
             report_doc, "disable_prepared_report", False
         ):
             return ReportTools._handle_prepared_report_execution(
-                report_doc, ReportTools._normalize_filter_values(filters, definitions)
+                report_doc, ReportTools._prepared_report_filters(report_doc, filters, definitions)
             )
 
         try:
