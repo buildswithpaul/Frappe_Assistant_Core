@@ -23,7 +23,11 @@ import ``tasks`` for the task marker.
 
 from frappe_assistant_core.mcp.tasks import register_adapter
 from frappe_assistant_core.plugins.core.tools.report_tools import prepared_report_task_progress
+from frappe_assistant_core.plugins.migration.tools.run_migration_plan import plan_task_progress
+from frappe_assistant_core.plugins.migration.tools.start_import import import_task_progress
 
 
 def register() -> None:
     register_adapter("generate_report", prepared_report_task_progress)
+    register_adapter("start_import", import_task_progress)
+    register_adapter("run_migration_plan", plan_task_progress)

@@ -21,7 +21,7 @@ import frappe
 from frappe import _
 from frappe.utils import now_datetime, time_diff_in_seconds
 
-from frappe_assistant_core.mcp.tasks import ERR_TASK_FAILED, TASK_MARKER, Progress, tasks_requested
+from frappe_assistant_core.mcp.tasks import TASK_MARKER, Progress, failed, tasks_requested
 
 from .report_access import can_run_report
 from .report_requirements import (
@@ -134,10 +134,6 @@ def _job_error(error_message: str | None) -> str:
     return lines[-1].partition(": ")[2] if len(lines) > 1 else lines[-1]
 
 
-def _task_failed(message: str) -> Progress:
-    return Progress("failed", error={"code": ERR_TASK_FAILED, "message": message})
-
-
 def prepared_report_task_progress(reference_doctype: str, reference_name: str, arguments: dict) -> Progress:
     """generate_report's MCP task adapter (see ``tasks.register_adapter``).
 
@@ -150,7 +146,7 @@ def prepared_report_task_progress(reference_doctype: str, reference_name: str, a
     filters = arguments.get("filters", {})
     report_doc, definitions, refusal = ReportTools._open_report(report_name, filters)
     if refusal:
-        return _task_failed(refusal["error"])
+        return failed(refusal["error"])
 
     prepared = frappe.get_doc(reference_doctype, reference_name)
     if (
@@ -158,12 +154,12 @@ def prepared_report_task_progress(reference_doctype: str, reference_name: str, a
         or prepared.owner != frappe.session.user
         or prepared.report_name != report_doc.name
     ):
-        return _task_failed(_("This task does not follow a report of yours."))
+        return failed(_("This task does not follow a report of yours."))
 
     if prepared.status in ("Queued", "Started"):
         return Progress("working", status_message=_preparing_message(report_doc))
     if prepared.status != "Completed":
-        return _task_failed(_("Report generation failed: {0}").format(_job_error(prepared.error_message)))
+        return failed(_("Report generation failed: {0}").format(_job_error(prepared.error_message)))
 
     effective_filters = dict(filters) if filters else {}
     payload = prepared_report_payload(
@@ -173,7 +169,7 @@ def prepared_report_task_progress(reference_doctype: str, reference_name: str, a
         "cached",
     )
     if payload is None:
-        return _task_failed(_("The report finished, but its result could not be read. Run it again."))
+        return failed(_("The report finished, but its result could not be read. Run it again."))
     shaped = ReportTools._shape_result(
         report_name,
         report_doc,

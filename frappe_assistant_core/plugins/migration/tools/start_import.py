@@ -21,6 +21,7 @@ import frappe
 from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
+from frappe_assistant_core.mcp.tasks import TASK_MARKER, Progress, failed, tasks_requested
 from frappe_assistant_core.utils import import_plan, import_run
 from frappe_assistant_core.utils.import_mapping import SESSION_DOCTYPE, load_session
 from frappe_assistant_core.utils.import_session import FileProblem
@@ -165,23 +166,71 @@ class StartImport(BaseTool):
             return {"success": False, "error": exception_message(e), "session": session_name}
 
         session.reload()
-        result = import_run.result_of(session, data_import)
+        reply = session_result(session, data_import)
         queued = state == "running" or (state in ("started", "continued") and not import_run._runs_now())
         if queued:
             # Queued or still running in the background: what the Data Import shows now is from
             # before this run (a retry's old counts, say), not its end.
-            result["state"] = state
-            result["message"] = _(
+            reply["state"] = state
+            reply["message"] = _(
                 "Importing {0} {1} records in the background ({2} done so far). Follow it with "
                 "get_document on Data Import {3}."
             ).format(
                 # A queued Data Import hasn't counted its records yet: the check has.
-                result["total"] or arguments.get("rows"),
+                reply["total"] or arguments.get("rows"),
                 _(session.target_doctype),
-                result["created"],
+                reply["created"],
                 data_import,
             )
-        return {"success": True, "session": session.name, **result}
+            if tasks_requested():
+                reply[TASK_MARKER] = {
+                    "reference_doctype": SESSION_DOCTYPE,
+                    "reference_name": session.name,
+                    "status_message": _importing_message(session, data_import),
+                }
+        return reply
+
+
+def session_result(session, data_import: str) -> Dict[str, Any]:
+    """start_import's reply for the session's Data Import, as its task also ends with it."""
+    return {"success": True, "session": session.name, **import_run.result_of(session, data_import)}
+
+
+def _importing_message(session, data_import: str) -> str:
+    return _("Importing {0} records (Data Import {1})").format(_(session.target_doctype), data_import)
+
+
+def import_task_progress(reference_doctype: str, reference_name: str, arguments: dict) -> Progress:
+    """start_import's MCP task adapter (see ``tasks.register_adapter``).
+
+    Polled as the task's owner: the session is loaded through ``load_session``, as the tool loads
+    it, and its latest Data Import read through ``result_of``, which refuses another user's. The
+    task is working while a job imports the session. An Importing session nothing runs any more
+    is not left working: one whose Data Import ran to its end is answered with its result, one
+    that stopped short (``import_run.continues``: the worker died, or the job timed out) fails,
+    pointing to start_import, which continues it.
+    """
+    if reference_doctype != SESSION_DOCTYPE:
+        return failed(_("This task does not follow an import session."))
+    try:
+        session = load_session(reference_name)
+        if not session.data_imports:
+            return failed(_("Import session {0} has no import to follow.").format(reference_name))
+        data_import = session.data_imports[-1].data_import
+        if session.status == import_run.IMPORTING:
+            if import_run.job_running(session):
+                return Progress("working", status_message=_importing_message(session, data_import))
+            if import_run.continues(session):
+                return failed(
+                    _(
+                        "The import stopped before its end, in Data Import {0}. Call start_import "
+                        "again to continue it: records already imported are skipped."
+                    ).format(data_import)
+                )
+        return Progress("completed", raw_result=session_result(session, data_import))
+    except frappe.PermissionError:
+        frappe.clear_messages()
+        return failed(_("You can no longer follow import session {0}.").format(reference_name))
 
 
 # Make sure class name matches file name for discovery

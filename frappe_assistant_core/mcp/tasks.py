@@ -58,6 +58,14 @@ class Progress:
     error: dict | None = None
 
 
+def failed(message: str, data: dict | None = None) -> Progress:
+    """An adapter's answer for a task whose work failed, or that the poller may no longer follow."""
+    error = _error(message)
+    if data is not None:
+        error["data"] = data
+    return Progress("failed", error=error)
+
+
 _ADAPTERS: dict[str, Callable[[str, str, dict], Progress]] = {}
 
 
