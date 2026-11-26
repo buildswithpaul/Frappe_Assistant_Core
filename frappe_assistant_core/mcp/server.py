@@ -46,7 +46,7 @@ from frappe_assistant_core.mcp import protocol
 # document_action, once clients have picked up the new name from tools/list.
 TOOL_NAME_ALIASES = {"submit_document": "document_action"}
 
-SERVER_VERSION = "2.0.0"
+SERVER_VERSION = protocol.SERVER_VERSION
 
 
 class MCPServer:
@@ -179,8 +179,7 @@ class MCPServer:
             tool_registry = self._tool_registry
 
         # Set before any early return, so nothing from a previous request on this worker survives.
-        frappe.local.mcp_era = "handshake"
-        frappe.local.mcp_client_caps = protocol.ClientCaps()
+        protocol.set_request_state()
 
         # Only POST allowed
         if request.method != "POST":
@@ -218,19 +217,11 @@ class MCPServer:
             return self._error_response(
                 response, request_id, e.code, e.message, http_status=e.http_status, data=e.data
             )
-        frappe.local.mcp_era = era
-        frappe.local.mcp_client_caps = caps
-
-        # Populate correlation ids on frappe.local so downstream audit logging
-        # can tag every tool execution with the MCP session and client. See
-        # protocol.session_id and protocol.declared_client_name for the fallback order.
+        protocol.set_request_state(era, caps)
         self._populate_correlation_ids(request, data, era)
 
-        # Route method
         method = data.get("method")
         params = data.get("params", {})
-
-        result = None
 
         try:
             if method == "initialize":
@@ -260,34 +251,22 @@ class MCPServer:
                 result = protocol.discover_result(server_name=self.name, server_version=SERVER_VERSION)
             else:
                 frappe.logger().warning(f"MCP Unknown method: {method}")
-                # The modern era answers a method it does not have with 404; the handshake era keeps 400.
+                status = 404 if era == "modern" else 400
                 return self._error_response(
-                    response,
-                    request_id,
-                    -32601,
-                    f"Method not found: {method}",
-                    http_status=404 if era == "modern" else 400,
+                    response, request_id, -32601, f"Method not found: {method}", status
                 )
-        except ValueError as e:
-            if era == "modern" and method == "resources/read":
+        except Exception as e:
+            frappe.logger().error(
+                f"MCP Handler Error for method '{method}': {str(e)}\n{traceback.format_exc()}"
+            )
+            if isinstance(e, ValueError) and era == "modern" and method == "resources/read":
                 return self._error_response(
                     response, request_id, protocol.ERR_INVALID_PARAMS, str(e), data={"uri": params.get("uri")}
                 )
-            return self._internal_error(response, request_id, method, e)
-        except Exception as e:
-            return self._internal_error(response, request_id, method, e)
+            return self._error_response(response, request_id, -32603, f"Internal error: {str(e)}")
 
-        if era == "modern" and method != "server/discover":
-            ttl_ms = protocol.ttl_ms_for(method)
-            result = protocol.decorate_result(
-                result,
-                server_name=self.name,
-                server_version=SERVER_VERSION,
-                cache=ttl_ms is not None,
-                ttl_ms=ttl_ms,
-            )
+        result = protocol.finish_result(era, method, result, self.name, SERVER_VERSION)
 
-        # Success response
         return self._success_response(response, request_id, result)
 
     def add_tool(self, tool_dict: Dict):
@@ -302,13 +281,7 @@ class MCPServer:
         self._tool_registry[tool_dict["name"]] = tool_dict
 
     def _populate_correlation_ids(self, request: Request, data: Dict, era: str):
-        """
-        Set `frappe.local.assistant_session_id` and `assistant_client_id`.
-
-        The session id is the caller's own (see `protocol.session_id`) or None: a random id per
-        request groups nothing. The client id is the explicit header, else the declared client
-        name (see `protocol.declared_client_name`).
-        """
+        """Tag audit logs with the caller's session and client (see protocol.session_id)."""
         import frappe
 
         frappe.local.assistant_session_id = protocol.session_id(request.headers, era)
@@ -618,14 +591,6 @@ class MCPServer:
             response.headers["mcp-protocol-version"] = incoming_version
 
         return response
-
-    def _internal_error(self, response: Response, request_id: Any, method: str, error: Exception) -> Response:
-        import frappe
-
-        frappe.logger().error(
-            f"MCP Handler Error for method '{method}': {str(error)}\n{traceback.format_exc()}"
-        )
-        return self._error_response(response, request_id, -32603, f"Internal error: {str(error)}")
 
     def _handle_prompts_list(self, params: Dict, request_id: Any) -> Dict:
         """

@@ -39,6 +39,8 @@ META_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities"
 META_SERVER_INFO = "io.modelcontextprotocol/serverInfo"
 META_CLIENT_INFO = "io.modelcontextprotocol/clientInfo"
 
+SERVER_VERSION = "2.0.0"
+
 LIST_TTL_MS = 300_000
 READ_TTL_MS = 60_000
 # Results a client may cache, and for how long. The tool list depends on the caller's roles, so
@@ -154,6 +156,14 @@ def client_caps(body: dict) -> ClientCaps:
     )
 
 
+def set_request_state(era: str = "handshake", caps: ClientCaps | None = None) -> None:
+    """Publish the request's era and capabilities on frappe.local, for tools to read."""
+    import frappe
+
+    frappe.local.mcp_era = era
+    frappe.local.mcp_client_caps = caps or ClientCaps()
+
+
 def resolve_request(headers: Mapping[str, str], body: dict) -> tuple[str, ClientCaps]:
     """Decide a request's era and, in the modern era, check its headers and read its capabilities.
 
@@ -195,8 +205,18 @@ def _server_info(server_name: str, server_version: str) -> dict:
     return {"name": server_name, "version": server_version}
 
 
-def ttl_ms_for(method: str) -> int | None:
-    return _TTL_MS.get(method)
+def finish_result(era: str, method: str, result: dict, server_name: str, server_version: str) -> dict:
+    """Decorate a modern-era result; a handshake-era result is returned untouched."""
+    if era != "modern":
+        return result
+    ttl_ms = _TTL_MS.get(method)
+    return decorate_result(
+        result,
+        server_name=server_name,
+        server_version=server_version,
+        cache=ttl_ms is not None,
+        ttl_ms=ttl_ms,
+    )
 
 
 def decorate_result(
@@ -212,6 +232,7 @@ def decorate_result(
 
 def discover_result(*, server_name: str, server_version: str) -> dict:
     return {
+        "resultType": "complete",
         "supportedVersions": list(ALL_VERSIONS),
         "capabilities": {
             "tools": {},

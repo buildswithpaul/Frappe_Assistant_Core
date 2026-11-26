@@ -41,7 +41,10 @@ MODERN = "2026-07-28"
 SNAPSHOT_PATH = os.path.join(os.path.dirname(__file__), "fixtures", "mcp_handshake_snapshot.json")
 # Fixed names so the snapshot never depends on what else a site has installed.
 FIXTURE_ROLE = "System Manager"
-SNAPSHOT_SKILLS = 3
+# System skills with no requires_app, so they are listed on every CI bench (a CRM skill is not).
+SNAPSHOT_SKILLS = ("add-custom-field", "attach-chat-file-usage", "set-up-approval-workflow")
+# Of the fixture record, only what every supported Frappe version and site gives the same.
+SNAPSHOT_RECORD_KEYS = ("doctype", "name", "role_name")
 
 
 def _request(body: dict, headers: dict | None = None) -> MagicMock:
@@ -101,13 +104,30 @@ def _normalise(value):
     return value
 
 
+def _stable_record(call_result: dict) -> dict:
+    """Cut a get_document result down to ``SNAPSHOT_RECORD_KEYS``: the full Role record varies with
+    the installed Frappe version and with local edits."""
+    text = call_result["result"]["content"][0]["text"]
+    payload = json.loads(text)
+    data = payload.get("data", {})
+    call_result["result"]["content"][0]["text"] = json.dumps(
+        {"success": payload.get("success"), "data": {k: data.get(k) for k in SNAPSHOT_RECORD_KEYS}},
+        sort_keys=True,
+    )
+    return call_result
+
+
 def build_handshake_snapshot() -> dict:
     """Run the five handshake-era calls and return their normalised responses.
 
-    Normalised: ``creation``/``modified`` and timing keys (change every run, incl. inside the
-    JSON text of tools/call). tools/list is limited to ``get_document`` and resources/list to the
-    first ``SNAPSHOT_SKILLS`` skills, because which other tools and skills exist depends on the
-    site, not on the code under test.
+    The fixture embeds the get_document tool description and the skills' text, so regenerate it
+    with ``write_snapshot`` (on code that still serves handshake clients unchanged) when those
+    change on purpose.
+
+    Normalised: ``creation``/``modified`` and timing keys (change every run); tools/call keeps only
+    ``SNAPSHOT_RECORD_KEYS`` of the record. tools/list is limited to ``get_document`` and
+    resources/list to ``SNAPSHOT_SKILLS``, because which other tools and skills exist depends on
+    the site, not on the code under test.
     """
     settings = frappe.get_single("Assistant Core Settings")
     # skill_mode "supplementary" is the shipped default; set it so a site's own setting can't leak in.
@@ -126,18 +146,20 @@ def build_handshake_snapshot() -> dict:
         "initialize": call(1, "initialize", {"protocolVersion": "2025-06-18", "clientInfo": {"name": "t"}}),
         "tools/list": call(2, "tools/list", {}),
         "resources/list": call(3, "resources/list", {}),
-        "tools/call": call(
-            5,
-            "tools/call",
-            {"name": "get_document", "arguments": {"doctype": "Role", "name": FIXTURE_ROLE}},
+        "tools/call": _stable_record(
+            call(
+                5,
+                "tools/call",
+                {"name": "get_document", "arguments": {"doctype": "Role", "name": FIXTURE_ROLE}},
+            )
         ),
     }
-    resources = snapshot["resources/list"]["result"]["resources"]
-    snapshot["resources/list"]["result"]["resources"] = sorted(resources, key=lambda r: r["uri"])[
-        :SNAPSHOT_SKILLS
-    ]
-    uri = snapshot["resources/list"]["result"]["resources"][0]["uri"]
-    snapshot["resources/read"] = call(4, "resources/read", {"uri": uri})
+    listing = snapshot["resources/list"]["result"]
+    wanted = {f"fac://skills/{skill_id}" for skill_id in SNAPSHOT_SKILLS}
+    listing["resources"] = sorted(
+        (r for r in listing["resources"] if r["uri"] in wanted), key=lambda r: r["uri"]
+    )
+    snapshot["resources/read"] = call(4, "resources/read", {"uri": f"fac://skills/{SNAPSHOT_SKILLS[0]}"})
     return snapshot
 
 
@@ -177,6 +199,7 @@ class TestModernEra(BaseAssistantTest):
         result = _json(response)["result"]
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(result["resultType"], "complete")
         self.assertIn(MODERN, result["supportedVersions"])
         self.assertIn(TASKS_EXT, result["capabilities"]["extensions"])
         self.assertIn("io.modelcontextprotocol/skills", result["capabilities"]["extensions"])
