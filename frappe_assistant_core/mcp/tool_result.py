@@ -26,6 +26,8 @@ task completed after the call returned, uses ``finish_unwrapped`` so fencing sta
 import json
 from typing import Any
 
+from frappe_assistant_core.mcp.protocol import is_modern_era
+
 _IMAGE_MIME_TYPES = {
     "jpeg": "image/jpeg",
     "jpg": "image/jpeg",
@@ -60,7 +62,9 @@ def unwrap_tool_result(tool: dict, raw: Any) -> tuple[Any, bool, bool]:
 
 
 def finish_unwrapped(tool: dict, result: Any, is_error: bool = False, own_message: bool = False) -> dict:
-    """Turn an unwrapped tool result into ``{"content": [...], "isError": bool}``."""
+    """Turn an unwrapped tool result into ``{"content": [...], "isError": bool}``, with
+    ``structuredContent`` when the tool declares an output schema, the call succeeded and the
+    client is in the modern era."""
     # Tools can include _image_content so the LLM sees the image via vision, not just metadata.
     image_content = None
     if isinstance(result, dict):
@@ -94,7 +98,19 @@ def finish_unwrapped(tool: dict, result: Any, is_error: bool = False, own_messag
             }
         )
 
-    return {"content": content, "isError": is_error}
+    reply = {"content": content, "isError": is_error}
+    # The same result as data, for a client that reads fields: taken from the text, so it is
+    # fenced exactly as the text is. A failure is described by isError, not by the schema.
+    # Modern era only: the only clients whose tools/list names an output schema.
+    if tool.get("outputSchema") and isinstance(result, dict) and not is_error and is_modern_era():
+        reply["structuredContent"] = json.loads(result_text, parse_constant=_no_json_value)
+    return reply
+
+
+def _no_json_value(_constant: str) -> None:
+    """NaN and the infinities, which a report can compute, are not JSON: a strict client would
+    refuse the whole response. Inside the text they are only characters; as data they become null."""
+    return None
 
 
 def finish_tool_result(tool: dict, raw: Any) -> dict:

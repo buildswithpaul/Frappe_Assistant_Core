@@ -26,6 +26,24 @@ from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool
 
+#: What a successful call returns. Loose on purpose: see BaseTool.outputSchema.
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "success": {"type": "boolean"},
+        "reports": {
+            "type": "array",
+            "items": {"type": "object"},
+            "description": "With query, module or report_type: each report's name, report_type and module; with query also purpose and mandatory_filters, best match first.",
+        },
+        "count": {"type": "integer"},
+        "modules": {
+            "type": "object",
+            "description": "With no argument: the number of reports in each module.",
+        },
+    },
+}
+
 
 class ReportList(BaseTool):
     """
@@ -41,6 +59,7 @@ class ReportList(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "report_list"
+        self.outputSchema = OUTPUT_SCHEMA
         self.description = (
             "Find the report that answers a business question. Search with `query` first (for example "
             "'receivables overdue' or 'sales by territory'); a report built on this site ranks "

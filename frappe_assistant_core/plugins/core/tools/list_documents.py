@@ -487,6 +487,38 @@ def run_grouped_query(
     return frappe.get_list(doctype, fields=aggregate_query_fields(specs, group_by, v16_form), **query)
 
 
+#: What a successful call returns. Loose on purpose: see BaseTool.outputSchema.
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "success": {"type": "boolean"},
+        "data": {
+            "type": "array",
+            "items": {"type": "object"},
+            "description": "The records, one object per record holding the requested fields. Absent with group_by or aggregate.",
+        },
+        "total_count": {
+            "type": ["integer", "null"],
+            "description": "Records matching the filters, before limit and offset.",
+        },
+        "has_more": {"type": "boolean"},
+        "next_offset": {
+            "type": "integer",
+            "description": "Pass as offset for the next page. Present when has_more is true.",
+        },
+        "rows": {
+            "type": "array",
+            "items": {"type": "object"},
+            "description": "With group_by or aggregate: one object per group, holding group_value and one key per aggregate named function_field, e.g. sum_grand_total. Without group_by, a single object of totals.",
+        },
+        "unresolved_filters": {
+            "type": "object",
+            "description": "Present when a Link filter value matched no record: suggestions for it.",
+        },
+    },
+}
+
+
 class DocumentList(BaseTool):
     """
     Tool for listing and searching Frappe documents.
@@ -501,6 +533,7 @@ class DocumentList(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "list_documents"
+        self.outputSchema = OUTPUT_SCHEMA
         self.description = "Search and list Frappe documents with optional filtering. Use this when users want to find records, get lists of documents, or search for data. For business totals (sales, receivables, stock) try report_list(query=...) first and come here with group_by only when no report fits; cite the DocType and filters you used in the answer. For submittable DocTypes (invoices, orders, entries) only submitted documents are returned unless you pass docstatus explicitly. If a query returns nothing because a Link filter value matches no record, the response carries unresolved_filters with ranked suggestions — check it before reporting that no data exists. When has_more is true the response carries next_offset; pass it as offset to read the next page. For totals by group (sum, count, avg, min, max) pass group_by and aggregate — exact figures computed by the database over records the user may read; never add up listed rows yourself. To rank groups (top customers by sales) pass order_by as an aggregate alias, e.g. 'sum_grand_total desc'. Grouping by a Date field groups by exact day, not by month or year."
         self.requires_permission = None  # Permission checked dynamically per DocType
 

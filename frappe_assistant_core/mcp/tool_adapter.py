@@ -37,7 +37,7 @@ def build_tool_dict(tool_instance) -> Dict[str, Any]:
         tool_instance: Instance of BaseTool or compatible class
 
     Returns:
-        Dict with keys: name, description, inputSchema, annotations, fn,
+        Dict with keys: name, description, inputSchema, outputSchema (or None), annotations, fn,
         safeExecuteEnvelope, confirmation (a callable returning the question or None)
         and confirmationVerb ("" when the tool never asks)
     """
@@ -50,6 +50,7 @@ def build_tool_dict(tool_instance) -> Dict[str, Any]:
         "name": tool_instance.name,
         "description": tool_instance.description,
         "inputSchema": tool_instance.inputSchema,
+        "outputSchema": getattr(tool_instance, "outputSchema", None),
         "annotations": getattr(tool_instance, "annotations", None),
         "safeExecuteEnvelope": True,
         "untrustedFields": tuple(getattr(tool_instance, "untrusted_fields", ()) or ()),

@@ -26,6 +26,31 @@ from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool
 
+#: What a successful call returns. Loose on purpose: see BaseTool.outputSchema.
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "success": {"type": "boolean"},
+        "doctype": {"type": "string"},
+        "is_submittable": {"type": "boolean"},
+        "fields": {
+            "type": "array",
+            "items": {"type": "object"},
+            "description": "With doctype: each field's fieldname, label, fieldtype and options (a Link's target DocType, a Table's child DocType); reqd, read_only and hidden only when set.",
+        },
+        "child_tables": {
+            "type": "array",
+            "items": {"type": "object"},
+            "description": "With doctype: each child table's fieldname, options (the child DocType) and fields.",
+        },
+        "doctypes": {
+            "type": "array",
+            "items": {"type": "object"},
+            "description": "With topic: the DocTypes about it.",
+        },
+    },
+}
+
 
 class GetDoctypeInfo(BaseTool):
     """
@@ -40,6 +65,7 @@ class GetDoctypeInfo(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "get_doctype_info"
+        self.outputSchema = OUTPUT_SCHEMA
         self.description = (
             "Get DocType metadata and field information. Pass doctype for its fields, or topic to "
             "find where data lives when no report fits. A field lists only what is set: no reqd, "

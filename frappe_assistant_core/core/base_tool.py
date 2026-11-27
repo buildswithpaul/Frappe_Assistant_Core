@@ -167,6 +167,12 @@ class BaseTool(ABC):
         audit_executions: Whether each call writes an Assistant Audit Log row
         confirmation_verb: The one word on the button of the confirmation form ("Delete", "Send").
             Empty for a tool that never asks.
+        outputSchema: JSON schema of a successful result, or None. To a modern-era client a
+            tool that declares one lists it, and its result is also sent as structuredContent, so
+            the client can read fields without parsing text. Keep it loose: name the fields a
+            caller relies on and leave the rest open, because a client may refuse a result its
+            schema does not allow. Do not also name a field in untrusted_fields unless the schema
+            says it is a string: fencing turns the field's value into one fenced string.
         retry_on_deadlock: Whether a call the database undid (frappe.QueryDeadlockError) is run
             again from the start. Only for a tool whose work is all in the database, so a call
             run twice leaves what one call would: nothing it does outside is lost or doubled.
@@ -181,6 +187,7 @@ class BaseTool(ABC):
         self.name: str = ""
         self.description: str = ""
         self.inputSchema: Dict[str, Any] = {}
+        self.outputSchema: Optional[Dict[str, Any]] = None
         self.requires_permission: Optional[str] = None
         # If set, the user must hold at least one of these roles. Enforced in
         # check_permission() (execution) and by the registry (listing), so it
