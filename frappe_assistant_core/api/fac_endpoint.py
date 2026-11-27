@@ -27,6 +27,7 @@ import frappe
 from frappe import _
 
 from frappe_assistant_core.mcp.server import MCPServer
+from frappe_assistant_core.utils.mcp_caller import forget_fac_cloud_caller
 
 
 def _get_mcp_server_name():
@@ -399,6 +400,9 @@ def handle_mcp():
             f'Bearer realm="Frappe Assistant Core", resource_metadata="{metadata_url}"'
         )
         return response
+
+    # A new request: who is calling is worked out once below and reused by tools/list.
+    forget_fac_cloud_caller()
 
     # Authenticate the request (supports both OAuth and API key)
     auth_result = _authenticate_mcp_request()

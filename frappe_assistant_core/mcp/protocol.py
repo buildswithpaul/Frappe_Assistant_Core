@@ -51,6 +51,8 @@ _TTL_MS = {
     "resources/list": LIST_TTL_MS,
     "resources/templates/list": LIST_TTL_MS,
     "resources/read": READ_TTL_MS,
+    "skills/list": LIST_TTL_MS,
+    "skills/get": READ_TTL_MS,
 }
 
 ERR_HEADER_MISMATCH = -32020

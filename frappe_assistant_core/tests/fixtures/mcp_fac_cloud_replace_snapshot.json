@@ -1,0 +1,114 @@
+{
+  "tools": [
+    {
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "get_document: Retrieving single Frappe documents with full field and child table data. Detailed guidance: fac://skills/get-document-usage",
+      "inputSchema": {
+        "properties": {
+          "doctype": {
+            "description": "The Frappe DocType name (e.g., 'Customer', 'Sales Invoice', 'Item')",
+            "type": "string"
+          },
+          "fields": {
+            "description": "Only these fields (a child table's fieldname returns its rows). Omit for all.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "The document name/ID (e.g., 'CUST-00001', 'SINV-00001'). This is the unique identifier for the document.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "doctype",
+          "name"
+        ],
+        "type": "object"
+      },
+      "name": "get_document"
+    },
+    {
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "list_documents: Searching and listing Frappe documents with filters, field selection, ordering, and response format. Detailed guidance: fac://skills/list-documents-usage",
+      "inputSchema": {
+        "properties": {
+          "aggregate": {
+            "description": "Aggregates per group, e.g. [{'function': 'sum', 'field': 'grand_total'}]. With group_by and no aggregate you get the record count per group; without group_by you get one total row.",
+            "items": {
+              "properties": {
+                "field": {
+                  "description": "Fieldname to aggregate. sum and avg need a Currency, Float, Int or Percent field.",
+                  "type": "string"
+                },
+                "function": {
+                  "enum": [
+                    "sum",
+                    "count",
+                    "avg",
+                    "min",
+                    "max"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "function",
+                "field"
+              ],
+              "type": "object"
+            },
+            "maxItems": 5,
+            "type": "array"
+          },
+          "doctype": {
+            "description": "The Frappe DocType to search (e.g., 'Customer', 'Sales Invoice', 'Item', 'User'). Must match exact DocType name.",
+            "type": "string"
+          },
+          "fields": {
+            "description": "Specific fields to retrieve. Examples: ['name', 'customer_name', 'email'], ['name', 'item_name', 'item_code']. Leave empty to get standard fields.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "filters": {
+            "default": {},
+            "description": "Search filters as key-value pairs. Examples: {'status': 'Active'}, {'customer_type': 'Company'}, {'creation': ['>', '2024-01-01']}. Use empty {} to get all records. For submittable DocTypes, docstatus=1 (submitted) is applied automatically unless you set docstatus yourself \u2014 pass {'docstatus': 2} for cancelled, {'docstatus': [0, 1]} for drafts and submitted. To filter by a value in a child table, name it 'Child DocType.field', e.g. {'Has Role.role': 'Sales User'} on User.",
+            "type": "object"
+          },
+          "group_by": {
+            "description": "Fieldname to group by, for totals per group (e.g. 'customer', 'territory', a custom field). The database computes the totals, over only records the user may read \u2014 use this instead of adding up listed rows yourself. Ignores fields and offset. A Date field groups by exact day (each distinct date is its own group), not by month or year.",
+            "type": "string"
+          },
+          "limit": {
+            "default": 20,
+            "description": "Maximum number of records to return. Default is 20, maximum is 1000.",
+            "maximum": 1000,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Number of matching records to skip. When a response has has_more=true, pass its next_offset here to read the next page.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "order_by": {
+            "description": "Order results by field, e.g. 'creation desc', 'name asc'. Omit to use the DocType's own default ordering (usually modified desc). With group_by, order_by must instead be one aggregate alias (function_field, e.g. 'sum_grand_total') plus asc or desc, to rank groups by total; groups otherwise sort by the group value.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "doctype"
+        ],
+        "type": "object"
+      },
+      "name": "list_documents"
+    }
+  ]
+}

@@ -18,6 +18,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from frappe_assistant_core.mcp.skills import is_valid_description, is_valid_skill_name
 from frappe_assistant_core.utils.permissions import check_assistant_admin_permission
 
 #: Fields an admin implicitly signs off on when publishing a skill beyond its
@@ -31,10 +32,21 @@ APPROVED_CONTENT_FIELDS = ("title", "description", "content", "linked_tool")
 EXPOSED_VISIBILITIES = ("Shared", "Public")
 
 
+#: Doc flag the app-manifest installers set on skills they write. It exempts those skills from
+#: the Agent Skills name and description rules: installed skills come from other apps' manifests
+#: that may predate the rules, and one rejected id would abort that app's whole skill install.
+#: Non-conforming ones still install and are served as fac:// resources; skills/list skips them.
+#: A doc flag is chosen over ``source_app`` because ``source_app`` is an ordinary field that a
+#: user could set through Desk or the admin API, while flags live only on the in-memory
+#: document and cannot be supplied by a request.
+FROM_APP_MANIFEST_FLAG = "from_app_manifest"
+
+
 class FACSkill(Document):
     def validate(self):
         """Validate skill before save."""
         self.validate_skill_id()
+        self.validate_description()
         self.validate_visibility_settings()
         self.validate_linked_tool()
         self.validate_publish_permission()
@@ -148,14 +160,33 @@ class FACSkill(Document):
         if not self.skill_id:
             frappe.throw(_("Skill ID is required"))
 
-        if not re.match(r"^[a-z0-9_-]+$", self.skill_id):
-            frappe.throw(_("Skill ID must contain only lowercase letters, numbers, underscores, and hyphens"))
+        if self.flags.get(FROM_APP_MANIFEST_FLAG):
+            if not re.match(r"^[a-z0-9_-]+$", self.skill_id):
+                frappe.throw(
+                    _("Skill ID must contain only lowercase letters, numbers, underscores, and hyphens")
+                )
+        elif (self.is_new() or self.has_value_changed("skill_id")) and not is_valid_skill_name(self.skill_id):
+            frappe.throw(
+                _(
+                    "Skill ID must be 1-64 characters: lowercase letters, numbers and single hyphens, "
+                    "not starting or ending with a hyphen"
+                )
+            )
 
         existing = frappe.db.get_value(
             "FAC Skill", {"skill_id": self.skill_id, "name": ["!=", self.name or ""]}, "name"
         )
         if existing:
             frappe.throw(_("Skill ID '{0}' already exists").format(self.skill_id))
+
+    def validate_description(self):
+        """Keep the description within the Agent Skills 1-1024 character limit."""
+        if self.flags.get(FROM_APP_MANIFEST_FLAG):
+            return
+        if (self.is_new() or self.has_value_changed("description")) and not is_valid_description(
+            self.description
+        ):
+            frappe.throw(_("Description must be between 1 and 1024 characters"))
 
     def validate_visibility_settings(self):
         """Validate visibility and sharing configuration."""

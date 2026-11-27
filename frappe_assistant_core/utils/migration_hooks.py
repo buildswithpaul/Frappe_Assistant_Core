@@ -26,6 +26,8 @@ from typing import Any, Dict
 import frappe
 from frappe import _
 
+from frappe_assistant_core.assistant_core.doctype.fac_skill.fac_skill import FROM_APP_MANIFEST_FLAG
+
 
 def after_migrate():
     """
@@ -607,6 +609,7 @@ def _install_system_skills():
 
                 if needs_update:
                     doc.flags.ignore_permissions = True
+                    doc.flags[FROM_APP_MANIFEST_FLAG] = True
                     doc.save()
                     updated_count += 1
                     frappe.logger("migration_hooks").debug(f"Updated system skill: {skill_id}")
@@ -628,6 +631,7 @@ def _install_system_skills():
                 doc.requires_app = skill_data.get("requires_app")
 
                 doc.flags.ignore_permissions = True
+                doc.flags[FROM_APP_MANIFEST_FLAG] = True
                 doc.insert()
                 created_count += 1
                 frappe.logger("migration_hooks").debug(f"Created system skill: {skill_id}")
@@ -792,6 +796,7 @@ def _install_app_skills():
 
                     if needs_update:
                         doc.flags.ignore_permissions = True
+                        doc.flags[FROM_APP_MANIFEST_FLAG] = True
                         doc.save()
                         total_updated += 1
                 else:
@@ -812,6 +817,7 @@ def _install_app_skills():
                     doc.requires_app = skill_data.get("requires_app")
 
                     doc.flags.ignore_permissions = True
+                    doc.flags[FROM_APP_MANIFEST_FLAG] = True
                     doc.insert()
                     total_created += 1
 

@@ -36,7 +36,8 @@ from typing import Any, Dict, Optional
 
 from werkzeug.wrappers import Request, Response
 
-from frappe_assistant_core.mcp import protocol
+from frappe_assistant_core.mcp import protocol, skills
+from frappe_assistant_core.utils.mcp_caller import request_is_from_fac_cloud
 
 # TEMPORARY: old tool names still accepted by tools/call, mapped to their new name.
 # Resolved before the tool is looked up, so an old name gets exactly the new tool's
@@ -239,6 +240,8 @@ class MCPServer:
                 result = self._handle_resources_list(params, request_id)
             elif method == "resources/read":
                 result = self._handle_resources_read(params, request_id)
+            elif era == "modern" and method in skills.MODERN_METHODS:
+                result = skills.MODERN_METHODS[method](params)
             elif method == "resources/templates/list":
                 result = {"resourceTemplates": []}
             elif method == "prompts/list":
@@ -255,14 +258,14 @@ class MCPServer:
                 return self._error_response(
                     response, request_id, -32601, f"Method not found: {method}", status
                 )
+        except protocol.ProtocolError as e:
+            return self._error_response(
+                response, request_id, e.code, e.message, http_status=e.http_status, data=e.data
+            )
         except Exception as e:
             frappe.logger().error(
                 f"MCP Handler Error for method '{method}': {str(e)}\n{traceback.format_exc()}"
             )
-            if isinstance(e, ValueError) and era == "modern" and method == "resources/read":
-                return self._error_response(
-                    response, request_id, protocol.ERR_INVALID_PARAMS, str(e), data={"uri": params.get("uri")}
-                )
             return self._error_response(response, request_id, -32603, f"Internal error: {str(e)}")
 
         result = protocol.finish_result(era, method, result, self.name, SERVER_VERSION)
@@ -323,11 +326,11 @@ class MCPServer:
 
         tools_list = []
 
-        # Check skill_mode for token optimization
+        # Replace mode is for FAC Chat, which loads the skill through get_skill; other clients keep full text.
         skill_replace_map = {}
         try:
             settings = frappe.get_single("Assistant Core Settings")
-            if getattr(settings, "skill_mode", "supplementary") == "replace":
+            if getattr(settings, "skill_mode", "supplementary") == "replace" and request_is_from_fac_cloud():
                 from frappe_assistant_core.api.handlers.resources import get_skill_manager
 
                 skill_replace_map = get_skill_manager().get_tool_skill_map(user=frappe.session.user)
@@ -635,14 +638,10 @@ class MCPServer:
         return handle_resources_list(request_id)
 
     def _handle_resources_read(self, params: Dict, request_id: Any) -> Dict:
-        """
-        Handle resources/read request.
-
-        Returns the content of a specific skill resource by URI.
-        """
+        """Handle resources/read: the content of one skill resource by URI."""
         from frappe_assistant_core.api.handlers.resources import handle_resources_read
 
-        return handle_resources_read(params, request_id)
+        return skills.read_resource(params, lambda p: handle_resources_read(p, request_id))
 
     def _is_notification(self, data: Dict) -> bool:
         """Check if request is a notification (no response needed)."""
