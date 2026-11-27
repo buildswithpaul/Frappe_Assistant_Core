@@ -805,13 +805,22 @@ class DocumentList(BaseTool):
             return {"success": False, "error": str(e), "doctype": doctype}
 
         has_more = len(raw_rows) > limit
+        # What a row quotes from the user's file: a group value, or the min or max of such a field,
+        # which is one of its values (#34406).
+        file_fields = document_fields(doctype)
+        from_file = [GROUP_VALUE_KEY] if group_by in file_fields else []
+        from_file += [
+            spec["alias"]
+            for spec in specs
+            if spec["function"] in ("min", "max") and spec["field"] in file_fields
+        ]
         rows = []
         for raw in raw_rows[:limit]:
             row = {GROUP_VALUE_KEY: raw.get(group_by)} if group_by else {}
             for spec in specs:
                 row[spec["alias"]] = aggregate_value(raw.get(spec["alias"]))
-            if group_by in document_fields(doctype):
-                row = fence_fields(row, (GROUP_VALUE_KEY,))  # a file's name or sheet (#34406)
+            if from_file:
+                row = fence_fields(row, from_file)
             rows.append(row)
 
         result = {
