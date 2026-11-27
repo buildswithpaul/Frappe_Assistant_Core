@@ -24,10 +24,13 @@ from the client's domain/SMTP rather than the AR platform.
 from typing import Any
 
 import frappe
-from frappe import _
+from frappe import _, _lt
 
-from frappe_assistant_core.core.base_tool import BaseTool
+from frappe_assistant_core.core.base_tool import BaseTool, one_line
 from frappe_assistant_core.utils.message_body import as_html_body
+
+#: How many recipients the confirmation question names before it says "and N more".
+MAX_LISTED_RECIPIENTS = 5
 
 
 class SendEmail(BaseTool):
@@ -52,6 +55,8 @@ class SendEmail(BaseTool):
         self.source_app = "frappe_assistant_core"
         self.category = "Communication"
         self.requires_permission = None
+        # Lazy: tool instances outlive a request, so it is translated when read, in that request's language.
+        self.confirmation_verb = _lt("Send")
 
         self.inputSchema = {
             "type": "object",
@@ -82,6 +87,38 @@ class SendEmail(BaseTool):
             },
             "required": ["recipients", "subject", "message"],
         }
+
+    def confirmation(self, arguments: dict[str, Any]) -> str | None:
+        """Asks before every send, naming each addressee field the tool sends to (to and cc).
+
+        None only when there is no recipient: execute() refuses that call and sends nothing.
+        """
+        if not isinstance(arguments, dict):
+            return None
+        to = self._addressees(arguments.get("recipients"))
+        if not to:
+            return None
+        cc = self._addressees(arguments.get("cc"))
+        subject = one_line(arguments.get("subject"))
+        if not cc:
+            return _("Send the email '{0}' to {1}?").format(subject, self._listed(to))
+        return _("Send the email '{0}' to {1}, cc {2}?").format(subject, self._listed(to), self._listed(cc))
+
+    @staticmethod
+    def _addressees(value: Any) -> list[str]:
+        """The addresses in a recipients/cc value (a string or a list), whatever else it holds."""
+        if isinstance(value, str):
+            value = [value]
+        elif not isinstance(value, (list, tuple)):
+            value = [] if value is None else [value]
+        return [one_line(v, 60) for v in value if v and str(v).strip()]
+
+    @staticmethod
+    def _listed(addresses: list[str]) -> str:
+        listed = ", ".join(addresses[:MAX_LISTED_RECIPIENTS])
+        if len(addresses) > MAX_LISTED_RECIPIENTS:
+            listed = _("{0} and {1} more").format(listed, len(addresses) - MAX_LISTED_RECIPIENTS)
+        return listed
 
     def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Queue email via frappe.sendmail() using the site's Email Account."""

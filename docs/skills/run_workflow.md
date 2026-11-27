@@ -21,6 +21,14 @@ The `run_workflow` tool executes workflow actions on documents — Submit, Appro
 4. **Use this instead of `update_document`** — never directly update `workflow_state` field, as it bypasses workflow logic (notifications, permissions, validations).
 5. **Handles side effects** — emails, status changes, permissions checks all execute properly.
 
+## Confirmation by the user's client
+
+An action that moves the document to a cancelled state is confirmed; other actions are not. When the MCP client can show the user a confirmation form, the first call changes nothing: the client asks the user "Cancel Sales Invoice ACC-SINV-0001? Its accounting and stock entries will be reversed." and sends the call again with their answer. Your call returns only after the user has answered.
+
+- **Accepted** — the call runs once, as normal.
+- **Declined** — the result is an error: "The user did not confirm, so nothing was changed." Do not retry the call; ask the user what they want instead.
+- Clients without a confirmation form run the call at once, and so does FAC Chat, which shows its own approval card. Still confirm with the user before calling.
+
 ## Common Actions
 
 | Action | Effect |

@@ -19,12 +19,15 @@ Comprehensive workflow tool that properly uses Frappe's workflow system.
 Handles all workflow complexities: permissions, conditions, notifications, document status changes.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import frappe
-from frappe import _
+from frappe import _, _lt
 
 from frappe_assistant_core.core.base_tool import BaseTool, permission_error_result
+from frappe_assistant_core.plugins.core.tools.document_action import cancel_question
+
+CANCELLED_DOCSTATUS = 2
 
 
 class RunWorkflow(BaseTool):
@@ -57,6 +60,8 @@ class RunWorkflow(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "run_workflow"
+        # Lazy: tool instances outlive a request, so it is translated when read, in that request's language.
+        self.confirmation_verb = _lt("Cancel")
         self.description = "Execute workflow actions on documents (Submit, Approve, Reject, etc.). Use this for business process automation - NOT for simple field updates. This tool properly handles workflow permissions, notifications, state transitions, and business rules. Always use this instead of directly updating workflow_state fields, as it ensures proper workflow execution with all side effects (emails, status changes, validations). If action fails, tool shows available actions for current state."
         self.requires_permission = None  # Dynamic permission checking
 
@@ -79,6 +84,41 @@ class RunWorkflow(BaseTool):
             },
             "required": ["doctype", "name", "action"],
         }
+
+    def confirmation(self, arguments: Dict[str, Any]) -> Optional[str]:
+        """Asks only when the requested action moves the document to a cancelled state.
+
+        document_action sends workflow DocTypes here, so without this the cancel confirmation
+        would be bypassed. Any lookup failure answers None: execute() refuses a bad request itself.
+        """
+        try:
+            from frappe.model.workflow import get_transitions, get_workflow_name
+
+            if not isinstance(arguments, dict):
+                return None
+
+            doctype, name, action = (arguments.get(k) for k in ("doctype", "name", "action"))
+            if not (isinstance(doctype, str) and isinstance(name, str) and isinstance(action, str)):
+                return None
+            if not frappe.db.exists(doctype, name):
+                return None
+            doc = frappe.get_doc(doctype, name)
+            if not doc.has_permission("read"):
+                return None
+            workflow_name = get_workflow_name(doctype)
+            if not workflow_name:
+                return None
+            next_states = {t.get("next_state") for t in get_transitions(doc) if t.get("action") == action}
+            cancelled = {
+                s.state
+                for s in frappe.get_cached_doc("Workflow", workflow_name).states
+                if str(s.doc_status) == str(CANCELLED_DOCSTATUS)
+            }
+            if next_states & cancelled:
+                return cancel_question(doctype, name)
+        except Exception:
+            return None
+        return None
 
     def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute workflow action using Frappe's workflow system"""

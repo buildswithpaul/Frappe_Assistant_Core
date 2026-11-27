@@ -131,6 +131,14 @@ Cancel or amend on a non-submittable DocType:
 5. **Cancelling reverses ledgers** — GL entries and stock ledger entries are reversed. Confirm with the user before cancelling.
 6. **ERPNext can still refuse** — closed accounting periods, frozen accounts and other validations return their real error message. Nothing is changed when a cancel is refused, and background work it had queued (such as reversing a large ledger) is dropped too.
 
+## Confirmation by the user's client
+
+A `cancel` is confirmed; `submit` and `amend` are not. A DocType with an active Workflow is not asked here, because `document_action` refuses that cancel and `run_workflow` asks instead. When the MCP client can show the user a confirmation form, the first call changes nothing: the client asks the user "Cancel Sales Invoice ACC-SINV-0001? Its accounting and stock entries will be reversed." and sends the call again with their answer. Your call returns only after the user has answered.
+
+- **Accepted** — the call runs once, as normal.
+- **Declined** — the result is an error: "The user did not confirm, so nothing was changed." Do not retry the call; ask the user what they want instead.
+- Clients without a confirmation form run the call at once, and so does FAC Chat, which shows its own approval card. Still confirm with the user before calling.
+
 ## Amend Rules
 
 1. **Only cancelled documents** — submitted and draft documents are refused. Cancel first, then amend. Non-submittable DocTypes have nothing to amend; edit their records with `update_document`.
