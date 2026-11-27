@@ -19,6 +19,9 @@ MESSAGE_ID = "msg-stalled"
 STEP_SECONDS = 60
 # A red run must fail rather than hang, so the fake stream gives up after this many events.
 EVENT_CAP = 200
+# The longest AR stays silent on a running FAC tool: AR's TASK_CALL_SECONDS (480) plus
+# MCP_CALL_GRACE_SECONDS (15), which is also AR's own stall floor. FAC must not import AR.
+AR_LONGEST_SILENT_TOOL_SECONDS = 495
 
 
 def _event(name: str, **data) -> dict:
@@ -71,6 +74,11 @@ class TestRelayDeadlineTripped(BaseAssistantTest):
     def test_idle_past_the_no_progress_bound_trips(self):
         tripped = relay._relay_deadline_tripped(0, 0, relay.RELAY_NO_PROGRESS_SECONDS)
         self.assertEqual(tripped, "no_progress")
+
+    def test_the_relay_outwaits_ar_on_a_long_running_tool(self):
+        # AR emits only heartbeats while a task-backed tool (a report, an import) runs.
+        self.assertIsNone(relay._relay_deadline_tripped(0, 0, AR_LONGEST_SILENT_TOOL_SECONDS))
+        self.assertEqual(relay._relay_deadline_tripped(0, 0, 540), "no_progress")
 
     def test_a_long_turn_that_keeps_moving_trips_at_the_turn_bound(self):
         now = relay.RELAY_MAX_TURN_SECONDS
