@@ -213,7 +213,7 @@ Then check `total_count` in the response for the full count.
 ```
 Returns `rows: [{"group_value": "North", "sum_base_grand_total": 125000.0, "count_name": 42}, ...]`, `row_count`, `has_more`, `filters_applied` and `docstatus_defaulted`. The database computes every figure over only the records the user may read (User Permissions included), so report these numbers as-is — never add up listed rows yourself.
 
-- `function` is one of `sum`, `count`, `avg`, `min`, `max`; at most 5 aggregates. `sum` and `avg` need a Currency, Float, Int or Percent field.
+- `function` is one of `sum`, `count`, `avg`, `min`, `max`; at most 5 aggregates. `sum` and `avg` need a Currency, Float, Int or Percent field; `min` and `max` also take a date or text field and return its earliest or latest value (the latest `posting_date` per customer, for example).
 - `group_by` and every `field` must be a real field the user may read. Restricted and higher-permlevel fields are refused with an explanation.
 - `group_by` alone returns the record count per group (`count_name`); `aggregate` alone returns a single total row without `group_value`.
 - `order_by` ranks the groups by a total: pass one aggregate alias (`function_field`) plus `asc` or `desc`, for example `"sum_base_grand_total desc"` with `limit: 10` for the top 10 territories. Without it groups sort by the group value, so `limit` alone returns the first groups alphabetically, not the biggest. Anything other than a requested aggregate alias is refused, and `order_by` needs `group_by`.
