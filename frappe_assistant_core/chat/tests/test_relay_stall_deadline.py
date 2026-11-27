@@ -19,9 +19,10 @@ MESSAGE_ID = "msg-stalled"
 STEP_SECONDS = 60
 # A red run must fail rather than hang, so the fake stream gives up after this many events.
 EVENT_CAP = 200
-# The longest AR stays silent on a running FAC tool: AR's TASK_CALL_SECONDS (480) plus
-# MCP_CALL_GRACE_SECONDS (15), which is also AR's own stall floor. FAC must not import AR.
-AR_LONGEST_SILENT_TOOL_SECONDS = 495
+# The longest AR stays silent on a running FAC tool: AR's stall floor (TASK_CALL_SECONDS 480
+# + MCP_CALL_GRACE_SECONDS 15 + a 10 s heartbeat + a 15 s margin = 520) plus one 10 s
+# heartbeat tick before AR notices. FAC must not import AR.
+AR_LONGEST_SILENT_TOOL_SECONDS = 530
 
 
 def _event(name: str, **data) -> dict:
