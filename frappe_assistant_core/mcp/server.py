@@ -323,6 +323,9 @@ class MCPServer:
         """Handle tools/list request with optional token optimization."""
         import frappe
 
+        # Lazy: task_adapters imports the tools, which import tasks.
+        from frappe_assistant_core.mcp.task_adapters import TASK_TOOLS
+
         if tool_registry is None:
             tool_registry = self._tool_registry
 
@@ -340,6 +343,7 @@ class MCPServer:
             pass
 
         packs, pack_of = self._tool_packs()
+        modern = getattr(frappe.local, "mcp_era", None) == "modern"
 
         for tool in tool_registry.values():
             description = tool["description"]
@@ -358,6 +362,9 @@ class MCPServer:
             # Add annotations if present
             if tool.get("annotations"):
                 tool_spec["annotations"] = tool["annotations"]
+
+            if modern and tool["name"] in TASK_TOOLS:
+                tool_spec["execution"] = {"taskSupport": "optional"}
 
             if tool["name"] in pack_of:
                 tool_spec["_meta"] = {"fac/pack": pack_of[tool["name"]]}

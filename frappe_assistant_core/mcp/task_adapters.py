@@ -26,8 +26,17 @@ from frappe_assistant_core.plugins.core.tools.report_tools import prepared_repor
 from frappe_assistant_core.plugins.migration.tools.run_migration_plan import plan_task_progress
 from frappe_assistant_core.plugins.migration.tools.start_import import import_task_progress
 
+TASK_ADAPTERS = {
+    "generate_report": prepared_report_task_progress,
+    "start_import": import_task_progress,
+    "run_migration_plan": plan_task_progress,
+}
+
+# tools/list marks these with taskSupport, so a client that sends every call down its task path
+# knows which tools may answer with a task.
+TASK_TOOLS: tuple[str, ...] = tuple(TASK_ADAPTERS)
+
 
 def register() -> None:
-    register_adapter("generate_report", prepared_report_task_progress)
-    register_adapter("start_import", import_task_progress)
-    register_adapter("run_migration_plan", plan_task_progress)
+    for tool_name, poll in TASK_ADAPTERS.items():
+        register_adapter(tool_name, poll)

@@ -26,6 +26,7 @@ from unittest.mock import patch
 import frappe
 from frappe.utils import add_to_date, now_datetime
 
+from frappe_assistant_core.api.fac_endpoint import _build_tool_registry
 from frappe_assistant_core.core.base_tool import BaseTool
 from frappe_assistant_core.mcp import tasks
 from frappe_assistant_core.mcp.protocol import TASKS_EXT
@@ -303,3 +304,39 @@ class TestMcpTasks(BaseAssistantTest):
                 self.assertEqual(json.loads(result["content"][0]["text"]), {"queued": True})
                 self.assertEqual(self._rows(), [])
                 log_error.assert_called_once()
+
+
+class TestTasksToolsList(BaseAssistantTest):
+    """tools/list marks the tools that can answer with a task, for clients of the modern era only."""
+
+    def setUp(self):
+        super().setUp()
+        full = _build_tool_registry()
+        self.registry = OrderedDict(
+            (name, full[name]) for name in ("generate_report", "get_document") if name in full
+        )
+
+    def tearDown(self):
+        # A request leaves its era and capabilities on frappe.local; a direct call must not see them.
+        frappe.local.mcp_era = frappe.local.mcp_client_caps = None
+        super().tearDown()
+
+    def _listed(self, body: dict, headers: dict) -> dict:
+        tools = _json(_send(body, headers, self.registry))["result"]["tools"]
+        return {tool["name"]: tool for tool in tools}
+
+    def test_modern_tools_list_marks_task_tools(self):
+        listed = self._listed(*_modern("tools/list", {}, caps=TASK_CAPS))
+
+        self.assertEqual(listed["generate_report"]["execution"], {"taskSupport": "optional"})
+        self.assertNotIn("execution", listed["get_document"])
+
+    def test_handshake_tools_list_has_no_execution(self):
+        # A handshake-era client sends the older version header on every request after initialize.
+        body = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+
+        listed = self._listed(body, {"MCP-Protocol-Version": "2025-06-18"})
+
+        self.assertEqual(set(listed), {"generate_report", "get_document"})
+        for tool in listed.values():
+            self.assertNotIn("execution", tool)
