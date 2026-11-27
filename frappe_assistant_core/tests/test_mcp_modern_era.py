@@ -22,11 +22,11 @@ handshake-era snapshot that proves older clients see no change.
 import json
 import os
 from collections import OrderedDict
-from unittest.mock import MagicMock
 
 import frappe
 from werkzeug.datastructures import Headers
-from werkzeug.wrappers import Response
+from werkzeug.test import EnvironBuilder
+from werkzeug.wrappers import Request, Response
 
 from frappe_assistant_core.api.fac_endpoint import _build_tool_registry, mcp
 from frappe_assistant_core.mcp.protocol import (
@@ -36,6 +36,7 @@ from frappe_assistant_core.mcp.protocol import (
     ClientCaps,
 )
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
+from frappe_assistant_core.utils.migration_hooks import _install_system_skills
 
 MODERN = "2026-07-28"
 SNAPSHOT_PATH = os.path.join(os.path.dirname(__file__), "fixtures", "mcp_handshake_snapshot.json")
@@ -44,16 +45,24 @@ FIXTURE_ROLE = "System Manager"
 # System skills with no requires_app, so they are listed on every CI bench (a CRM skill is not).
 SNAPSHOT_SKILLS = ("add-custom-field", "attach-chat-file-usage", "set-up-approval-workflow")
 # Of the fixture record, only what every supported Frappe version and site gives the same.
+STORED_CONTENT = "<the skill's stored content, exactly>"
 SNAPSHOT_RECORD_KEYS = ("doctype", "name", "role_name")
 
 
-def _request(body: dict, headers: dict | None = None) -> MagicMock:
-    request = MagicMock()
-    request.method = "POST"
-    request.headers = Headers(headers or {})
-    request.get_json.return_value = body
-    request.get_data.return_value = json.dumps(body)
-    return request
+MCP_ENDPOINT_PATH = "/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp"
+
+
+def _request(body: dict, headers: dict | None = None) -> Request:
+    """A real POST to the MCP endpoint: the tools a request runs (an import, a report) may read
+    any attribute of frappe.local.request, as Frappe does, so a mock would answer with mocks."""
+    builder = EnvironBuilder(
+        method="POST",
+        path=MCP_ENDPOINT_PATH,
+        headers=Headers(headers or {}),
+        data=json.dumps(body),
+        content_type="application/json",
+    )
+    return Request(builder.get_environ())
 
 
 def _modern(method: str, params: dict | None = None, *, caps: dict | None = None, **overrides):
@@ -120,9 +129,9 @@ def _stable_record(call_result: dict) -> dict:
 def build_handshake_snapshot() -> dict:
     """Run the five handshake-era calls and return their normalised responses.
 
-    The fixture embeds the get_document tool description and the skills' text, so regenerate it
-    with ``write_snapshot`` (on code that still serves handshake clients unchanged) when those
-    change on purpose.
+    The fixture embeds the get_document tool description and the skills' descriptions, so
+    regenerate it with ``write_snapshot`` (on code that still serves handshake clients unchanged)
+    when those change on purpose.
 
     Normalised: ``creation``/``modified`` and timing keys (change every run); tools/call keeps only
     ``SNAPSHOT_RECORD_KEYS`` of the record. tools/list is limited to ``get_document`` and
@@ -133,6 +142,9 @@ def build_handshake_snapshot() -> dict:
     # skill_mode "supplementary" is the shipped default; set it so a site's own setting can't leak in.
     settings.skill_mode = "supplementary"
     settings.save(ignore_permissions=True)
+    # after_migrate installs the system skills from docs/skills on every site, as CI's fresh install
+    # does; a dev site whose rows predate the latest skill text would otherwise serve older text.
+    _install_system_skills()
 
     full = _build_tool_registry()
     registry = OrderedDict((name, full[name]) for name in ("get_document",) if name in full)
@@ -160,6 +172,12 @@ def build_handshake_snapshot() -> dict:
         (r for r in listing["resources"] if r["uri"] in wanted), key=lambda r: r["uri"]
     )
     snapshot["resources/read"] = call(4, "resources/read", {"uri": f"fac://skills/{SNAPSHOT_SKILLS[0]}"})
+    # The skill's text is what Frappe's sanitiser left of docs/skills on save, which differs between
+    # Frappe versions; the handshake contract is that the read returns exactly the stored content.
+    for content in snapshot["resources/read"].get("result", {}).get("contents", []):
+        stored = frappe.db.get_value("FAC Skill", {"skill_id": SNAPSHOT_SKILLS[0]}, "content")
+        if content.get("text") == stored:
+            content["text"] = STORED_CONTENT
     return snapshot
 
 
