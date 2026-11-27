@@ -36,6 +36,8 @@ from typing import Any, Dict, Optional
 
 from werkzeug.wrappers import Request, Response
 
+from frappe_assistant_core.mcp import protocol
+
 # TEMPORARY: old tool names still accepted by tools/call, mapped to their new name.
 # Resolved before the tool is looked up, so an old name gets exactly the new tool's
 # registry entry: the same enabled/role-access filtering, category annotations and
@@ -43,6 +45,8 @@ from werkzeug.wrappers import Request, Response
 # Remove "submit_document" in the release after the one that ships this rename to
 # document_action, once clients have picked up the new name from tools/list.
 TOOL_NAME_ALIASES = {"submit_document": "document_action"}
+
+SERVER_VERSION = protocol.SERVER_VERSION
 
 
 class MCPServer:
@@ -174,6 +178,9 @@ class MCPServer:
         if tool_registry is None:
             tool_registry = self._tool_registry
 
+        # Set before any early return, so nothing from a previous request on this worker survives.
+        protocol.set_request_state()
+
         # Only POST allowed
         if request.method != "POST":
             response.status_code = 405
@@ -190,11 +197,6 @@ class MCPServer:
             )
             return self._error_response(response, None, -32700, f"Parse error: {str(e)}")
 
-        # Populate correlation ids on frappe.local so downstream audit logging
-        # can tag every tool execution with the MCP session and client. See
-        # _populate_correlation_ids for header/initialize param fallback order.
-        self._populate_correlation_ids(request, data)
-
         # Check if notification (no response needed)
         if self._is_notification(data):
             response.status_code = 202  # Accepted
@@ -209,11 +211,17 @@ class MCPServer:
         if request_id is None:
             return self._error_response(response, None, -32600, "Invalid Request: missing id")
 
-        # Route method
+        try:
+            era, caps = protocol.resolve_request(request.headers, data)
+        except protocol.ProtocolError as e:
+            return self._error_response(
+                response, request_id, e.code, e.message, http_status=e.http_status, data=e.data
+            )
+        protocol.set_request_state(era, caps)
+        self._populate_correlation_ids(request, data, era)
+
         method = data.get("method")
         params = data.get("params", {})
-
-        result = None
 
         try:
             if method == "initialize":
@@ -237,19 +245,28 @@ class MCPServer:
                 result = self._handle_prompts_list(params, request_id)
             elif method == "prompts/get":
                 result = self._handle_prompts_get(params, request_id)
-            elif method == "ping":
+            elif method == "ping" and era == "handshake":
                 result = {}
+            elif method == "server/discover" and era == "modern":
+                result = protocol.discover_result(server_name=self.name, server_version=SERVER_VERSION)
             else:
                 frappe.logger().warning(f"MCP Unknown method: {method}")
-                return self._error_response(response, request_id, -32601, f"Method not found: {method}")
+                status = 404 if era == "modern" else 400
+                return self._error_response(
+                    response, request_id, -32601, f"Method not found: {method}", status
+                )
         except Exception as e:
-            # Log unexpected errors
             frappe.logger().error(
                 f"MCP Handler Error for method '{method}': {str(e)}\n{traceback.format_exc()}"
             )
+            if isinstance(e, ValueError) and era == "modern" and method == "resources/read":
+                return self._error_response(
+                    response, request_id, protocol.ERR_INVALID_PARAMS, str(e), data={"uri": params.get("uri")}
+                )
             return self._error_response(response, request_id, -32603, f"Internal error: {str(e)}")
 
-        # Success response
+        result = protocol.finish_result(era, method, result, self.name, SERVER_VERSION)
+
         return self._success_response(response, request_id, result)
 
     def add_tool(self, tool_dict: Dict):
@@ -263,38 +280,12 @@ class MCPServer:
         """
         self._tool_registry[tool_dict["name"]] = tool_dict
 
-    def _populate_correlation_ids(self, request: Request, data: Dict):
-        """
-        Set `frappe.local.assistant_session_id` and `assistant_client_id`.
-
-        Resolution order for session id:
-            1. `Mcp-Session-Id` request header (MCP streamable HTTP transport)
-            2. `X-Assistant-Session-Id` request header (explicit override)
-            3. A freshly-generated UUID4 (per-request fallback)
-
-        Resolution order for client id:
-            1. `X-Assistant-Client-Id` request header
-            2. `clientInfo.name` from the `initialize` params when present
-            3. `None`
-        """
-        import uuid
-
+    def _populate_correlation_ids(self, request: Request, data: Dict, era: str):
+        """Tag audit logs with the caller's session and client (see protocol.session_id)."""
         import frappe
 
-        session_id = (
-            request.headers.get("Mcp-Session-Id")
-            or request.headers.get("X-Assistant-Session-Id")
-            or str(uuid.uuid4())
-        )
-
-        client_id = request.headers.get("X-Assistant-Client-Id")
-        if not client_id:
-            params = data.get("params") or {}
-            client_info = params.get("clientInfo") or {}
-            client_id = client_info.get("name")
-
-        frappe.local.assistant_session_id = session_id
-        frappe.local.assistant_client_id = client_id
+        frappe.local.assistant_session_id = protocol.session_id(request.headers, era)
+        frappe.local.assistant_client_id = protocol.declared_client_name(request.headers, data)
 
     def _handle_initialize(self, params: Dict) -> Dict:
         """
@@ -320,7 +311,7 @@ class MCPServer:
                 "prompts": {},  # We support prompts (database-driven templates)
                 "resources": {},  # We support resources (skill documents)
             },
-            "serverInfo": {"name": self.name, "version": "2.0.0"},
+            "serverInfo": {"name": self.name, "version": SERVER_VERSION},
         }
 
     def _handle_tools_list(self, params: Dict, tool_registry: Optional[Dict] = None) -> Dict:
@@ -574,16 +565,25 @@ class MCPServer:
         return response
 
     def _error_response(
-        self, response: Response, request_id: Optional[Any], code: int, message: str
+        self,
+        response: Response,
+        request_id: Optional[Any],
+        code: int,
+        message: str,
+        http_status: int = 400,
+        data: Optional[Dict] = None,
     ) -> Response:
         """Create JSON-RPC error response."""
         import frappe
 
-        response_data = {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
+        error = {"code": code, "message": message}
+        if data is not None:
+            error["data"] = data
+        response_data = {"jsonrpc": "2.0", "id": request_id, "error": error}
 
         response.data = json.dumps(response_data)
         response.mimetype = "application/json"
-        response.status_code = 400
+        response.status_code = http_status
 
         # Echo MCP-Protocol-Version header if present (2025-06-18 spec)
         incoming_version = frappe.request.headers.get("mcp-protocol-version")

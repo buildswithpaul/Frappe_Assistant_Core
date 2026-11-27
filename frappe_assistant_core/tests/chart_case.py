@@ -43,7 +43,7 @@ CLIENT_CHART = [
 class ChartCase(ImportRunCase):
     def setUp(self):
         super().setUp()
-        self.abbr = "T" + frappe.generate_hash(length=4).upper()
+        self.abbr = "T" + frappe.generate_hash(length=8).upper()
         self.company = f"Chart Co {self.tag}"
         frappe.get_doc(
             {

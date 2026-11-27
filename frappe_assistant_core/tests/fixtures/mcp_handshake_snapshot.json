@@ -1,0 +1,109 @@
+{
+  "initialize": {
+    "id": 1,
+    "jsonrpc": "2.0",
+    "result": {
+      "capabilities": {
+        "prompts": {},
+        "resources": {},
+        "tools": {}
+      },
+      "protocolVersion": "2025-06-18",
+      "serverInfo": {
+        "name": "frappe-assistant-core",
+        "version": "2.0.0"
+      }
+    }
+  },
+  "resources/list": {
+    "id": 3,
+    "jsonrpc": "2.0",
+    "result": {
+      "resources": [
+        {
+          "description": "Use when asked to add a field to a form, capture extra information on a document, or put a new field on a DocType such as Delivery Note or Sales Invoice.",
+          "mimeType": "text/markdown",
+          "name": "Adding a Custom Field",
+          "uri": "fac://skills/add-custom-field"
+        },
+        {
+          "description": "Attaching a file the user uploaded in chat to a document by its File ID, without moving another record's file",
+          "mimeType": "text/markdown",
+          "name": "How to Use attach_chat_file",
+          "uri": "fac://skills/attach-chat-file-usage"
+        },
+        {
+          "description": "Use when asked to require approval before a document is submitted, add an approval step or an amount threshold (\"approval needed above \u20b950,000\"), or change who approves what.",
+          "mimeType": "text/markdown",
+          "name": "Setting Up an Approval Workflow",
+          "uri": "fac://skills/set-up-approval-workflow"
+        }
+      ]
+    }
+  },
+  "resources/read": {
+    "id": 4,
+    "jsonrpc": "2.0",
+    "result": {
+      "contents": [
+        {
+          "mimeType": "text/markdown",
+          "text": "<the skill's stored content, exactly>",
+          "uri": "fac://skills/add-custom-field"
+        }
+      ]
+    }
+  },
+  "tools/call": {
+    "id": 5,
+    "jsonrpc": "2.0",
+    "result": {
+      "content": [
+        {
+          "text": "{\"data\": {\"doctype\": \"Role\", \"name\": \"System Manager\", \"role_name\": \"System Manager\"}, \"success\": true}",
+          "type": "text"
+        }
+      ],
+      "isError": false
+    }
+  },
+  "tools/list": {
+    "id": 2,
+    "jsonrpc": "2.0",
+    "result": {
+      "tools": [
+        {
+          "annotations": {
+            "readOnlyHint": true
+          },
+          "description": "Retrieve a specific Frappe document by its name/ID, with its child tables. Empty fields are left out, so a field that is missing is empty. Pass fields to get only those fields.",
+          "inputSchema": {
+            "properties": {
+              "doctype": {
+                "description": "The Frappe DocType name (e.g., 'Customer', 'Sales Invoice', 'Item')",
+                "type": "string"
+              },
+              "fields": {
+                "description": "Only these fields (a child table's fieldname returns its rows). Omit for all.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "name": {
+                "description": "The document name/ID (e.g., 'CUST-00001', 'SINV-00001'). This is the unique identifier for the document.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "doctype",
+              "name"
+            ],
+            "type": "object"
+          },
+          "name": "get_document"
+        }
+      ]
+    }
+  }
+}
