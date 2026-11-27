@@ -191,6 +191,11 @@ class BaseAssistantTest(IntegrationTestCase):
         # Clear any existing test data
         self.clear_test_data()
 
+        # Production gets a fresh frappe.local per request; tests share one, so an MCP request in
+        # an earlier test would leave its protocol era and client capabilities behind.
+        frappe.local.mcp_era = None
+        frappe.local.mcp_client_caps = None
+
         # Set test user
         self.test_user = "Administrator"
         # nosemgrep: frappe-setuser — test bootstrap; tests run in isolated transaction

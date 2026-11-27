@@ -327,6 +327,14 @@ class TestEraOnLocal(BaseAssistantTest):
         self.assertEqual(frappe.local.mcp_era, "modern")
         self.assertIs(frappe.local.mcp_client_caps.tasks, True)
 
+    def test_each_test_starts_without_protocol_state(self):
+        _send(*_modern("server/discover", caps={"extensions": {TASKS_EXT: {}}}))
+        # What the next test's setUp sees: tools a later test calls directly must not take a task path.
+        self.setUp()
+
+        self.assertIsNone(frappe.local.mcp_era)
+        self.assertIsNone(frappe.local.mcp_client_caps)
+
     def test_handshake_leaves_default_caps(self):
         _send({"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {}})
 
