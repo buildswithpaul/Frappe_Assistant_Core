@@ -29,13 +29,18 @@ registry, and answer with zero tools and no error anywhere. That presents to the
 user as "my tools disappeared".
 """
 
+import ast
+import inspect
 import json
+import textwrap
 
 import frappe
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
 from frappe_assistant_core.api.fac_endpoint import _REGISTRY_METHODS, _requested_mcp_method
+from frappe_assistant_core.mcp import tasks
+from frappe_assistant_core.mcp.server import MCPServer
 from frappe_assistant_core.tests.base_test import BaseAssistantTest
 
 TOOLS_LIST = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
@@ -131,3 +136,46 @@ class TestRequestedMCPMethod(BaseAssistantTest):
         self.addCleanup(lambda: setattr(frappe.local, "request", original))
 
         self.assertIsNone(_requested_mcp_method())
+
+
+def _registry_branches(func) -> tuple[set, set]:
+    """The methods whose branch in ``func`` passes ``tool_registry`` on.
+
+    Returns (literal method names, source of any ``method in <expr>`` collections).
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+    names, collections = set(), set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        uses = any(
+            isinstance(n, ast.Name) and n.id == "tool_registry" for stmt in node.body for n in ast.walk(stmt)
+        )
+        if not uses:
+            continue
+        for test in ast.walk(node.test):
+            if not (isinstance(test, ast.Compare) and isinstance(test.left, ast.Name)):
+                continue
+            if test.left.id != "method":
+                continue
+            op, right = test.ops[0], test.comparators[0]
+            if isinstance(op, ast.Eq) and isinstance(right, ast.Constant):
+                names.add(right.value)
+            elif isinstance(op, ast.In):
+                collections.add(ast.unparse(right))
+    return names, collections
+
+
+class TestRegistryMethodsMatchDispatch(BaseAssistantTest):
+    """Every method handle() hands the registry to must get one built by the endpoint."""
+
+    def test_every_method_that_reads_the_registry_gets_one(self):
+        names, collections = _registry_branches(MCPServer.handle)
+        self.assertEqual(collections, {"tasks.METHODS"}, "extend this test for the new dispatch")
+        task_names, task_collections = _registry_branches(tasks.handle)
+        self.assertFalse(task_collections)
+
+        readers = names | task_names
+        self.assertIn("tools/list", readers)
+        self.assertIn("tasks/get", readers)
+        self.assertLessEqual(readers, _REGISTRY_METHODS)

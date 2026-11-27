@@ -35,6 +35,8 @@ Call `dry_run_import` with `plan` alone (no `answers`): while it runs or once it
 reports `status` (`Running`, `Completed`, `Partially Completed`, `Stopped`, `Failed`) and each
 file's `status`, `created` and `left_out`, and asks no approval.
 
+**Clients that take MCP tasks**: when the client declared the tasks extension, the call answers with a task named "Running migration plan <plan>" that the client follows by itself. It stays working while the plan is `Running`; a `Completed` or `Partially Completed` plan completes it with this tool's reply for the plan (file names and messages fenced as usual); a `Failed` or `Stopped` one fails it with the plan's last message. Without the tasks extension the reply is as before: follow it with `dry_run_import`.
+
 Don't call `run_migration_plan` again to follow it. It would start nothing, but every call of it
 puts a new Approve/Reject card in front of the user, which stays there as if the plan were
 waiting on them.

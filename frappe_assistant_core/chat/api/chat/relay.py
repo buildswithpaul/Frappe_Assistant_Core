@@ -456,10 +456,11 @@ def _dispatch_relay_event(
     return True
 
 
-# AR gives up on a parked turn on its own at about 360 s. These catch one it keeps
-# alive: they trip only on a heartbeat, so an AR that goes fully silent is bounded
-# by the SDK read timeout instead.
-RELAY_NO_PROGRESS_SECONDS = 420
+# AR polls a long FAC tool (a report, an import) for up to 480 s plus 15 s grace, so its own
+# stall floor is 495 s and it sends only heartbeats meanwhile. The relay must outwait that, or
+# it cuts a turn AR would still finish. These trip only on a heartbeat, so an AR that goes
+# fully silent is bounded by the SDK read timeout instead.
+RELAY_NO_PROGRESS_SECONDS = 540
 RELAY_MAX_TURN_SECONDS = 1800
 
 

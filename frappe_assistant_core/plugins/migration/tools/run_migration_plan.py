@@ -20,8 +20,9 @@ from frappe import _
 from frappe.utils import cstr
 
 from frappe_assistant_core.core.base_tool import BaseTool, exception_message, permission_error_result
+from frappe_assistant_core.mcp.tasks import TASK_MARKER, Progress, failed, tasks_requested
 from frappe_assistant_core.utils import import_plan
-from frappe_assistant_core.utils.untrusted_output import as_fenced, unfenced
+from frappe_assistant_core.utils.untrusted_output import as_fenced, fence_fields, unfenced, with_notice
 
 
 class RunMigrationPlan(BaseTool):
@@ -130,7 +131,54 @@ class RunMigrationPlan(BaseTool):
             frappe.log_error(title=_("Run Migration Plan Error"), message=frappe.get_traceback())
             return {"success": False, "error": exception_message(e), "plan": plan.name}
         plan.reload()
-        return {"success": True, **import_plan.result(plan)}
+        reply = plan_result(plan)
+        if plan.status == "Running" and tasks_requested():
+            reply[TASK_MARKER] = {
+                "reference_doctype": import_plan.SESSION_DOCTYPE,
+                "reference_name": plan.name,
+                "status_message": _running_message(plan),
+            }
+        return reply
+
+
+def plan_result(plan) -> Dict[str, Any]:
+    """run_migration_plan's reply for the plan, as its task also ends with it."""
+    return {"success": True, **import_plan.result(plan)}
+
+
+def _running_message(plan) -> str:
+    return _("Running migration plan {0}").format(plan.name)
+
+
+def plan_task_progress(reference_doctype: str, reference_name: str, arguments: dict) -> Progress:
+    """run_migration_plan's MCP task adapter (see ``tasks.register_adapter``).
+
+    Polled as the task's owner, through ``load_plan``, as the tool loads the plan. Working while
+    the plan is Running (the scheduled sweep stops a plan no job runs any more); a Completed or
+    Partially Completed plan is answered with the tool's reply; a Failed or Stopped one fails the
+    task with the plan's last message, fenced, as it quotes the plan's files.
+    """
+    if reference_doctype != import_plan.SESSION_DOCTYPE:
+        return failed(_("This task does not follow a migration plan."))
+    try:
+        plan = import_plan.load_plan(reference_name)
+    except frappe.PermissionError:
+        frappe.clear_messages()
+        return failed(_("You can no longer follow migration plan {0}.").format(reference_name))
+    if plan.status == "Running":
+        return Progress("working", status_message=_running_message(plan))
+    if plan.status in ("Completed", "Partially Completed"):
+        return Progress("completed", raw_result=plan_result(plan))
+    if plan.status in ("Failed", "Stopped"):
+        why = {"message": plan.steps[-1].message if plan.steps else ""}
+        return failed(
+            _(
+                "Migration plan {0} ended {1}. What it imported stays: dry_run_import with the plan "
+                "reports each file."
+            ).format(plan.name, _(plan.status)),
+            data=with_notice(fence_fields(why, ["message"])),
+        )
+    return failed(_("Migration plan {0} is {1}: it is not running.").format(plan.name, _(plan.status)))
 
 
 # Make sure class name matches file name for discovery

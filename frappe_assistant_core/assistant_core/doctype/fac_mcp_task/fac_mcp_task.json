@@ -1,0 +1,123 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-26 00:00:00.000000",
+ "description": "A long-running MCP tools/call the client polls with tasks/get. Written only by the MCP server; the result is never stored here.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "owner_user",
+  "tool",
+  "status",
+  "status_message",
+  "column_break_1",
+  "reference_doctype",
+  "reference_name",
+  "expires_at",
+  "section_detail",
+  "arguments",
+  "error"
+ ],
+ "fields": [
+  {
+   "fieldname": "owner_user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Owner User",
+   "options": "User",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "tool",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Tool",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "default": "working",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "working\ncompleted\nfailed\ncancelled",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "status_message",
+   "fieldtype": "Small Text",
+   "label": "Status Message",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Link",
+   "label": "Reference DocType",
+   "options": "DocType",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Reference Name",
+   "options": "reference_doctype",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "expires_at",
+   "fieldtype": "Datetime",
+   "label": "Expires At",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_detail",
+   "fieldtype": "Section Break",
+   "label": "Detail"
+  },
+  {
+   "fieldname": "arguments",
+   "fieldtype": "JSON",
+   "label": "Arguments",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "JSON",
+   "label": "Error",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-27 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Assistant Core",
+ "name": "FAC MCP Task",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
