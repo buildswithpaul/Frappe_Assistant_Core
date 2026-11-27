@@ -198,7 +198,7 @@ class TestImportChart(ChartCase):
 
     def test_a_second_company_of_the_client_keeps_its_old_ids_too(self):
         self._added()
-        abbr = "S" + frappe.generate_hash(length=4).upper()
+        abbr = "S" + frappe.generate_hash(length=8).upper()
         second = frappe.get_doc(
             {
                 "doctype": "Company",

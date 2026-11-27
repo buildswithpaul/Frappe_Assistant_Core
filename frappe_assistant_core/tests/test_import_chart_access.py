@@ -28,7 +28,7 @@ class TestImportChartAccess(ChartCase):
             {
                 "doctype": "Company",
                 "company_name": f"Other Co {self.tag}",
-                "abbr": "O" + frappe.generate_hash(length=4).upper(),
+                "abbr": "O" + frappe.generate_hash(length=8).upper(),
                 "default_currency": "JPY",
                 "country": "Japan",
                 "create_chart_of_accounts_based_on": "Standard Template",
