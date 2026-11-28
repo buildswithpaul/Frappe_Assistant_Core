@@ -27,6 +27,7 @@ const TOOL_PHRASING = {
 	update_document: { verb: "Prepared", noun: "update" },
 	document_action: { verb: "Prepared", noun: "submission" },
 	generate_report: { verb: "Generated", noun: "report" },
+	run_script: { verb: "Ran", noun: "a script" },
 };
 
 // Literal strings, so each verb is a translatable key of its own.

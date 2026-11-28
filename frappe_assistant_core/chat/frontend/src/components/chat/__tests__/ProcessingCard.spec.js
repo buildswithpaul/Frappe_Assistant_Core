@@ -95,12 +95,13 @@ describe("ProcessingCard tool rows", () => {
 		expect(label.text()).toBe("Created Quotation → QTN-0001");
 	});
 
-	it("shows tool I/O without repeating the tool header inside the drawer", async () => {
+	it("opens a step onto the call's details", async () => {
 		const wrapper = mountCard([QUOTE]);
+		expect(wrapper.find(".timeline-drawer").exists()).toBe(false);
+
 		await wrapper.find(".timeline-line").trigger("click");
 
-		expect(wrapper.find(".timeline-drawer").exists()).toBe(true);
-		expect(wrapper.find(".timeline-drawer .tool-header").exists()).toBe(false);
+		expect(wrapper.find(".timeline-drawer .tool-details").exists()).toBe(true);
 	});
 });
 

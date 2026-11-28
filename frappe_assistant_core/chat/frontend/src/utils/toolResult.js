@@ -77,7 +77,7 @@ export function isDryRun(block) {
 const FENCED = /^\s*<([a-z_]+)>\n[^\n]*\n([\s\S]*?)\n<\/\1>\s*$/;
 const TAGS_ONLY = /^\s*<([a-z_]+)>([\s\S]*)<\/\1>\s*$/;
 
-function unfenced(text) {
+export function unfenced(text) {
 	const match = FENCED.exec(text) || TAGS_ONLY.exec(text);
 	return match ? match[2] : text;
 }

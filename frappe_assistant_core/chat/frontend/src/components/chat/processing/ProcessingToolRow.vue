@@ -57,6 +57,7 @@
 			<span class="timeline-label"
 				>{{ row.labelPrefix }}<strong v-if="row.hasTarget">{{ row.target }}</strong></span
 			>
+			<span v-if="meta" class="timeline-meta">{{ meta }}</span>
 			<svg
 				class="timeline-chevron"
 				:class="{ 'chevron-open': expanded }"
@@ -72,19 +73,15 @@
 				/>
 			</svg>
 		</button>
-		<p v-if="row.reason" class="timeline-reason">{{ row.reason }}</p>
+		<!-- <div>, not <p>: a paragraph inside an assistant turn takes the message's body size. -->
+		<div v-if="row.reason" class="timeline-reason">{{ row.reason }}</div>
 		<a v-if="row.appliesTo" class="timeline-open" :href="row.appliesTo.url" target="_blank" rel="noopener">{{
 			__("Open a new {0}", [row.appliesTo.doctype])
 		}}</a>
 		<div v-if="expanded" class="timeline-drawer">
 			<!-- The row above already names the action and its status, so the
-			     drawer carries only the payload — its own header would repeat
-			     that line with an inert chevron beside it. -->
-			<ToolCallBlock
-				:block="{ ...row.block, isExpanded: true }"
-				:show-header="false"
-				@toggle="() => {}"
-			/>
+			     drawer carries only the payload. -->
+			<ToolDetails :block="row.block" />
 		</div>
 	</div>
 </template>
@@ -92,7 +89,10 @@
 <script setup>
 import { computed, ref } from "vue";
 import { __ } from "@/utils/i18n";
-import ToolCallBlock from "../ToolCallBlock.vue";
+import { formatDuration } from "@/components/workflows/runs/runFormat";
+import { toolDurationMs } from "@/composables/useActivityTimeline";
+import ToolDetails from "../toolblock/ToolDetails.vue";
+import { resultCount } from "../toolblock/toolView";
 
 const props = defineProps({
 	row: { type: Object, required: true },
@@ -106,6 +106,14 @@ const status = computed(() =>
 );
 
 const expanded = ref(false);
+
+// How much came back and how long it took, once the call has finished well.
+const meta = computed(() => {
+	if (status.value !== "success") return "";
+	const count = resultCount(props.row.block);
+	const found = count === null ? "" : count === 0 ? __("none found") : __("{0} found", [count]);
+	return [found, formatDuration(toolDurationMs(props.row.block))].filter(Boolean).join(" · ");
+});
 </script>
 
 <style scoped>
@@ -189,6 +197,13 @@ const expanded = ref(false);
 	color: var(--ql-text);
 }
 
+.timeline-meta {
+	flex-shrink: 0;
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	color: var(--ql-text-muted);
+}
 .timeline-open {
 	display: inline-block;
 	margin: 2px 0 0 21px;
