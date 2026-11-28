@@ -417,6 +417,10 @@ export function useStreaming() {
 				chatStore.resetActivityTimeout();
 				chatStore.handleToolCallResult(data);
 				break;
+			case "tool_call_steps":
+				chatStore.resetActivityTimeout();
+				chatStore.handleToolCallSteps(data);
+				break;
 			case "tool_cancelled":
 				chatStore.resetActivityTimeout();
 				chatStore.handleToolCancelled(data);

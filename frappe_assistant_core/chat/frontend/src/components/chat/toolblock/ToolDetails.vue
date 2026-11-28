@@ -15,7 +15,8 @@
 		</div>
 
 		<template v-if="script">
-			<CodePreview v-if="tab === 'code'" :code="code" :language="languageFor(code, 'python')" :label="__('Script')" numbered copyable />
+			<ScriptSteps v-if="tab === 'steps'" :block="block" />
+			<CodePreview v-else-if="tab === 'code'" :code="code" :language="languageFor(code, 'python')" :label="__('Script')" numbered copyable />
 			<ScriptOutput v-else :block="block" />
 		</template>
 		<template v-else>
@@ -35,9 +36,10 @@ import { computed } from "vue";
 import { __ } from "@/utils/i18n";
 import CodePreview from "../interactions/CodePreview.vue";
 import ScriptOutput from "./ScriptOutput.vue";
+import ScriptSteps from "./ScriptSteps.vue";
 import ToolSummary from "./ToolSummary.vue";
 import { useRememberedTab } from "./rememberedTab";
-import { isScript, isTruncated, languageFor, rawRequest, rawResponse, scriptCode } from "./toolView";
+import { isScript, isTruncated, languageFor, rawRequest, rawResponse, scriptCode, scriptSteps } from "./toolView";
 
 const props = defineProps({
 	// A tool_call block. The row above names the action and its status; this is its payload.
@@ -45,18 +47,23 @@ const props = defineProps({
 });
 
 const script = isScript(props.block);
-const tabs = script
-	? [
-			{ id: "code", label: __("Code") },
-			{ id: "output", label: __("Output") },
-	  ]
-	: [
-			{ id: "summary", label: __("Summary") },
-			{ id: "raw", label: __("Raw") },
-	  ];
+// A script's steps arrive when it ends, so a drawer opened while it still runs gains the
+// "What it did" tab then. The tab in view does not change under the reader.
+const tabs = computed(() =>
+	script
+		? [
+				...(scriptSteps(props.block).length ? [{ id: "steps", label: __("What it did") }] : []),
+				{ id: "code", label: __("Code") },
+				{ id: "output", label: __("Output") },
+		  ]
+		: [
+				{ id: "summary", label: __("Summary") },
+				{ id: "raw", label: __("Raw") },
+		  ],
+);
 const { tab, choose } = useRememberedTab(
 	script ? "script" : "tool",
-	tabs.map((option) => option.id),
+	tabs.value.map((option) => option.id),
 );
 
 const code = computed(() => scriptCode(props.block));

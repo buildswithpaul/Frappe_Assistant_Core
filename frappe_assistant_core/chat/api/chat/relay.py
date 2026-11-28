@@ -232,6 +232,7 @@ def _update_faco_message_merged(
 
 
 from ..block_builder import (  # noqa: E402
+    clean_script_steps,
     merge_changes_block,
     normalise_changes,
     truncate_result_for_emit,
@@ -268,6 +269,7 @@ _SHARED_RELAY_EVENTS = frozenset(
         "task_activity",
         "thinking",
         "thinking_complete",
+        "tool_call_steps",
     }
 )
 
@@ -351,6 +353,29 @@ def _relay_changes_made(raw_changes, session_id: str, block_builder, ar_message_
         )
 
 
+def _relay_script_steps(data: dict, session_id: str, block_builder, message_id: str | None) -> None:
+    """Store the calls a script made on its tool block and send them to the browser.
+
+    The runtime sends them when the script ends, ahead of the script's result, which it may
+    hold back while another call of the same reply waits for approval.
+    """
+    steps = clean_script_steps(data.get("steps"))
+    tool_id = data.get("tool_id")
+    block = block_builder.add_script_steps(tool_id, steps, data.get("calls")) if steps else None
+    if block is None:
+        return
+    event = {
+        "event": "tool_call_steps",
+        "session_id": session_id,
+        "message_id": message_id,
+        "tool_id": tool_id,
+        "steps": steps,
+    }
+    if "calls" in block:
+        event["calls"] = block["calls"]
+    _emit_socket_event(session_id, event)
+
+
 def _dispatch_relay_event(
     event_type: str, data: dict, session_id: str, block_builder, ar_message_id: str | None = None
 ) -> bool:
@@ -429,6 +454,9 @@ def _dispatch_relay_event(
 
     elif event_type == "changes_made":
         _relay_changes_made(data.get("changes"), session_id, block_builder, ar_message_id)
+
+    elif event_type == "tool_call_steps":
+        _relay_script_steps(data, session_id, block_builder, ar_message_id)
 
     elif event_type == "thinking":
         block_builder.add_thinking(data.get("content", ""))

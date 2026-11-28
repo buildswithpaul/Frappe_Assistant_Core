@@ -33,20 +33,27 @@ import { cellText } from "./toolView";
 const PREVIEW_ROWS = 5;
 
 const props = defineProps({
-	// A `table` view from toolView: columns, rows, total and hiddenColumns.
+	// A `table` view from toolView: columns, rows, total and hiddenColumns, and `returned` for a preview.
 	view: { type: Object, required: true },
+	// False where no Raw tab sits beside the table (a script's step), so the note does not point at one.
+	hasRaw: { type: Boolean, default: true },
 });
 
 const showAll = ref(false);
 const shown = computed(() => (showAll.value ? props.view.rows : props.view.rows.slice(0, PREVIEW_ROWS)));
 
 const note = computed(() => {
-	const { rows, total, hiddenColumns } = props.view;
+	const { rows, total, returned, hiddenColumns } = props.view;
 	const parts = [];
-	if (total > rows.length) parts.push(__("{0} of {1} returned.", [rows.length, total]));
+	// A script's step shows a preview of what the call returned, which may itself be a part of what matched.
+	if (returned > rows.length) {
+		parts.push(__("First {0} of {1}.", [rows.length, returned]));
+		if (total > returned) parts.push(__("{0} matched.", [total]));
+	} else if (total > rows.length) parts.push(__("{0} of {1} returned.", [rows.length, total]));
 	else if (rows.length > PREVIEW_ROWS && !showAll.value) parts.push(__("First {0} of {1}.", [PREVIEW_ROWS, rows.length]));
 	else parts.push(rows.length === 1 ? __("1 record.") : __("All {0} shown.", [rows.length]));
-	if (hiddenColumns) parts.push(hiddenColumns === 1 ? __("1 more column in Raw.") : __("{0} more columns in Raw.", [hiddenColumns]));
+	if (hiddenColumns && props.hasRaw) parts.push(hiddenColumns === 1 ? __("1 more column in Raw.") : __("{0} more columns in Raw.", [hiddenColumns]));
+	else if (hiddenColumns) parts.push(hiddenColumns === 1 ? __("1 more column.") : __("{0} more columns.", [hiddenColumns]));
 	return parts.join(" ");
 });
 </script>

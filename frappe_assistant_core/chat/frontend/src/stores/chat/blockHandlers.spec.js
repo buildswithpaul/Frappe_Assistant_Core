@@ -19,6 +19,32 @@ function makeHandlers(messagesArr) {
 	});
 }
 
+describe("handleToolCallSteps", () => {
+	// The socket events of one script call, as FAC relays the runtime's: start, steps, result.
+	function scriptBlock(stepsEvent) {
+		const msgs = [{ role: "assistant", isStreaming: true, blocks: [], _requestId: "req-1" }];
+		const handlers = makeHandlers(msgs);
+		handlers.handleToolCallStart({ tool_id: "tu-1", tool_name: "run_script", input: { code: "print(1)" } });
+		handlers.handleToolCallSteps({ tool_id: "tu-1", ...stepsEvent });
+		handlers.handleToolCallResult({ tool_id: "tu-1", tool_name: "run_script", status: "success", result: [{ text: "1" }] });
+		return msgs[0].blocks.find((block) => block.id === "tu-1");
+	}
+	const steps = [{ tool_name: "list_documents", input: { doctype: "Customer" }, status: "success" }];
+
+	it("keeps the calls a script made on its block, through the result that follows", () => {
+		const block = scriptBlock({ steps, calls: 300 });
+
+		expect(block.steps).toEqual(steps);
+		expect(block.calls).toBe(300);
+		expect(block.status).toBe("success");
+	});
+
+	it("ignores steps that are not a list, or that are for a call it does not have", () => {
+		expect("steps" in scriptBlock({ steps: "none" })).toBe(false);
+		expect("steps" in scriptBlock({ tool_id: "tu-other", steps })).toBe(false);
+	});
+});
+
 describe("handleWorkflowCreatedEvent", () => {
 	it("appends a workflow_created block to the streaming assistant message", () => {
 		const msgs = [{ role: "assistant", isStreaming: true, blocks: [], _requestId: "req-1" }];

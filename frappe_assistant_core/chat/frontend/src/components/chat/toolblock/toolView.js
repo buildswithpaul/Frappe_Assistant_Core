@@ -7,6 +7,8 @@
  * chose, so every rule here either recognises a shape or leaves the value to Raw.
  */
 
+import { formatDuration } from "@/components/workflows/runs/runFormat";
+import { toolDurationMs } from "@/composables/useActivityTimeline";
 import { __ } from "@/utils/i18n";
 import { baseToolName } from "@/utils/toolNames";
 import { failureReason, toolFailed, toolResult, unfenced } from "@/utils/toolResult";
@@ -219,12 +221,18 @@ function tableFrom(rows, reportColumns, total) {
 	};
 }
 
-function recordView(values) {
+// The runtime cuts every list in a script step's preview to this many items.
+const PREVIEW_ROWS = 5;
+
+function rowsText(count, preview) {
+	if (preview && count >= PREVIEW_ROWS) return __("{0} or more rows", [count]);
+	return count === 1 ? __("1 row") : __("{0} rows", [count]);
+}
+
+function recordView(values, preview = false) {
 	const fields = Object.entries(values)
 		.map(([key, value]) => {
-			if (Array.isArray(value)) {
-				return value.length ? { label: fieldLabel(key), value: value.length === 1 ? __("1 row") : __("{0} rows", [value.length]) } : null;
-			}
+			if (Array.isArray(value)) return value.length ? { label: fieldLabel(key), value: rowsText(value.length, preview) } : null;
 			if (!isScalar(value) || String(value) === "") return null;
 			return { label: fieldLabel(key), value: clip(yesNo(key, value) ?? String(clean(value)), MAX_VALUE_CHARS) };
 		})
@@ -251,25 +259,30 @@ export function isTruncated(block) {
 /**
  * How to show a tool's result: `table` (a list of records), `empty` (a list with nothing in it),
  * `record` (one record, or a flat answer), `text`, `error`, `truncated` (too large to show until
- * the page is reloaded), or `none` when there is nothing yet.
+ * the page is reloaded), or `none` when there is nothing yet. A script's step can also be
+ * `stopped` (the call did not finish) or `count` (records were found, too many to preview).
  */
 export function resultView(block) {
 	if (toolFailed(block)) return { kind: "error", text: failureReason(block, MAX_ERROR_CHARS) };
+	if (block?.status === "stopped") return { kind: "stopped" };
 	if (isTruncated(block)) return { kind: "truncated" };
+	const preview = block?.preview;
+	const nothing = Number.isInteger(preview?.count) ? { kind: "count", count: preview.count } : { kind: "none" };
 	const result = toolResult(block);
 	if (!Object.keys(result).length) {
 		const text = contentText(block?.result);
-		return text ? { kind: "text", text: clip(text, MAX_TEXT_CHARS) } : { kind: "none" };
+		return text ? { kind: "text", text: clip(text, MAX_TEXT_CHARS) } : nothing;
 	}
 	const list = result[LIST_KEYS.find((name) => Array.isArray(result[name]))];
 	if (list) {
 		if (!list.length) return { kind: "empty" };
-		const table = tableFrom(list, result.columns, result.total_count ?? result.count);
-		if (table) return table;
+		const table = tableFrom(list, result.columns, preview?.count ?? result.total_count ?? result.count);
+		// A step's rows are a preview: `returned` is how many the call really gave the script.
+		if (table) return Number.isInteger(preview?.returned) ? { ...table, returned: preview.returned } : table;
 	}
 	const { success: _success, ...rest } = isObject(result.data) ? result.data : result;
-	const record = recordView(rest);
-	return record.fields.length ? record : { kind: "none" };
+	const record = recordView(rest, Boolean(preview));
+	return record.fields.length ? record : nothing;
 }
 
 /**
@@ -280,7 +293,57 @@ export function resultCount(block) {
 	if (isScript(block) || WRITE_TOOLS.has(baseToolName(block?.tool_name))) return null;
 	const view = resultView(block);
 	if (view.kind === "table") return view.total;
+	if (view.kind === "count") return view.count;
 	return view.kind === "empty" ? 0 : null;
+}
+
+const wholeNumber = (value) => (Number.isInteger(value) && value >= 0 ? value : null);
+
+/**
+ * The calls a script made, each shaped as a tool_call block so the same views read it. The
+ * runtime sends them when the script ends, ahead of its result (assistant_runtime
+ * agent/script_steps.py); a script run on a runtime from before that has none. A step's `result` is a preview: lists cut
+ * to a few rows, with the real numbers in `preview`.
+ */
+export function scriptSteps(block) {
+	if (!isScript(block) || !Array.isArray(block.steps)) return [];
+	return block.steps.filter(isObject).map((step, index) => {
+		const status = step.status === "success" || step.status === "error" ? step.status : "stopped";
+		const error = typeof step.error === "string" ? step.error : "";
+		return {
+			id: `${block.id}-step-${index}`,
+			type: "tool_call",
+			tool_name: typeof step.tool_name === "string" ? step.tool_name : "",
+			input: isObject(step.input) ? step.input : {},
+			status,
+			result: status === "error" ? { success: false, error } : step.result ?? null,
+			duration_ms: wholeNumber(step.duration_ms) ?? undefined,
+			preview: { count: wholeNumber(step.count), returned: wholeNumber(step.returned) },
+			stoppedReason: status === "stopped" ? error : "",
+		};
+	});
+}
+
+/** How many calls a script made: more than its listed steps when it looped past what is listed. */
+export function scriptCalls(block) {
+	const listed = scriptSteps(block).length;
+	return Number.isInteger(block?.calls) && block.calls > listed ? block.calls : listed;
+}
+
+/** What to say beside a finished call: how much came back, and how long it took. */
+export function stepMeta(block) {
+	const calls = scriptCalls(block);
+	const count = resultCount(block);
+	const found = calls
+		? calls === 1
+			? __("1 lookup")
+			: __("{0} lookups", [calls])
+		: count === null
+		? ""
+		: count === 0
+		? __("none found")
+		: __("{0} found", [count]);
+	return [found, formatDuration(toolDurationMs(block))].filter(Boolean).join(" · ");
 }
 
 /** A row's value as one table cell's text. A row without the column has no value, whatever the column is called. */

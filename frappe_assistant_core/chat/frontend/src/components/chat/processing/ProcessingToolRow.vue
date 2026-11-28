@@ -1,59 +1,7 @@
 <template>
 	<div class="timeline-row" :class="`timeline-${status}`">
 		<button class="timeline-line" @click="expanded = !expanded" :aria-expanded="expanded">
-			<span class="timeline-chip" :class="`chip-${status}`">
-				<svg
-					v-if="status === 'running'"
-					class="chip-spinner"
-					viewBox="0 0 24 24"
-					fill="none"
-				>
-					<circle
-						cx="12"
-						cy="12"
-						r="10"
-						stroke="currentColor"
-						stroke-width="3"
-						opacity="0.25"
-					/>
-					<path
-						d="M12 2a10 10 0 0 1 10 10"
-						stroke="currentColor"
-						stroke-width="3"
-						stroke-linecap="round"
-					/>
-				</svg>
-				<svg
-					v-else-if="status === 'error'"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="3"
-						d="M6 18L18 6M6 6l12 12"
-					/>
-				</svg>
-				<svg
-					v-else-if="status === 'stopped'"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-				>
-					<circle cx="12" cy="12" r="8" stroke-width="3" />
-					<path stroke-linecap="round" stroke-width="3" d="M7 17L17 7" />
-				</svg>
-				<svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor">
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="3"
-						d="M5 13l4 4L19 7"
-					/>
-				</svg>
-			</span>
+			<StatusChip :status="status" />
 			<span class="timeline-label"
 				>{{ row.labelPrefix }}<strong v-if="row.hasTarget">{{ row.target }}</strong></span
 			>
@@ -89,10 +37,9 @@
 <script setup>
 import { computed, ref } from "vue";
 import { __ } from "@/utils/i18n";
-import { formatDuration } from "@/components/workflows/runs/runFormat";
-import { toolDurationMs } from "@/composables/useActivityTimeline";
 import ToolDetails from "../toolblock/ToolDetails.vue";
-import { resultCount } from "../toolblock/toolView";
+import { stepMeta } from "../toolblock/toolView";
+import StatusChip from "./StatusChip.vue";
 
 const props = defineProps({
 	row: { type: Object, required: true },
@@ -108,12 +55,7 @@ const status = computed(() =>
 const expanded = ref(false);
 
 // How much came back and how long it took, once the call has finished well.
-const meta = computed(() => {
-	if (status.value !== "success") return "";
-	const count = resultCount(props.row.block);
-	const found = count === null ? "" : count === 0 ? __("none found") : __("{0} found", [count]);
-	return [found, formatDuration(toolDurationMs(props.row.block))].filter(Boolean).join(" · ");
-});
+const meta = computed(() => (status.value === "success" ? stepMeta(props.row.block) : ""));
 </script>
 
 <style scoped>
@@ -133,57 +75,6 @@ const meta = computed(() => {
 
 .timeline-line:hover {
 	color: var(--ql-text-secondary);
-}
-
-.timeline-chip {
-	flex-shrink: 0;
-	width: 14px;
-	height: 14px;
-	border-radius: 50%;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	background: color-mix(in srgb, var(--ql-accent) 14%, transparent);
-	color: var(--ql-accent);
-}
-
-.timeline-chip svg {
-	width: 9px;
-	height: 9px;
-}
-
-.chip-running {
-	background: color-mix(in srgb, var(--ql-warning) 16%, transparent);
-	color: var(--ql-warning);
-}
-
-.chip-stopped {
-	background: color-mix(in srgb, var(--ql-text-muted) 16%, transparent);
-	color: var(--ql-text-muted);
-}
-
-.chip-error {
-	background: color-mix(in srgb, var(--ql-danger) 16%, transparent);
-	color: var(--ql-danger);
-}
-
-.chip-spinner {
-	animation: timeline-spin 1s linear infinite;
-}
-
-@keyframes timeline-spin {
-	from {
-		transform: rotate(0deg);
-	}
-	to {
-		transform: rotate(360deg);
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.chip-spinner {
-		animation: none;
-	}
 }
 
 .timeline-label {
