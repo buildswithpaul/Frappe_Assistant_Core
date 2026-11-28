@@ -1,20 +1,27 @@
 <template>
-	<div class="aa-notice" role="status">
-		<div class="aa-text">
-			<strong>{{ __("Auto-approve is ready.") }}</strong>
-			{{
-				__(
-					"Once you choose Got it, everyday changes run without asking and are listed in the reply. Submitting, deleting, emailing, publishing and admin changes still ask. An edit has no Undo, and your site's own alerts can still fire."
-				)
-			}}
-		</div>
-		<div class="aa-actions">
-			<button type="button" class="aa-btn" :disabled="saving" @click="$emit('turn-off')">
-				{{ __("Turn off") }}
-			</button>
-			<button type="button" class="aa-btn aa-btn-primary" :disabled="saving" @click="$emit('keep')">
-				{{ __("Got it") }}
-			</button>
+	<div class="aa-wrap">
+		<div class="aa-notice" role="status">
+			<div class="aa-text">
+				<strong>{{ __("Auto-approve is ready.") }}</strong>
+				{{
+					__(
+						"Once you choose Got it, everyday changes run without asking and are listed in the reply. Submitting, deleting, emailing, publishing and admin changes still ask. An edit has no Undo, and your site's own alerts can still fire.",
+					)
+				}}
+			</div>
+			<div class="aa-actions">
+				<button type="button" class="aa-btn" :disabled="saving" @click="$emit('turn-off')">
+					{{ __("Turn off") }}
+				</button>
+				<button
+					type="button"
+					class="aa-btn aa-btn-primary"
+					:disabled="saving"
+					@click="$emit('keep')"
+				>
+					{{ __("Got it") }}
+				</button>
+			</div>
 		</div>
 	</div>
 </template>
@@ -29,6 +36,11 @@ defineEmits(["keep", "turn-off"]);
 </script>
 
 <style scoped>
+.aa-wrap {
+	/* Sized by its own width: the Desk widget is a narrow panel in a wide window. */
+	container-type: inline-size;
+}
+
 .aa-notice {
 	display: flex;
 	align-items: center;
@@ -72,7 +84,7 @@ defineEmits(["keep", "turn-off"]);
 	cursor: default;
 }
 
-@media (max-width: 640px) {
+@container (max-width: 560px) {
 	.aa-notice {
 		flex-direction: column;
 		align-items: stretch;

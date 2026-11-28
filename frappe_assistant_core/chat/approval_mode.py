@@ -10,7 +10,8 @@ record, a message going out, a publish, and any change to users, roles, system s
 customisations.
 
 The mode is on for a user who has not switched it off, but it reaches the runtime only once
-the user has seen the notice that explains it, and only from FAC Chat, which shows the switch.
+the user has seen the notice that explains it, and only from the clients that show the switch:
+FAC Chat and the Desk widget.
 """
 
 import frappe
@@ -19,8 +20,9 @@ PREFERENCES_DOCTYPE = "FAC Chat User Preferences"
 OFF_FIELD = "auto_approve_off"
 NOTICE_FIELD = "auto_approve_notice_seen"
 AUTO = "auto"
-#: The clients that show the switch. Any other sends no mode, so its writes ask as before.
-SWITCH_CLIENTS = frozenset({"spa"})
+#: The clients that show the switch: FAC Chat and the Desk widget, which is built from the same
+#: composer. Any other sends no mode, so its writes ask as before.
+SWITCH_CLIENTS = frozenset({"spa", "widget"})
 
 
 def available() -> bool:

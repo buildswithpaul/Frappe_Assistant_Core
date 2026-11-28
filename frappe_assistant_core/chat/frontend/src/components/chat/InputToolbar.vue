@@ -55,7 +55,7 @@
 			<button
 				v-if="autoApproveAvailable"
 				@click="$emit('toggle-auto-approve')"
-				class="toolbar-btn toolbar-btn-pill"
+				class="toolbar-btn toolbar-btn-pill toolbar-btn-auto-approve"
 				:class="{ 'toolbar-btn-active': autoApprove }"
 				:disabled="autoApproveSaving"
 				:aria-pressed="autoApprove"
@@ -201,6 +201,8 @@ defineEmits([
 
 <style scoped>
 .input-toolbar {
+	/* The Desk widget is a narrow panel in a wide window, so the row is sized by its own width. */
+	container-type: inline-size;
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
@@ -374,6 +376,40 @@ defineEmits([
 
 .send-btn-stop:hover {
 	filter: brightness(1.08);
+}
+
+/* Three labelled pills do not fit a narrow composer (the Desk widget, a small window). The
+   auto-approve pill gives up its label first, then all of them do, as on a phone, so none runs
+   under the send button. */
+@container (max-width: 560px) {
+	.kbd-hint {
+		display: none;
+	}
+	.toolbar-left {
+		gap: 0.25rem;
+	}
+	.toolbar-btn-pill {
+		padding: 0 0.5rem;
+	}
+	.toolbar-btn-auto-approve .pill-label {
+		display: none;
+	}
+	.toolbar-btn-auto-approve {
+		width: 2rem;
+		padding: 0;
+		justify-content: center;
+	}
+}
+
+@container (max-width: 330px) {
+	.pill-label {
+		display: none;
+	}
+	.toolbar-btn-pill {
+		width: 2rem;
+		padding: 0;
+		justify-content: center;
+	}
 }
 
 @media (max-width: 640px) {
