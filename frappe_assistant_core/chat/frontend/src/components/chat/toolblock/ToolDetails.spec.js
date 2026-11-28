@@ -90,12 +90,12 @@ describe("ToolDetails", () => {
 		expect(wrapper.findAll(".summary-plain").at(-1).text()).toContain("did not finish");
 	});
 
-	it("says when a script made more lookups than it lists, and skips a step the chat has no row for", () => {
+	it("says when a script made more steps than it lists, and skips a step the chat has no row for", () => {
 		const steps = [...STEPS, { tool_name: "get_skill", input: {}, status: "success" }];
 		const wrapper = mount(ToolDetails, { props: { block: { ...SCRIPT, steps, calls: 120 } } });
 
 		expect(wrapper.findAll(".step-label")).toHaveLength(3);
-		expect(wrapper.find(".steps-more").text()).toBe("The first 3 of 120 lookups.");
+		expect(wrapper.find(".steps-more").text()).toBe("The first 3 of 120 steps.");
 	});
 
 	it("does not point a step's reader at a Raw tab the step does not have", async () => {

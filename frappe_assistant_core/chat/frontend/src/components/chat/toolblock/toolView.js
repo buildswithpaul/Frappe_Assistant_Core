@@ -336,8 +336,8 @@ export function stepMeta(block) {
 	const count = resultCount(block);
 	const found = calls
 		? calls === 1
-			? __("1 lookup")
-			: __("{0} lookups", [calls])
+			? __("1 step")
+			: __("{0} steps", [calls])
 		: count === null
 		? ""
 		: count === 0

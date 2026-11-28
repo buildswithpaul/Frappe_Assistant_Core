@@ -67,7 +67,7 @@ describe("ProcessingToolRow summary", () => {
 		expect(mount(ProcessingToolRow, { props: { row: { ...failed, status: "error" } } }).find(".timeline-meta").exists()).toBe(false);
 	});
 
-	it("says how many lookups a script made", () => {
+	it("says how many steps a script made", () => {
 		// A run_script block as the store holds it once its result, with the script's steps, has arrived.
 		const block = {
 			id: "s1",
@@ -84,7 +84,7 @@ describe("ProcessingToolRow summary", () => {
 		};
 		const row = { id: "s1", status: "success", labelPrefix: "Ran a script", target: null, hasTarget: false, reason: "", appliesTo: null, block };
 
-		expect(mount(ProcessingToolRow, { props: { row } }).find(".timeline-meta").text()).toBe("2 lookups · 256ms");
+		expect(mount(ProcessingToolRow, { props: { row } }).find(".timeline-meta").text()).toBe("2 steps · 256ms");
 	});
 
 	it("opens onto the call's summary", async () => {

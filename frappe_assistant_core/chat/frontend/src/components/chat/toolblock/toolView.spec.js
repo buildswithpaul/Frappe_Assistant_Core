@@ -444,14 +444,14 @@ describe("scriptSteps", () => {
 	});
 
 	it("counts every call of a script that looped past the steps it lists", () => {
-		expect(stepMeta({ ...script([step(), step()]), calls: 300 })).toBe("300 lookups · 1.2s");
+		expect(stepMeta({ ...script([step(), step()]), calls: 300 })).toBe("300 steps · 1.2s");
 		// A count that is not more than the listed steps says nothing new.
-		expect(stepMeta({ ...script([step(), step()]), calls: 1 })).toBe("2 lookups · 1.2s");
+		expect(stepMeta({ ...script([step(), step()]), calls: 1 })).toBe("2 steps · 1.2s");
 	});
 
-	it("says how many lookups a script made beside its row", () => {
-		expect(stepMeta(script([step(), step(), step()]))).toBe("3 lookups · 1.2s");
-		expect(stepMeta(script([step()]))).toBe("1 lookup · 1.2s");
+	it("says how many steps a script made beside its row", () => {
+		expect(stepMeta(script([step(), step(), step()]))).toBe("3 steps · 1.2s");
+		expect(stepMeta(script([step()]))).toBe("1 step · 1.2s");
 		// A script run on a runtime from before script steps.
 		expect(stepMeta(script(undefined))).toBe("1.2s");
 	});
