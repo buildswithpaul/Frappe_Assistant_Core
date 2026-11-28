@@ -103,3 +103,22 @@ describe("CodePreview with minified code", () => {
 		expect(wrapper.find(".code-scroll").attributes("style") || "").not.toContain("max-height");
 	});
 });
+
+describe("CodePreview numbered lines", () => {
+	it("numbers each line and keeps a string that runs over lines coloured as a string", async () => {
+		const wrapper = mount(CodePreview, { props: { code: 'text = """one\nif two"""\nx = 1', language: "python", numbered: true } });
+		await ensureHljs();
+		await flushPromises();
+
+		const lines = wrapper.findAll(".code-line");
+		expect(lines.map((line) => line.text())).toEqual(['text = """one', 'if two"""', "x = 1"]);
+		expect(lines[1].find(".hljs-string").text()).toBe('if two"""');
+		expect(lines[1].find(".hljs-keyword").exists()).toBe(false);
+	});
+
+	it("offers Copy only where the browser has a clipboard", () => {
+		// jsdom, like a site served over plain http, has no navigator.clipboard.
+		const wrapper = mount(CodePreview, { props: { code: "x = 1", language: "python", copyable: true } });
+		expect(wrapper.findAll(".code-toggle").some((button) => button.text() === "Copy")).toBe(false);
+	});
+});

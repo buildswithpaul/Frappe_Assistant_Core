@@ -5,9 +5,14 @@
 				{{ label }}
 				<span class="code-meta">{{ meta }}</span>
 			</span>
-			<button v-if="collapsible" type="button" class="code-toggle" :aria-expanded="expanded" @click="expanded = !expanded">
-				{{ expanded ? __("Show less") : showAllLabel }}
-			</button>
+			<span class="code-actions">
+				<button v-if="copyable && canCopy" type="button" class="code-toggle" @click="copy">
+					{{ copied ? __("Copied") : __("Copy") }}
+				</button>
+				<button v-if="collapsible" type="button" class="code-toggle" :aria-expanded="expanded" @click="expanded = !expanded">
+					{{ expanded ? __("Show less") : showAllLabel }}
+				</button>
+			</span>
 		</div>
 		<!-- Collapsed still scrolls: every line of code the card asks about stays reachable. -->
 		<div
@@ -17,7 +22,8 @@
 			tabindex="0"
 			:aria-label="label"
 		>
-			<pre v-if="!diffRows"><code v-html="highlighted"></code></pre>
+			<pre v-if="numbered && !diffRows" class="code-numbered"><code><span v-for="(html, i) in numberedRows" :key="i" class="code-line" v-html="html"></span></code></pre>
+			<pre v-else-if="!diffRows"><code v-html="highlighted"></code></pre>
 			<pre v-else><code><span v-for="(row, i) in diffRows" :key="i" class="diff-line" :class="`diff-${row.type}`"><span class="diff-mark">{{ MARKS[row.type] }}</span><span v-html="row.html"></span></span></code></pre>
 		</div>
 	</div>
@@ -27,6 +33,7 @@
 import { computed, onMounted, ref } from "vue";
 import { __ } from "@/utils/i18n";
 import { ensureHljs, highlightCode } from "@/utils/markdown";
+import { highlightedLines } from "./highlightLines";
 import { lineDiff } from "./lineDiff";
 
 const props = defineProps({
@@ -36,6 +43,9 @@ const props = defineProps({
 	label: { type: String, default: "" },
 	// Stored code, when the card is updating it: switches to an old-vs-new line diff.
 	previous: { type: String, default: null },
+	// Line numbers in the margin, for code a person may need to point at.
+	numbered: { type: Boolean, default: false },
+	copyable: { type: Boolean, default: false },
 });
 
 const MARKS = { same: " ", del: "-", add: "+" };
@@ -55,6 +65,22 @@ const diff = computed(() => (props.previous === null ? null : lineDiff(props.pre
 const diffRows = computed(
 	() => diff.value && diff.value.map((row) => ({ ...row, html: highlightCode(row.text, highlightLanguage.value) })),
 );
+
+const numberedRows = computed(() => (props.numbered ? highlightedLines(highlighted.value).map((line) => line || " ") : []));
+
+const COPIED_MS = 1500;
+// A site served over plain http has no clipboard: no button is better than one that does nothing.
+const canCopy = typeof navigator !== "undefined" && typeof navigator.clipboard?.writeText === "function";
+const copied = ref(false);
+async function copy() {
+	try {
+		await navigator.clipboard.writeText(props.code);
+		copied.value = true;
+		setTimeout(() => (copied.value = false), COPIED_MS);
+	} catch {
+		// The browser refused (a denied permission): the code stays selectable.
+	}
+}
 
 const lineCount = computed(() => (diff.value ? diff.value.length : props.code.split("\n").length));
 const collapsible = computed(
@@ -104,6 +130,11 @@ const meta = computed(() => {
 	color: var(--ql-text-muted);
 }
 
+.code-actions {
+	display: inline-flex;
+	flex-shrink: 0;
+	gap: 12px;
+}
 .code-toggle {
 	flex-shrink: 0;
 	background: transparent;
@@ -145,6 +176,25 @@ pre {
 	overflow-wrap: anywhere;
 }
 
+.code-numbered {
+	counter-reset: code-line;
+}
+.code-line {
+	display: block;
+	position: relative;
+	min-height: 1.55em;
+	padding-left: 5ch;
+}
+.code-line::before {
+	counter-increment: code-line;
+	content: counter(code-line);
+	position: absolute;
+	left: 0;
+	width: 3.5ch;
+	text-align: right;
+	color: var(--ql-text-muted);
+	user-select: none;
+}
 .diff-line {
 	display: block;
 	min-height: 1.55em;

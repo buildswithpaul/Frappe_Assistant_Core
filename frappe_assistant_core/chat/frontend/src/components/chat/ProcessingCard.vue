@@ -316,8 +316,7 @@ const summaryText = computed(() =>
 }
 
 /* Remove borders from nested blocks inside the card */
-.processing-card-content :deep(.thinking-block),
-.processing-card-content :deep(.tool-block) {
+.processing-card-content :deep(.thinking-block) {
 	margin: 0;
 	border: none;
 	border-radius: 0;

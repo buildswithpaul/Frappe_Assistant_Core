@@ -38,6 +38,12 @@
   --ql-warning: #B8791A;
   --ql-danger: #B4453A;
 
+  /* ---- Code on a light surface (tool blocks) ---- */
+  --ql-code-keyword: #8A3F7A;
+  --ql-code-string: #2F6F3E;
+  --ql-code-number: #9A5B13;
+  --ql-code-title: #1F5FA8;
+
   /* ---- Your FAC: one colour per power, in AR's order ---- */
   --ql-power-1: #0F6E5C;
   --ql-power-2: #3566B0;
@@ -125,6 +131,11 @@
   --ql-warning: #D6A14A;
   --ql-danger: #D66A5E;
 
+  --ql-code-keyword: #D09CC4;
+  --ql-code-string: #9CCB8A;
+  --ql-code-number: #E0B36A;
+  --ql-code-title: #8AB8EC;
+
   --ql-power-1: #2DAA8F;
   --ql-power-2: #6E9BE6;
   --ql-power-3: #A08BEA;
@@ -170,6 +181,11 @@
   --ql-success: #0E5C39;
   --ql-warning: #8A5A0F;
   --ql-danger: #8A2A22;
+
+  --ql-code-keyword: #6B1F5E;
+  --ql-code-string: #1E5A2C;
+  --ql-code-number: #7A4208;
+  --ql-code-title: #12468A;
 
   --ql-power-1: #0B5A4B;
   --ql-power-2: #1F4E94;
