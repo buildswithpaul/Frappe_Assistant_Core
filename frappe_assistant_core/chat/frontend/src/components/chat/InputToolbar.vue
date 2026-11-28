@@ -52,6 +52,30 @@
 				<span class="pill-label">{{ thinkingLabel }}</span>
 			</button>
 
+			<button
+				v-if="autoApproveAvailable"
+				@click="$emit('toggle-auto-approve')"
+				class="toolbar-btn toolbar-btn-pill"
+				:class="{ 'toolbar-btn-active': autoApprove }"
+				:disabled="autoApproveSaving"
+				:aria-pressed="autoApprove"
+				aria-label="Toggle auto-approve"
+				data-auto-approve-toggle
+				:title="
+					autoApprove
+						? 'Auto-approve is on: everyday changes run without asking and are listed in the reply. Submitting, deleting, emailing, publishing and admin changes still ask.'
+						: 'Auto-approve is off: every change asks first.'
+				"
+			>
+				<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+						d="M12 3l7 3v5c0 4.4-2.9 8.4-7 10-4.1-1.6-7-5.6-7-10V6l7-3z" />
+					<path v-if="autoApprove" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+						d="M9 12l2 2 4-4" />
+				</svg>
+				<span class="pill-label">Auto-approve</span>
+			</button>
+
 			<MicButton
 				@transcribed="$emit('transcribed', $event)"
 				@error="$emit('voice-error', $event)"
@@ -155,12 +179,18 @@ defineProps({
 	thinkingOpen: { type: Boolean, default: false },
 	webSearchAvailable: { type: Boolean, default: false },
 	thinkingAvailable: { type: Boolean, default: true },
+	// Auto-approve mode: shown only when this site's FAC Cloud offers it. `autoApprove` is whether
+	// it applies to the next message, which it does not until its notice has been seen.
+	autoApproveAvailable: { type: Boolean, default: false },
+	autoApprove: { type: Boolean, default: false },
+	autoApproveSaving: { type: Boolean, default: false },
 });
 
 defineEmits([
 	"toggle-plus",
 	"toggle-web-search",
 	"toggle-thinking",
+	"toggle-auto-approve",
 	"transcribed",
 	"voice-error",
 	"toggle-markdown",

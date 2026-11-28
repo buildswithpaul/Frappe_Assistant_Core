@@ -27,11 +27,42 @@ from frappe_assistant_core.tests.base_test import (
 from frappe_assistant_core.utils.change_facts import change_facts
 from frappe_assistant_core.utils.customisation import customisation_impact
 
+SUBMITTABLE_TEST_DOCTYPE = "FAC Test Submittable"
+
+
+def ensure_submittable_test_doctype() -> str:
+    """A submittable custom DocType. Created once and kept, as ensure_custom_test_doctype's is:
+    creating a DocType runs DDL, which commits."""
+    if not frappe.db.exists("DocType", SUBMITTABLE_TEST_DOCTYPE):
+        frappe.get_doc(
+            {
+                "doctype": "DocType",
+                "name": SUBMITTABLE_TEST_DOCTYPE,
+                "module": "Custom",
+                "custom": 1,
+                "is_submittable": 1,
+                "fields": [{"fieldname": "title", "label": "Title", "fieldtype": "Data"}],
+                "permissions": [
+                    {
+                        "role": "System Manager",
+                        "read": 1,
+                        "write": 1,
+                        "create": 1,
+                        "delete": 1,
+                        "submit": 1,
+                        "cancel": 1,
+                    }
+                ],
+            }
+        ).insert(ignore_permissions=True)
+    return SUBMITTABLE_TEST_DOCTYPE
+
 
 class TestChangeFacts(BaseAssistantTest):
     @classmethod
     def setUpClass(cls):
         ensure_custom_test_doctype()
+        ensure_submittable_test_doctype()
         super().setUpClass()
 
     def setUp(self):
@@ -53,6 +84,8 @@ class TestChangeFacts(BaseAssistantTest):
                 "affects_others": False,
                 "exists": None,
                 "bulk": False,
+                "target_submitted": False,
+                "outbound_message": False,
             },
         )
 
@@ -286,3 +319,94 @@ class TestChangeFacts(BaseAssistantTest):
             self.assertEqual(change_facts("create_document", {"doctype": "Note"}), {})
         message = logger.return_value.warning.call_args.args[0]
         self.assertIn("Note", message)
+
+    def test_an_edit_of_a_submitted_or_cancelled_record_is_reported(self):
+        doc = frappe.get_doc({"doctype": SUBMITTABLE_TEST_DOCTYPE, "title": "x"}).insert()
+        edit = {"doctype": SUBMITTABLE_TEST_DOCTYPE, "name": doc.name, "data": {"title": "y"}}
+
+        self.assertIs(change_facts("update_document", edit)["target_submitted"], False)
+        doc.submit()
+        self.assertIs(change_facts("update_document", edit)["target_submitted"], True)
+        doc.cancel()
+        self.assertIs(change_facts("update_document", edit)["target_submitted"], True)
+
+    def test_a_create_and_a_record_that_cannot_be_submitted_are_never_a_submitted_target(self):
+        new = {"doctype": SUBMITTABLE_TEST_DOCTYPE, "data": {"title": "x"}}
+        self.assertIs(change_facts("create_document", new)["target_submitted"], False)
+        note = {"doctype": "Note", "name": "no-such-note", "data": {"title": "x"}}
+        self.assertIs(change_facts("update_document", note)["target_submitted"], False)
+
+    def test_an_edit_that_names_no_record_of_a_submittable_doctype_counts_as_submitted(self):
+        # FAC cannot show it is a draft, so auto-approve mode must not run it unasked.
+        unnamed = {"doctype": SUBMITTABLE_TEST_DOCTYPE, "data": {"title": "x"}}
+        self.assertIs(change_facts("update_document", unnamed)["target_submitted"], True)
+        missing = {"doctype": SUBMITTABLE_TEST_DOCTYPE, "name": "no-such-record", "data": {}}
+        self.assertIs(change_facts("update_document", missing)["target_submitted"], False)
+
+    def test_a_record_that_is_a_message_going_out_is_reported(self):
+        for doctype in ("Communication", "Email Queue", "Notification Log"):
+            facts = change_facts("create_document", {"doctype": doctype, "data": {}})
+            self.assertIs(facts["outbound_message"], True, doctype)
+        self.assertIs(
+            change_facts("create_document", {"doctype": "ToDo", "data": {}})["outbound_message"], False
+        )
+
+    def test_a_doctype_named_in_another_case_gets_the_same_facts(self):
+        # The database finds "notification log"; the doctype sets are matched exactly.
+        for doctype in ("Notification Log", "ToDo", "User", "Server Script"):
+            exact = change_facts("create_document", {"doctype": doctype, "data": {}})
+            for spelling in (doctype.lower(), doctype.upper()):
+                self.assertEqual(
+                    change_facts("create_document", {"doctype": spelling, "data": {}}), exact, spelling
+                )
+        self.assertEqual(change_facts("create_document", {"doctype": "No Such DocType", "data": {}}), {})
+
+    def test_every_batch_shape_is_a_batch(self):
+        # documents may repeat its entries' doctype at the top (seen live, 2026-11-20), and each
+        # entry can submit or publish, so the facts of a single record must not stand for it.
+        entry = {"doctype": "Note", "data": {"title": "x", "docstatus": 1}}
+        for batch in (
+            {"doctype": "Note", "documents": [entry]},
+            {"doctype": "Note", "records": [{"title": "x"}]},
+            {"doctype": "Note", "names": ["a", "b"], "data": {"title": "x"}},
+            {"doctype": "Note", "import_session": "IMP-1", "planned_masters": ["x"]},
+            {"doctype": "Note", "data": {"title": "x"}, "an_input_fac_does_not_know": 1},
+        ):
+            self.assertIs(change_facts("create_document", batch)["bulk"], True, batch)
+        single = {"doctype": "Note", "name": "x", "data": {"title": "y"}, "validate_only": True}
+        self.assertIs(change_facts("update_document", single)["bulk"], False)
+        self.assertIs(change_facts("update_document", {**single, "edits": []})["bulk"], False)
+
+    def test_saving_a_workflow_state_is_a_transition(self):
+        # An admin creates an active Workflow for the doctype in Desk. Its state field is an
+        # existing one here: a new field would alter the table, which commits.
+        if not frappe.db.exists("Workflow State", "FAC Facts Draft"):
+            frappe.get_doc({"doctype": "Workflow State", "workflow_state_name": "FAC Facts Draft"}).insert(
+                ignore_permissions=True
+            )
+        frappe.get_doc(
+            {
+                "doctype": "Workflow",
+                "workflow_name": "FAC facts state workflow",
+                "document_type": "Note",
+                "is_active": 1,
+                "workflow_state_field": "title",
+                "states": [{"state": "FAC Facts Draft", "doc_status": "0", "allow_edit": "All"}],
+            }
+        ).insert(ignore_permissions=True)
+
+        moves = {"doctype": "Note", "name": "x", "data": {"title": "FAC Facts Draft"}}
+        self.assertIs(change_facts("update_document", moves)["submits"], True)
+        plain = {"doctype": "Note", "name": "x", "data": {"content": "y"}}
+        self.assertIs(change_facts("update_document", plain)["submits"], False)
+
+    def test_an_edit_of_a_record_that_is_already_public_affects_others(self):
+        note = frappe.get_doc({"doctype": "Note", "title": "FAC facts public note", "public": 1}).insert()
+        quiet = frappe.get_doc({"doctype": "Note", "title": "FAC facts quiet note"}).insert()
+
+        def affects(name):
+            edit = {"doctype": "Note", "name": name, "data": {"content": "x"}}
+            return change_facts("update_document", edit)["affects_others"]
+
+        self.assertIs(affects(note.name), True)
+        self.assertIs(affects(quiet.name), False)

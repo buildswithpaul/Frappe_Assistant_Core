@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { api } from "@/api/client";
+import { useApprovalModeStore } from "@/stores/approvalModeStore";
 import { useProjectsStore } from "@/stores/projectsStore";
 import { logger } from "@/utils/logger";
 import { siteRefusal } from "@/utils/siteRefusal";
@@ -421,6 +422,7 @@ export const useUserStore = defineStore("user", () => {
 			// until the next full reload.
 			outstanding.value = data.outstanding || null;
 			setUploadLimit(data.upload_limit);
+			useApprovalModeStore().apply(data.approval_mode);
 
 			// Hydrate capabilities
 			if (data.capabilities) {

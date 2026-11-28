@@ -151,7 +151,16 @@ def initialize_spa() -> dict:
         "system_timezone": get_system_timezone(),
         # the largest chat attachment, so the composer can say so before uploading (#33987)
         "upload_limit": _upload_limit(),
+        # The composer's auto-approve switch. Read after the capabilities above are cached,
+        # since whether the runtime offers the mode comes from that cache.
+        "approval_mode": _approval_mode_state(),
     }
+
+
+def _approval_mode_state() -> dict:
+    from frappe_assistant_core.chat.approval_mode import state
+
+    return state(frappe.session.user)
 
 
 def _upload_limit() -> int:
@@ -468,6 +477,7 @@ def _default_capabilities() -> dict:
             "web_search": False,
             "project_documents": False,
             "project_memory": False,
+            "auto_approve": False,
         },
         "marketplace": {
             "marketplace_enabled": False,

@@ -13,6 +13,7 @@
 
 import { baseCall, getCall } from "./_core";
 
+import { approvalMode } from "./domains/approvalMode";
 import { analytics } from "./domains/analytics";
 import { billing } from "./domains/billing";
 import { capabilities } from "./domains/capabilities";
@@ -44,6 +45,7 @@ import { users } from "./domains/users";
 import { workflows } from "./domains/workflows";
 
 export const api = {
+	approvalMode,
 	// Low-level escape hatches for callers that need to hit an arbitrary
 	// whitelisted endpoint without going through a domain helper.
 	call: baseCall,

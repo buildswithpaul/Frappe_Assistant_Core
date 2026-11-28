@@ -591,13 +591,18 @@ def _write_message_blocks(message: str, blocks: list[dict]) -> None:
     frappe.db.set_value("FAC Chat Message", message, "blocks", json.dumps(blocks))
 
 
+# The changes a block may list: a record the chat created, which Undo deletes, and a record it
+# updated in auto-approve mode, which has no Undo (the earlier values are not kept).
+_CHANGE_KINDS = {"create": "delete", "update": None}
+
+
 def normalise_changes(changes: Any) -> list[dict]:
     """The changes AR reported that are safe to list and to offer Undo for.
 
     AR's payload is untrusted input to the block that gates ``undo_change``'s deletes. Only
-    entries with a non-empty string doctype and name survive, with the one action/undo pair
-    P1 produces (create/delete); an entry naming any other action or undo is dropped. Only
-    doctype, name, action and undo are kept (the block adds ``undone``).
+    entries with a non-empty string doctype and name survive, with an action/undo pair of
+    ``_CHANGE_KINDS``; an entry naming any other action or undo is dropped. Only doctype,
+    name, action and undo are kept (the block adds ``undone``).
     """
     if not isinstance(changes, list):
         return []
@@ -608,16 +613,10 @@ def normalise_changes(changes: Any) -> list[dict]:
         doctype, name = change.get("doctype"), change.get("name")
         if not (isinstance(doctype, str) and doctype and isinstance(name, str) and name):
             continue
-        if change.get("action", "create") != "create" or change.get("undo", "delete") != "delete":
+        action = change.get("action", "create")
+        if action not in _CHANGE_KINDS or change.get("undo", "delete") != _CHANGE_KINDS[action]:
             continue
-        clean.append(
-            {
-                "doctype": doctype,
-                "name": name,
-                "action": "create",
-                "undo": "delete",
-            }
-        )
+        clean.append({"doctype": doctype, "name": name, "action": action, "undo": _CHANGE_KINDS[action]})
     return clean
 
 
@@ -660,7 +659,13 @@ def find_open_change(message: str, doctype: str, name: str) -> dict | None:
         if block.get("type") != CHANGES_BLOCK:
             continue
         for change in block.get("changes", []):
-            if change.get("doctype") == doctype and change.get("name") == name and not change.get("undone"):
+            if (
+                change.get("doctype") == doctype
+                and change.get("name") == name
+                and not change.get("undone")
+                # Only a record the chat created can be undone: Undo deletes it.
+                and change.get("undo") == "delete"
+            ):
                 return change
     return None
 

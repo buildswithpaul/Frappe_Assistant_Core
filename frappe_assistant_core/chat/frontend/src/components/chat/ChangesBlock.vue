@@ -14,7 +14,7 @@
 					</span>
 					<span v-if="change.undone" class="cb-state">{{ __("Undone") }}</span>
 					<button
-						v-else
+						v-else-if="change.undo === 'delete'"
 						type="button"
 						class="cb-undo"
 						:disabled="isStreaming || isBusy(change)"
@@ -54,6 +54,8 @@ const isBusy = (change) => Boolean(busy[keyOf(change)]);
 
 function changeLabel(change) {
 	if (change.action === "create") return __("Created {0}", [change.doctype]);
+	// An update made in auto-approve mode. It has no Undo: the earlier values are not kept.
+	if (change.action === "update") return __("Updated {0}", [change.doctype]);
 	return change.doctype;
 }
 

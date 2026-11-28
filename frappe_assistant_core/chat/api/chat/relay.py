@@ -28,6 +28,7 @@ from frappe.query_builder import DocType
 
 from frappe_assistant_core.chat import credit_status_cache
 from frappe_assistant_core.chat.api.chat import live_turn, relay_shutdown
+from frappe_assistant_core.chat.approval_mode import turn_approval_mode
 
 from .._helpers import (
     _not_registered_error,
@@ -47,14 +48,17 @@ def _accepts_kwarg(stream_chat, name: str) -> bool:
 
 
 def _sdk_composer_kwargs(
-    stream_chat, web_search, thinking_enabled, reasoning_effort, confirm_low_balance=None
+    stream_chat, web_search, thinking_enabled, reasoning_effort, confirm_low_balance=None, approval_mode=None
 ) -> dict:
-    """Keyword args for the SDK's stream_chat, omitting reasoning_effort and
-    confirm_low_balance when the installed SDK predates them (it would raise
-    TypeError on an unknown kwarg). FAC pins the SDK exactly, so this only
+    """Keyword args for the SDK's stream_chat, omitting reasoning_effort,
+    confirm_low_balance and approval_mode when the installed SDK predates them (it
+    would raise TypeError on an unknown kwarg). FAC pins the SDK exactly, so this only
     matters for editable / mispinned installs."""
     global _reasoning_effort_drop_logged, _confirm_low_balance_drop_logged
     kwargs = {"web_search": web_search, "thinking_enabled": thinking_enabled}
+    # Dropped without a word on an older SDK: every write then asks, as it did before the mode.
+    if approval_mode is not None and _accepts_kwarg(stream_chat, "approval_mode"):
+        kwargs["approval_mode"] = approval_mode
     if reasoning_effort is not None:
         if _accepts_kwarg(stream_chat, "reasoning_effort"):
             kwargs["reasoning_effort"] = reasoning_effort
@@ -1049,7 +1053,14 @@ def _relay_ar_interrupt_resume(
                 model_id=model_id,
                 system_prompt_addendum=system_prompt_addendum,
                 context=context,
-                **_sdk_composer_kwargs(client.stream_chat, web_search, thinking_enabled, reasoning_effort),
+                **_sdk_composer_kwargs(
+                    client.stream_chat,
+                    web_search,
+                    thinking_enabled,
+                    reasoning_effort,
+                    # The hook that decides each write runs again on a resume.
+                    approval_mode=turn_approval_mode(user, client_type),
+                ),
             ),
             session_id,
             cancelled=lambda: is_cancelled(session_id) or relay_shutdown.should_give_up(),
@@ -1736,7 +1747,12 @@ def _relay_ar_stream(
                 continue_from_message_id=continue_from_message_id,
                 message_id=continue_from_message_id,
                 **_sdk_composer_kwargs(
-                    client.stream_chat, web_search, thinking_enabled, reasoning_effort, confirm_low_balance
+                    client.stream_chat,
+                    web_search,
+                    thinking_enabled,
+                    reasoning_effort,
+                    confirm_low_balance,
+                    approval_mode=turn_approval_mode(user, client_type),
                 ),
             ),
             session_id,
