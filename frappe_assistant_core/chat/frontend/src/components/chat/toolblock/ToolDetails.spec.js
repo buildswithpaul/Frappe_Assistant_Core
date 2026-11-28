@@ -52,6 +52,73 @@ describe("ToolDetails", () => {
 		expect(wrapper.find("table").exists()).toBe(false);
 	});
 
+	// What the runtime sends with a script's result for each call the script made.
+	const STEPS = [
+		{ tool_name: "list_documents", input: { doctype: "Customer", limit: 2 }, status: "success", duration_ms: 31, count: 40, returned: 2, result: { data: [{ name: "CUST-1" }, { name: "CUST-2" }], total_count: 40 }, error: null },
+		{ tool_name: "get_document", input: { doctype: "Customer", name: "CUST-9" }, status: "error", duration_ms: 12, count: null, returned: null, result: null, error: "Customer CUST-9 not found" },
+		{ tool_name: "get_document", input: { doctype: "Supplier", name: "S-1" }, status: "stopped", duration_ms: null, count: null, returned: null, result: null, error: null },
+	];
+
+	it("opens a script that reports its calls on what it did, in plain words", async () => {
+		const wrapper = mount(ToolDetails, { props: { block: { ...SCRIPT, steps: STEPS } } });
+
+		expect(wrapper.findAll(".details-tab").map((button) => button.text())).toEqual(["What it did", "Code", "Output"]);
+		expect(wrapper.findAll(".step-label").map((label) => label.text())).toEqual([
+			"Listed records → Customer",
+			"Read record → Customer",
+			"Read record → Supplier",
+		]);
+		expect(wrapper.findAll(".step-meta").map((meta) => meta.text())).toEqual(["40 found · 31ms"]);
+		expect(wrapper.find(".step-reason").text()).toBe("Customer CUST-9 not found");
+		expect(wrapper.findAll(".script-step").map((row) => row.find(".status-chip").classes().find((name) => name.startsWith("chip-")))).toEqual([
+			"chip-success",
+			"chip-error",
+			"chip-stopped",
+		]);
+	});
+
+	it("opens a step onto what it asked for and a preview of what came back", async () => {
+		const wrapper = mount(ToolDetails, { props: { block: { ...SCRIPT, steps: STEPS } } });
+
+		await wrapper.findAll(".step-line")[0].trigger("click");
+
+		expect(wrapper.findAll(".summary-pills li").map((pill) => pill.text())).toEqual(["Up to 2"]);
+		expect(wrapper.findAll("tbody tr")).toHaveLength(2);
+		expect(wrapper.find(".record-note").text()).toContain("2 of 40 returned.");
+
+		await wrapper.findAll(".step-line")[2].trigger("click");
+		expect(wrapper.findAll(".summary-plain").at(-1).text()).toContain("did not finish");
+	});
+
+	it("says when a script made more lookups than it lists, and skips a step the chat has no row for", () => {
+		const steps = [...STEPS, { tool_name: "get_skill", input: {}, status: "success" }];
+		const wrapper = mount(ToolDetails, { props: { block: { ...SCRIPT, steps, calls: 120 } } });
+
+		expect(wrapper.findAll(".step-label")).toHaveLength(3);
+		expect(wrapper.find(".steps-more").text()).toBe("The first 3 of 120 lookups.");
+	});
+
+	it("does not point a step's reader at a Raw tab the step does not have", async () => {
+		const wide = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`f${i}`, i]));
+		const steps = [{ ...STEPS[0], result: { data: [wide] }, count: 1, returned: 1 }];
+		const wrapper = mount(ToolDetails, { props: { block: { ...SCRIPT, steps } } });
+
+		await wrapper.find(".step-line").trigger("click");
+
+		expect(wrapper.find(".record-note").text()).toBe("1 record. 3 more columns.");
+	});
+
+	it("gains the What it did tab when the steps arrive, without moving the reader", async () => {
+		// The drawer was opened while the script was still running: no result and no steps yet.
+		const wrapper = mount(ToolDetails, { props: { block: { ...SCRIPT, status: "running", result: null } } });
+		expect(wrapper.findAll(".details-tab").map((button) => button.text())).toEqual(["Code", "Output"]);
+
+		await wrapper.setProps({ block: { ...SCRIPT, steps: STEPS } });
+
+		expect(wrapper.findAll(".details-tab").map((button) => button.text())).toEqual(["What it did", "Code", "Output"]);
+		expect(tab(wrapper, "Code").attributes("aria-pressed")).toBe("true");
+	});
+
 	it("shows a script as numbered lines of code, not as a quoted string", () => {
 		const wrapper = mount(ToolDetails, { props: { block: SCRIPT } });
 

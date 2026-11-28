@@ -244,6 +244,15 @@ export function createBlockHandlers({
 		});
 	}
 
+	// The calls a script made, sent when the script ends and ahead of its result.
+	function handleToolCallSteps(data) {
+		const lastMsg = findActiveMessage(messages.value);
+		const block = lastMsg?.blocks?.find((b) => b.type === "tool_call" && b.id === data.tool_id);
+		if (!block || !Array.isArray(data.steps)) return;
+		block.steps = data.steps;
+		if (Number.isInteger(data.calls)) block.calls = data.calls;
+	}
+
 	function handleToolCallResult(data) {
 		const lastMsg = findActiveMessage(messages.value);
 		if (!lastMsg || !lastMsg.blocks) return;
@@ -596,6 +605,7 @@ export function createBlockHandlers({
 		completeThinkingBlock,
 		handleToolCallStart,
 		handleToolCallResult,
+		handleToolCallSteps,
 		handleToolCancelled,
 		handleApprovalRequired,
 		markInterruptExpired,

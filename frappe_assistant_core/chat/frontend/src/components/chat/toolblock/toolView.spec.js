@@ -11,6 +11,8 @@ import {
 	resultCount,
 	resultView,
 	scriptOutput,
+	scriptSteps,
+	stepMeta,
 } from "./toolView";
 import { formatJson } from "./formatJson";
 
@@ -366,5 +368,99 @@ describe("formatJson", () => {
 		expect(formatJson("not json")).toBe("not json");
 		const deep = "[".repeat(3000) + "]".repeat(3000);
 		expect(formatJson(deep)).toBe(deep);
+	});
+});
+
+describe("scriptSteps", () => {
+	// What the runtime sends with a script's result (assistant_runtime agent/script_steps.py).
+	const step = (extra = {}) => ({
+		tool_name: "list_documents",
+		input: { doctype: "Company", limit: 8 },
+		status: "success",
+		duration_ms: 42,
+		count: 244,
+		returned: 8,
+		result: { success: true, data: [{ name: "A" }, { name: "B" }, { name: "C" }, { name: "D" }, { name: "E" }], total_count: 244 },
+		error: null,
+		...extra,
+	});
+	const script = (steps) => ({ ...block("run_script", { code: "print(1)" }, parts("1")), steps, duration_ms: 1200 });
+
+	it("reads each step as a tool call the ordinary views understand", () => {
+		const [first] = scriptSteps(script([step()]));
+
+		expect(first.tool_name).toBe("list_documents");
+		expect(requestPills(first.input).map((pill) => `${pill.label} ${pill.value}`)).toEqual(["Up to 8"]);
+		const view = resultView(first);
+		expect(view.kind).toBe("table");
+		// Five rows are a preview of the eight the call returned, of 244 that matched.
+		expect([view.rows.length, view.returned, view.total]).toEqual([5, 8, 244]);
+		expect(resultCount(first)).toBe(244);
+		expect(stepMeta(first)).toBe("244 found · 42ms");
+	});
+
+	it("takes the numbers from the step when the preview itself carries none", () => {
+		// Another server's tool: no total_count in its result, and the preview holds 5 of its 12 rows.
+		const rows = Array.from({ length: 5 }, (_, i) => ({ id: i }));
+		const [first] = scriptSteps(script([step({ tool_name: "crm_list_deals", result: { rows }, count: 12, returned: 12 })]));
+
+		const view = resultView(first);
+		expect([view.rows.length, view.returned, view.total]).toEqual([5, 12, 12]);
+		expect(resultCount(first)).toBe(12);
+	});
+
+	it("keeps the count when the result was too large to preview", () => {
+		const [first] = scriptSteps(script([step({ result: null })]));
+
+		expect(resultView(first)).toEqual({ kind: "count", count: 244 });
+		expect(resultCount(first)).toBe(244);
+	});
+
+	it("reads a failed step's reason and a step that did not finish", () => {
+		const [failed, stopped, blocked] = scriptSteps(
+			script([
+				step({ status: "error", error: "No permission for Salary Slip", result: null, count: null, returned: null }),
+				step({ status: "stopped", result: null, count: null, returned: null, duration_ms: null }),
+				step({ status: "stopped", error: "User has blocked this tool (get document)", result: null }),
+			]),
+		);
+
+		expect(resultView(failed)).toEqual({ kind: "error", text: "No permission for Salary Slip" });
+		expect(resultView(stopped)).toEqual({ kind: "stopped" });
+		expect(stopped.stoppedReason).toBe("");
+		expect(blocked.stoppedReason).toBe("User has blocked this tool (get document)");
+		expect(stepMeta(stopped)).toBe("");
+	});
+
+	it("says a child table in a preview may hold more rows than the preview shows", () => {
+		const invoice = { name: "SINV-1", items: Array.from({ length: 5 }, (_, i) => ({ idx: i })), taxes: [{ idx: 1 }, { idx: 2 }] };
+		const [first] = scriptSteps(script([step({ tool_name: "get_document", result: { success: true, data: invoice }, count: null, returned: null })]));
+
+		expect(resultView(first).fields).toEqual([
+			{ label: "Name", value: "SINV-1" },
+			{ label: "Items", value: "5 or more rows" },
+			{ label: "Taxes", value: "2 rows" },
+		]);
+	});
+
+	it("counts every call of a script that looped past the steps it lists", () => {
+		expect(stepMeta({ ...script([step(), step()]), calls: 300 })).toBe("300 lookups · 1.2s");
+		// A count that is not more than the listed steps says nothing new.
+		expect(stepMeta({ ...script([step(), step()]), calls: 1 })).toBe("2 lookups · 1.2s");
+	});
+
+	it("says how many lookups a script made beside its row", () => {
+		expect(stepMeta(script([step(), step(), step()]))).toBe("3 lookups · 1.2s");
+		expect(stepMeta(script([step()]))).toBe("1 lookup · 1.2s");
+		// A script run on a runtime from before script steps.
+		expect(stepMeta(script(undefined))).toBe("1.2s");
+	});
+
+	it("has no steps for another tool, or for steps that are not what the runtime sends", () => {
+		expect(scriptSteps({ ...block("list_documents", {}, null), steps: [step()] })).toEqual([]);
+		expect(scriptSteps(script("three"))).toEqual([]);
+		const [odd] = scriptSteps(script([{ tool_name: 7, status: "weird", input: "x", count: -1, duration_ms: "fast" }, null]));
+		expect(odd).toMatchObject({ tool_name: "", status: "stopped", input: {}, preview: { count: null, returned: null } });
+		expect(scriptSteps(script([null, 3]))).toEqual([]);
 	});
 });

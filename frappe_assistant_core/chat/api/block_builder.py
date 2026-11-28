@@ -59,6 +59,61 @@ _STRUCTURAL_RESULT_KEYS = frozenset(
 )
 
 
+# What the runtime sends for the tool calls a script made (run_script): assistant_runtime's
+# agent/script_steps.py keeps a run to 40 steps and 16,000 characters. The same limits are held
+# here, so a runtime that sends more cannot grow a block or a socket frame past them.
+MAX_SCRIPT_STEPS = 40
+MAX_SCRIPT_STEPS_CHARS = 24000
+MAX_SCRIPT_STEP_ERROR_CHARS = 300
+_SCRIPT_STEP_KEYS = ("tool_name", "input", "status", "duration_ms", "count", "returned", "result", "error")
+
+
+def _json_size(value: Any) -> int | None:
+    """The length of ``value`` as JSON, or None when JSON has no form for a number in it.
+
+    A non-Latin character counts as one, the way the runtime counts it: counted as an escape it
+    is six, and a run of Hindi or Arabic records would read as several times its size.
+    """
+    try:
+        return len(json.dumps(value, ensure_ascii=False, allow_nan=False))
+    except (TypeError, ValueError):
+        return None
+
+
+def _bare_script_step(step: dict) -> dict:
+    """A step without its preview and arguments: its counts, and the reason if it failed."""
+    error = step.get("error")
+    return {
+        **step,
+        "result": None,
+        "input": {},
+        "error": error[:MAX_SCRIPT_STEP_ERROR_CHARS] if isinstance(error, str) else None,
+    }
+
+
+def clean_script_steps(steps: Any) -> list[dict]:
+    """A script's steps as stored on its block and sent to the browser; empty when there are none.
+
+    Anything that is not a list of steps with a tool name is dropped, not raised: the steps are
+    for show, and the script's own result still completes the tool call. Steps that are too
+    large, or that hold a number JSON has no form for, lose their previews and arguments and
+    keep their counts.
+    """
+    if not isinstance(steps, list):
+        return []
+    cleaned = [
+        {key: step.get(key) for key in _SCRIPT_STEP_KEYS}
+        for step in steps[:MAX_SCRIPT_STEPS]
+        if isinstance(step, dict) and isinstance(step.get("tool_name"), str)
+    ]
+    size = _json_size(cleaned)
+    if size is None or size > MAX_SCRIPT_STEPS_CHARS:
+        cleaned = [_bare_script_step(step) for step in cleaned]
+        if _json_size(cleaned) is None:
+            return []
+    return cleaned
+
+
 def _generate_id(prefix: str = "block") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:10]}"
 
@@ -221,6 +276,19 @@ class BlockBuilder:
         # snapshot matches what the live UI renders during streaming.
         if status == "success" and resolved_tool_name == "generate_document":
             self._maybe_attach_generated_document(result)
+
+    def add_script_steps(self, tool_id: str, steps: list[dict], calls: Any = None) -> dict | None:
+        """Put the calls a script made on its tool block. ``steps`` has been through
+        ``clean_script_steps``; ``calls`` is how many calls the script made in all, which is more
+        than the steps when it looped past what is listed. Returns the block, or None when the
+        script has none."""
+        for block in reversed(self.blocks):
+            if block.get("type") == "tool_call" and block.get("id") == tool_id:
+                block["steps"] = steps
+                if isinstance(calls, int) and not isinstance(calls, bool) and calls > len(steps):
+                    block["calls"] = calls
+                return block
+        return None
 
     def _maybe_attach_generated_document(self, result: Any) -> None:
         if not isinstance(result, dict):

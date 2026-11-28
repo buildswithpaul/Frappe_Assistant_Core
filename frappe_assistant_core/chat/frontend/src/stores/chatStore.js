@@ -1426,6 +1426,7 @@ export const useChatStore = defineStore("chat", () => {
 		completeThinkingBlock: blocks.completeThinkingBlock,
 		handleToolCallStart: blocks.handleToolCallStart,
 		handleToolCallResult: blocks.handleToolCallResult,
+		handleToolCallSteps: blocks.handleToolCallSteps,
 		handleToolCancelled: blocks.handleToolCancelled,
 		handleApprovalRequired: blocks.handleApprovalRequired,
 		resolveInteraction: blocks.resolveInteraction,
