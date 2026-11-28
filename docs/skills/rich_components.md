@@ -154,6 +154,16 @@ Submit the invoice to finalize it and create GL entries.
 - `current` (optional) — highlight the active step (e.g., `current="2"`)
 - Each `##` heading becomes a step title; content below it becomes the step body
 
+A JSON list is also accepted, so a step can carry its own status (`complete`, `current`, `pending`):
+
+```steps title="Purchase Cycle"
+[{"title": "Purchase Order", "status": "complete"},
+ {"title": "Purchase Receipt", "status": "current", "description": "Ready to submit"},
+ {"title": "Purchase Invoice"}]
+```
+
+Prefer the heading form for guides. Use the JSON list to show how far a document chain has got.
+
 ## Accordion
 
 Collapsible sections for dense content that users can expand on demand.

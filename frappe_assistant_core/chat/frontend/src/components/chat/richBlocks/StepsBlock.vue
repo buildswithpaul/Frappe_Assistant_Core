@@ -1,34 +1,23 @@
 <template>
 	<div class="steps-block">
-		<div v-if="title" class="steps-title">{{ title }}</div>
+		<div v-if="heading" class="steps-title">{{ heading }}</div>
 		<ol class="steps-list">
 			<li
 				v-for="(step, idx) in steps"
 				:key="idx"
 				class="step-item"
-				:class="{
-					'step-active': current > 0 && idx + 1 === current,
-					'step-done': current > 0 && idx + 1 < current,
-				}"
+				:class="{ 'step-active': step.state === 'active', 'step-done': step.state === 'done' }"
 			>
 				<div class="step-marker">
-					<svg
-						v-if="current > 0 && idx + 1 < current"
-						class="step-check"
-						fill="none"
-						stroke="currentColor"
-						viewBox="0 0 24 24"
-					>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2.5"
-							d="M5 13l4 4L19 7"
-						/>
+					<svg v-if="step.state === 'done'" class="step-check" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
 					</svg>
 					<span v-else class="step-number">{{ idx + 1 }}</span>
 				</div>
-				<div class="step-content" v-html="step"></div>
+				<div class="step-content">
+					<div v-if="step.titleHtml" class="step-title" v-html="step.titleHtml"></div>
+					<div v-if="step.bodyHtml" class="step-body" v-html="step.bodyHtml"></div>
+				</div>
 			</li>
 		</ol>
 	</div>
@@ -38,6 +27,7 @@
 import { computed } from "vue";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { parseSteps } from "./stepsBody";
 
 const props = defineProps({
 	title: { type: String, default: "" },
@@ -45,14 +35,15 @@ const props = defineProps({
 	body: { type: String, default: "" },
 });
 
-const steps = computed(() => {
-	if (!props.body) return [];
-	return props.body
-		.split("\n")
-		.map((line) => line.replace(/^\d+\.\s*/, "").trim())
-		.filter(Boolean)
-		.map((text) => DOMPurify.sanitize(marked.parse(text)));
-});
+const parsed = computed(() => parseSteps(props.body, props.current));
+const heading = computed(() => props.title || parsed.value.title);
+const steps = computed(() =>
+	parsed.value.steps.map((step) => ({
+		state: step.state,
+		titleHtml: step.title ? DOMPurify.sanitize(marked.parseInline(step.title)) : "",
+		bodyHtml: step.body ? DOMPurify.sanitize(marked.parse(step.body)) : "",
+	}))
+);
 </script>
 
 <style scoped>
@@ -139,8 +130,23 @@ const steps = computed(() => {
 	line-height: 1;
 }
 
+.step-title {
+	font-weight: 600;
+	color: var(--ql-text);
+}
+
+.step-body {
+	margin-top: 0.15rem;
+	color: var(--ql-text-secondary);
+}
+
+.step-body :deep(p) {
+	margin: 0;
+}
+
 .step-content {
 	flex: 1;
+	min-width: 0;
 	font-size: 0.8125rem;
 	line-height: 1.5;
 	color: var(--ql-text);
