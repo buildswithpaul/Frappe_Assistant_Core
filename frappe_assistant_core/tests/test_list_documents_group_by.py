@@ -65,6 +65,7 @@ def _create_fixture() -> None:
         {"fieldname": "category", "fieldtype": "Data", "label": "Category"},
         {"fieldname": "amount", "fieldtype": "Currency", "label": "Amount"},
         {"fieldname": "quantity", "fieldtype": "Int", "label": "Quantity"},
+        {"fieldname": "sold_on", "fieldtype": "Date", "label": "Sold On"},
         # System Manager holds no permlevel-1 permission row, so this field is out of reach.
         {"fieldname": "margin", "fieldtype": "Currency", "label": "Margin", "permlevel": 1},
         # Named in SENSITIVE_FIELDS["all_doctypes"].
@@ -99,7 +100,7 @@ class TestListDocumentsGroupBy(BaseAssistantTest):
         # The class shares one transaction, so rows from an earlier test would leak into these totals.
         frappe.db.delete(SALE)
 
-    def _sale(self, region, category, amount, quantity=1, submit=True, cancel=False):
+    def _sale(self, region, category, amount, quantity=1, submit=True, cancel=False, sold_on=None):
         doc = frappe.get_doc(
             {
                 "doctype": SALE,
@@ -107,6 +108,7 @@ class TestListDocumentsGroupBy(BaseAssistantTest):
                 "category": category,
                 "amount": amount,
                 "quantity": quantity,
+                "sold_on": sold_on,
                 "iban": 1,
             }
         ).insert(ignore_permissions=True)
@@ -153,6 +155,26 @@ class TestListDocumentsGroupBy(BaseAssistantTest):
         self.assertAlmostEqual(rows["Hardware"]["max_amount"], 1000)
         self.assertAlmostEqual(rows["Services"]["sum_amount"], 450)
         self.assertEqual(rows["Services"]["count_name"], 2)
+
+    def test_min_and_max_of_a_date_or_text_field_return_the_value(self):
+        self._sale(REGION_ALLOWED, "Hardware", 100, sold_on="2026-01-15")
+        self._sale(REGION_ALLOWED, "Services", 200, sold_on="2026-03-05")
+        self._sale(REGION_OTHER, "Hardware", 300, sold_on="2026-02-10")
+
+        latest = self._run(
+            group_by="region",
+            aggregate=[{"function": "max", "field": "sold_on"}, {"function": "min", "field": "category"}],
+            order_by="max_sold_on desc",
+        )
+        overall = self._run(aggregate=[{"function": "min", "field": "sold_on"}])
+
+        self.assertTrue(latest["success"], latest)
+        self.assertEqual(
+            [(row["group_value"], str(row["max_sold_on"]), row["min_category"]) for row in latest["rows"]],
+            [(REGION_ALLOWED, "2026-03-05", "Hardware"), (REGION_OTHER, "2026-02-10", "Hardware")],
+        )
+        self.assertTrue(overall["success"], overall)
+        self.assertEqual(str(overall["rows"][0]["min_sold_on"]), "2026-01-15")
 
     def test_group_by_alone_counts_records_per_group(self):
         self._seed()

@@ -20,6 +20,7 @@ Lists and searches Frappe documents with filtering capabilities.
 """
 
 import re
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 import frappe
@@ -448,11 +449,13 @@ def aggregate_query_fields(specs: List[Dict[str, str]], group_by: Optional[str],
     return fields
 
 
-def number(value: Any) -> Any:
-    """Decimal/None from the database as a JSON number (None stays None: MIN/MAX of nothing)."""
-    if value is None or isinstance(value, (int, float)):
-        return value
-    return float(value)
+def aggregate_value(value: Any) -> Any:
+    """A database aggregate as a JSON value.
+
+    SUM and AVG arrive as Decimal and become numbers. MIN or MAX of a date or text field is what
+    the database returned, as it is in a listed row. None stays None: MIN/MAX of nothing.
+    """
+    return float(value) if isinstance(value, Decimal) else value
 
 
 def run_grouped_query(
@@ -802,13 +805,22 @@ class DocumentList(BaseTool):
             return {"success": False, "error": str(e), "doctype": doctype}
 
         has_more = len(raw_rows) > limit
+        # What a row quotes from the user's file: a group value, or the min or max of such a field,
+        # which is one of its values (#34406).
+        file_fields = document_fields(doctype)
+        from_file = [GROUP_VALUE_KEY] if group_by in file_fields else []
+        from_file += [
+            spec["alias"]
+            for spec in specs
+            if spec["function"] in ("min", "max") and spec["field"] in file_fields
+        ]
         rows = []
         for raw in raw_rows[:limit]:
             row = {GROUP_VALUE_KEY: raw.get(group_by)} if group_by else {}
             for spec in specs:
-                row[spec["alias"]] = number(raw.get(spec["alias"]))
-            if group_by in document_fields(doctype):
-                row = fence_fields(row, (GROUP_VALUE_KEY,))  # a file's name or sheet (#34406)
+                row[spec["alias"]] = aggregate_value(raw.get(spec["alias"]))
+            if from_file:
+                row = fence_fields(row, from_file)
             rows.append(row)
 
         result = {

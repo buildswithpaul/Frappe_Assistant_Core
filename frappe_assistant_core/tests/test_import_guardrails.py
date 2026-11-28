@@ -331,6 +331,26 @@ class TestFileContentIsFenced(GuardrailCase):
         self.assertTrue(payload["success"], payload)
         self.assertFencedWherever(payload)
 
+    def test_list_documents_min_or_max_of_a_file_name_is_fenced(self):
+        # min and max return one of the field's values, here what the user's file was called
+        session = self._session_of_file_named(f"{INJECTION}.csv")
+
+        payload = self._mcp(
+            "list_documents",
+            {
+                "doctype": "FAC Import Session",
+                "aggregate": [
+                    {"function": "max", "field": "file_name"},
+                    {"function": "min", "field": "file_name"},
+                ],
+                "filters": {"name": session},
+            },
+        )
+
+        self.assertTrue(payload["success"], payload)
+        self.assertIn(INJECTION, json.dumps(payload))
+        self.assertFencedWherever(payload)
+
     def test_a_long_cell_is_cut_in_what_the_model_is_shown_and_kept_whole_in_the_file(self):
         # #34406: one huge cell can't fill the reply.
         long = "x" * 5000
