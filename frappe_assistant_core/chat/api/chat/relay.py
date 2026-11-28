@@ -237,6 +237,7 @@ def _update_faco_message_merged(
 
 from ..block_builder import (  # noqa: E402
     clean_script_steps,
+    clean_suggested_replies,
     merge_changes_block,
     normalise_changes,
     truncate_result_for_emit,
@@ -270,6 +271,7 @@ _SHARED_RELAY_EVENTS = frozenset(
         "context_summarized",
         "model_selected",
         "routing_notice",
+        "suggested_replies",
         "task_activity",
         "thinking",
         "thinking_complete",
@@ -461,6 +463,21 @@ def _dispatch_relay_event(
 
     elif event_type == "tool_call_steps":
         _relay_script_steps(data, session_id, block_builder, ar_message_id)
+
+    elif event_type == "suggested_replies":
+        # Short answers the reply offered (#35327): stored on it, so a reload shows them too.
+        replies = clean_suggested_replies(data.get("replies"))
+        if replies:
+            block_builder.set_suggested_replies(replies)
+            _emit_socket_event(
+                session_id,
+                {
+                    "event": "suggested_replies",
+                    "session_id": session_id,
+                    "message_id": ar_message_id,
+                    "replies": replies,
+                },
+            )
 
     elif event_type == "thinking":
         block_builder.add_thinking(data.get("content", ""))

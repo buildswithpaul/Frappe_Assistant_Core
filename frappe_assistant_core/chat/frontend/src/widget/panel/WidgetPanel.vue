@@ -86,6 +86,7 @@
 				@send-anyway="chatStore.sendAnyway"
 				@continue-turn="onSend({ message: __('Continue') })"
 				@unqueue="chatStore.unqueueMessage"
+				@suggest="(text) => onSend({ message: text })"
 			/>
 			<BrowserToolConfirm
 				v-for="c in confirms"

@@ -67,6 +67,7 @@
 		@continue-turn="$emit('continue-turn')"
 		@pin="(messageId) => $emit('pin', messageId)"
 		@unqueue="(id) => $emit('unqueue', id)"
+		@suggest="(text) => $emit('suggestion', text)"
 	/>
 
 	<!-- Loading state while checking registration -->

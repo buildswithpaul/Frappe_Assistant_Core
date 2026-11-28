@@ -114,6 +114,28 @@ def clean_script_steps(steps: Any) -> list[dict]:
     return cleaned
 
 
+# Suggested replies (#35327): the short answers a reply offered, shown as buttons under it. The
+# runtime keeps them to three of 80 characters; the same limits are held here.
+SUGGESTED_REPLIES_BLOCK = "suggested_replies"
+MAX_SUGGESTED_REPLIES = 3
+MAX_SUGGESTED_REPLY_CHARS = 80
+
+
+def clean_suggested_replies(replies: Any) -> list[str]:
+    """The suggested replies to store and show: non-empty, single-line strings, deduplicated,
+    within the limits. Anything else is dropped, not raised: the buttons are a convenience."""
+    if not isinstance(replies, list):
+        return []
+    clean: list[str] = []
+    for reply in replies:
+        if not isinstance(reply, str):
+            continue
+        text = " ".join(reply.split())
+        if text and len(text) <= MAX_SUGGESTED_REPLY_CHARS and text.lower() not in (c.lower() for c in clean):
+            clean.append(text)
+    return clean[:MAX_SUGGESTED_REPLIES]
+
+
 def _generate_id(prefix: str = "block") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:10]}"
 
@@ -276,6 +298,19 @@ class BlockBuilder:
         # snapshot matches what the live UI renders during streaming.
         if status == "success" and resolved_tool_name == "generate_document":
             self._maybe_attach_generated_document(result)
+
+    def set_suggested_replies(self, replies: list[str]) -> None:
+        """Put the reply's suggested answers on it (``replies`` cleaned by
+        ``clean_suggested_replies``), replacing any earlier set."""
+        self.blocks = [b for b in self.blocks if b.get("type") != SUGGESTED_REPLIES_BLOCK]
+        if replies:
+            self.blocks.append(
+                {
+                    "type": SUGGESTED_REPLIES_BLOCK,
+                    "id": _generate_id(SUGGESTED_REPLIES_BLOCK),
+                    "replies": replies,
+                }
+            )
 
     def add_script_steps(self, tool_id: str, steps: list[dict], calls: Any = None) -> dict | None:
         """Put the calls a script made on its tool block. ``steps`` has been through
