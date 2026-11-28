@@ -48,6 +48,13 @@ from .analytics import (
     get_my_usage,
 )
 
+# ── Auto-approve mode ───────────────────────────────────────────────
+from .approval_mode import (
+    acknowledge_approval_mode,
+    get_approval_mode,
+    set_approval_mode,
+)
+
 # ── Auth & Registration ─────────────────────────────────────────────
 from .auth import (
     connect_fac_mcp_server,

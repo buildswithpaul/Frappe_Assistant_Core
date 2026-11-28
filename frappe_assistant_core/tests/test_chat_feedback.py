@@ -94,7 +94,7 @@ class TestChatFeedback(BaseAssistantTest):
     def test_sdk_under_test_is_1_16_0(self):
         import assistant_runtime_sdk
 
-        self.assertEqual(assistant_runtime_sdk.__version__, "1.16.0")
+        self.assertEqual(assistant_runtime_sdk.__version__, "1.17.0")
 
     def test_rate_answer_forwards_reasons_list(self):
         self._message(self.me, message_id=OWN_MESSAGE)

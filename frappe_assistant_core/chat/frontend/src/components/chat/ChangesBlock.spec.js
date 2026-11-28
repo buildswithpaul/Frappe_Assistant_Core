@@ -49,6 +49,30 @@ describe("ChangesBlock", () => {
 		expect(row(wrapper, "TD-0001").find("button").exists()).toBe(false);
 	});
 
+	it("an update made in auto-approve mode is listed with no Undo", () => {
+		store.messages = [
+			{
+				role: "assistant",
+				message_id: "m1",
+				blocks: [
+					{
+						type: "changes_made",
+						id: "changes_made_1",
+						// As the relay stores an update the runtime ran without a card.
+						changes: [{ doctype: "Task", name: "TASK-1", action: "update", undo: null, undone: false }],
+					},
+				],
+			},
+		];
+		const wrapper = mount(ChangesBlock, {
+			props: { block: store.messages[0].blocks[0], messageId: "m1" },
+		});
+
+		expect(row(wrapper, "TASK-1").text()).toContain("Updated Task · TASK-1");
+		expect(row(wrapper, "TASK-1").find("button").exists()).toBe(false);
+		expect(row(wrapper, "TASK-1").text()).not.toContain("Undone");
+	});
+
 	it("undo calls the store and shows a refusal reason", async () => {
 		undoChange.mockResolvedValue({ success: false, reason: "Something now links to it" });
 		const wrapper = mountBlock();

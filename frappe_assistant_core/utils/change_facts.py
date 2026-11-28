@@ -45,6 +45,22 @@ MONEY_OR_STOCK_MODULES = frozenset({"Accounts", "Stock", "Payroll"})
 MESSAGING_DOCTYPES = frozenset(
     {"ToDo", "Communication", "Email Queue", "Notification Log", "Event", "Comment"}
 )
+# Doctypes whose records are themselves a message leaving the system.
+OUTBOUND_MESSAGE_DOCTYPES = frozenset(
+    {
+        "Communication",
+        "Email Queue",
+        "Notification Log",
+        "Newsletter",
+        "Email Campaign",
+        "Appointment",
+        "Raven Message",
+    }
+)
+# The inputs of a write to one record. Any other key (documents, records, names, an import
+# session, planned masters, or one FAC does not know) makes the call a batch: the facts here
+# describe a single record and cannot vouch for what a batch holds.
+SINGLE_RECORD_INPUTS = frozenset({"doctype", "name", "data", "edits", "submit", "validate_only"})
 CREDENTIAL_FIELDS = frozenset({"api_key", "api_secret"})
 # Doctypes whose records other people see as soon as they are saved.
 GO_LIVE_DOCTYPES = frozenset(
@@ -72,6 +88,8 @@ GO_LIVE_FIELDS = (
     "notify_on_login",
     "notify_on_every_login",
     "is_default",
+    "publish",
+    "show_in_website",
 )
 
 
@@ -89,20 +107,40 @@ def _facts(tool_name: str, tool_input: Any) -> Dict[str, Any]:
     if not isinstance(tool_input, dict):
         return {}
     doctype = tool_input.get("doctype")
-    if not isinstance(doctype, str) or not doctype or not frappe.db.exists("DocType", doctype):
+    if not isinstance(doctype, str) or not doctype:
+        return {}
+    # The name as stored. The database matches names without regard to case, so "notification
+    # log" finds the DocType; the sets below are matched exactly and would miss it.
+    doctype = frappe.db.get_value("DocType", doctype, "name")
+    if not doctype:
         return {}
     meta = frappe.get_meta(doctype)
     name = tool_input.get("name")
     return {
         "doctype_kind": _doctype_kind(doctype, meta),
         "is_money_or_stock": meta.module in MONEY_OR_STOCK_MODULES,
-        "submits": _submits(tool_name, tool_input),
+        "submits": _submits(tool_name, tool_input, doctype),
         "sends_messages": _sends_messages(doctype),
         "custom_doctype": bool(meta.custom),
-        "affects_others": _affects_others(doctype, tool_input),
+        "affects_others": _affects_others(doctype, tool_input)
+        or _already_live(tool_name, doctype, name, meta),
         "exists": bool(frappe.db.exists(doctype, name)) if name and tool_name != "create_document" else None,
-        "bulk": "records" in tool_input or "names" in tool_input,
+        "bulk": bool(set(tool_input) - SINGLE_RECORD_INPUTS),
+        # The two facts auto-approve mode reads: it never runs an edit of a submitted or
+        # cancelled record, or a record that is a message going out, without a card.
+        "target_submitted": _target_submitted(tool_name, doctype, name, meta),
+        "outbound_message": doctype in OUTBOUND_MESSAGE_DOCTYPES,
     }
+
+
+def _target_submitted(tool_name: str, doctype: str, name: Any, meta) -> bool:
+    """Whether the write lands on a record that is already submitted or cancelled."""
+    if tool_name == "create_document" or not meta.is_submittable:
+        return False
+    if not isinstance(name, str) or not name:
+        # An update that does not say which record cannot be shown to be a draft.
+        return True
+    return cint(frappe.db.get_value(doctype, name, "docstatus")) != 0
 
 
 def _doctype_kind(doctype: str, meta) -> str:
@@ -117,7 +155,7 @@ def _doctype_kind(doctype: str, meta) -> str:
     return "business"
 
 
-def _submits(tool_name: str, tool_input: Dict[str, Any]) -> bool:
+def _submits(tool_name: str, tool_input: Dict[str, Any], doctype: str) -> bool:
     if tool_name in ("document_action", "run_workflow"):
         # Submit, cancel, amend and every workflow transition move the document's docstatus.
         return True
@@ -125,7 +163,29 @@ def _submits(tool_name: str, tool_input: Dict[str, Any]) -> bool:
         return False
     data = tool_input.get("data")
     docstatus = data.get("docstatus") if isinstance(data, dict) else None
-    return cint(docstatus) in (1, 2) or bool(tool_input.get("submit"))
+    if cint(docstatus) in (1, 2) or bool(tool_input.get("submit")):
+        return True
+    # Saving a new workflow state is a transition (an approval, a rejection), as run_workflow is.
+    return isinstance(data, dict) and any(field in data for field in _workflow_state_fields(doctype))
+
+
+def _workflow_state_fields(doctype: str) -> list[str]:
+    """The field an active workflow of ``doctype`` keeps its state in."""
+    return frappe.get_all(
+        "Workflow", filters={"document_type": doctype, "is_active": 1}, pluck="workflow_state_field"
+    )
+
+
+def _already_live(tool_name: str, doctype: str, name: Any, meta) -> bool:
+    """Whether an edit lands on a record other people already see (published, public, a
+    default): changing it changes what they see, whichever fields the edit names."""
+    if tool_name != "update_document" or not isinstance(name, str) or not name:
+        return False
+    fields = [field for field in GO_LIVE_FIELDS if meta.has_field(field)]
+    if not fields:
+        return False
+    stored = frappe.db.get_value(doctype, name, fields, as_dict=True) or {}
+    return any(cint(stored.get(field)) for field in fields)
 
 
 def _affects_others(doctype: str, tool_input: Dict[str, Any]) -> bool:

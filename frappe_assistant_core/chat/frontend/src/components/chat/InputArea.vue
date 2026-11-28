@@ -10,6 +10,13 @@
 				:html="renderedMarkdown"
 			/>
 
+			<AutoApproveNotice
+				v-if="approvalModeStore.showNotice"
+				:saving="approvalModeStore.saving"
+				@keep="approvalModeStore.acknowledge()"
+				@turn-off="approvalModeStore.setOn(false)"
+			/>
+
 			<!-- Input Box: two rows (textarea, toolbar) -->
 			<div class="input-box-wrapper">
 				<SlashMenu
@@ -81,6 +88,10 @@
 						:thinking-open="thinkingMenuOpen"
 						:thinking-available="modelStore.thinkingHonoured"
 						:web-search-available="webSearchAvailable"
+						:auto-approve-available="approvalModeStore.available"
+						:auto-approve="approvalModeStore.active"
+						:auto-approve-saving="approvalModeStore.saving"
+						@toggle-auto-approve="approvalModeStore.setOn(!approvalModeStore.active)"
 						@toggle-plus="plusOpen = !plusOpen"
 						@toggle-web-search="composerModesStore.toggle(chatStore.currentSessionId, 'webSearch')"
 						@toggle-thinking="toggleThinkingMenu"
@@ -100,6 +111,7 @@
 import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount, defineAsyncComponent } from "vue";
 import SlashMenu from "@/components/chat/SlashMenu.vue";
 import ComposerPlusMenu from "@/components/chat/ComposerPlusMenu.vue";
+import AutoApproveNotice from "@/components/chat/AutoApproveNotice.vue";
 import ThinkingLevelMenu from "@/components/chat/ThinkingLevelMenu.vue";
 import AttachedFilePreview from "@/components/chat/AttachedFilePreview.vue";
 import InputToolbar from "@/components/chat/InputToolbar.vue";
@@ -110,6 +122,7 @@ import {
 	UPLOAD_ACCEPT_ATTR,
 } from "@/composables/useComposerAttachments";
 import { useRobotMoodStore } from "@/stores/robotMoodStore";
+import { useApprovalModeStore } from "@/stores/approvalModeStore";
 import { useComposerModesStore, LEVEL_LABELS } from "@/stores/composerModesStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useUserStore } from "@/stores/userStore";
@@ -126,6 +139,7 @@ const MarkdownPreviewPanel = defineAsyncComponent(
 const { showError } = useToast();
 const robotMoodStore = useRobotMoodStore();
 const composerModesStore = useComposerModesStore();
+const approvalModeStore = useApprovalModeStore();
 const chatStore = useChatStore();
 const userStore = useUserStore();
 const modelStore = useModelStore();

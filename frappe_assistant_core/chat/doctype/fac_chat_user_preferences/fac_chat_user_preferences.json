@@ -21,6 +21,8 @@
   "show_progress",
   "discovery_state",
   "load_tools_as_needed",
+  "auto_approve_off",
+  "auto_approve_notice_seen",
   "pinned_prompt_templates",
   "selected_model",
   "feedback_pulse_next",
@@ -134,6 +136,20 @@
    "fieldname": "load_tools_as_needed",
    "fieldtype": "Check",
    "label": "Load Tools As Needed"
+  },
+  {
+   "default": "0",
+   "fieldname": "auto_approve_off",
+   "fieldtype": "Check",
+   "label": "Auto-approve Mode Off",
+   "description": "Ticked when the user switched auto-approve mode off in the chat's input box. In the mode FACO runs ordinary creates and updates without an approval card and lists them in the reply."
+  },
+  {
+   "default": "0",
+   "fieldname": "auto_approve_notice_seen",
+   "fieldtype": "Check",
+   "label": "Auto-approve Notice Seen",
+   "description": "Ticked once the user has seen the notice explaining auto-approve mode. The mode applies only after that."
   },
   {
    "fieldname": "pinned_prompt_templates",
