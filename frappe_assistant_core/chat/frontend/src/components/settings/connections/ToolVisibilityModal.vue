@@ -146,9 +146,8 @@ function modelName(name) {
 
 // A stored preference always wins — it is the user's own last word. Absent one,
 // a tool that only reads is allowed: stopping to ask before every lookup is
-// friction without a decision behind it. Connecting a server is where the trust
-// is granted; AR seeds these preferences at connect time, and this default is
-// what the picker shows for connections made before it did.
+// friction without a decision behind it. FAC Cloud decides the same way when
+// the tool runs, on every connection, so the picker shows what will happen.
 function currentChoice(tool) {
 	if (props.blocked.includes(tool.name)) return "blocked";
 	const stored = props.preferences[modelName(tool.name)];
