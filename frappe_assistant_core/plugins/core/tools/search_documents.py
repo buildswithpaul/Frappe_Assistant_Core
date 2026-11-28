@@ -38,6 +38,22 @@ MAX_LIMIT = 100
 DEFAULT_LIMIT = 20
 
 
+#: What a successful call returns. Loose on purpose: see BaseTool.outputSchema.
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "success": {"type": "boolean"},
+        "results": {
+            "type": "array",
+            "items": {"type": "object"},
+            "description": "Without doctype each result is doctype, name and content. With doctype: name plus that DocType's search fields.",
+        },
+        "count": {"type": "integer"},
+        "has_more": {"type": "boolean"},
+    },
+}
+
+
 class SearchDocuments(BaseTool):
     """
     Unified document search.
@@ -51,6 +67,7 @@ class SearchDocuments(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "search_documents"
+        self.outputSchema = OUTPUT_SCHEMA
         self.description = (
             "Find documents by text. Omit 'doctype' to search across everything the user can read; "
             "pass 'doctype' to search within one DocType. Set purpose='link_value' to resolve a valid "

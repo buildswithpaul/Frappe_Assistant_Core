@@ -359,6 +359,10 @@ class MCPServer:
                 "inputSchema": tool["inputSchema"],
             }
 
+            # Modern era only: what a handshake-era client is sent stays as it was.
+            if modern and tool.get("outputSchema"):
+                tool_spec["outputSchema"] = tool["outputSchema"]
+
             # Add annotations if present
             if tool.get("annotations"):
                 tool_spec["annotations"] = tool["annotations"]

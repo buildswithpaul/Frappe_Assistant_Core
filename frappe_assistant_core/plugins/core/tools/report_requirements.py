@@ -118,6 +118,24 @@ def discover_filter_definitions(report_doc) -> Dict[str, Dict[str, Any]]:
     }
 
 
+#: What a successful call returns. Loose on purpose: see BaseTool.outputSchema.
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "success": {"type": "boolean"},
+        "report_name": {"type": "string"},
+        "report_type": {"type": "string"},
+        "filters_definition": {
+            "type": "array",
+            "items": {"type": "object"},
+            "description": "Each filter's fieldname, label, fieldtype, options and required.",
+        },
+        "required_filter_names": {"type": "array", "items": {"type": "string"}},
+        "optional_filter_names": {"type": "array", "items": {"type": "string"}},
+    },
+}
+
+
 class ReportRequirements(BaseTool):
     """
     Tool for analyzing report requirements, structure, and metadata.
@@ -133,6 +151,7 @@ class ReportRequirements(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "report_requirements"
+        self.outputSchema = OUTPUT_SCHEMA
         self.description = (
             "Get report metadata: required/optional filters, columns, and execution requirements "
             "for Script, Query, and Custom Reports. Use this FIRST before generate_report to learn "

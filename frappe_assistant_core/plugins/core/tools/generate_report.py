@@ -28,6 +28,34 @@ from frappe_assistant_core.core.base_tool import BaseTool
 
 from .report_tools import DEFAULT_MAX_ROWS, MAX_ROWS_CAP, ReportTools
 
+#: What a successful call returns. Loose on purpose: see BaseTool.outputSchema.
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "success": {"type": "boolean"},
+        "report_name": {"type": "string"},
+        "data": {
+            "type": "array",
+            "description": "The rows. Each is an object keyed by column fieldname or, for some reports and for summary_only, a list in column order.",
+        },
+        "columns": {
+            "type": "array",
+            "items": {"type": "object"},
+            "description": "Each column's fieldname, label and fieldtype, in order.",
+        },
+        "row_count": {"type": "integer", "description": "Rows the report has, whatever max_rows returned."},
+        "truncated": {"type": "boolean"},
+        "defaulted_filters": {
+            "type": ["object", "null"],
+            "description": "Filters FAC filled in because they were not given.",
+        },
+        "status": {
+            "type": "string",
+            "description": "Present as 'timeout' while a prepared report is still being built.",
+        },
+    },
+}
+
 
 class GenerateReport(BaseTool):
     """
@@ -43,6 +71,7 @@ class GenerateReport(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "generate_report"
+        self.outputSchema = OUTPUT_SCHEMA
 
         self.description = "Execute a Frappe report. IMPORTANT: Always call report_requirements(report_name) FIRST to get mandatory filters and valid options, then call this tool with explicit filters. Missing filters are auto-defaulted (dates, company) which often returns empty data; the filters FAC filled in come back in defaulted_filters, and your answer must state the period and company actually used (only those it lists; null means unknown, so do not cite one). If a required choice is ambiguous (which company, which period), ask the user instead of guessing. Use summary_only for totals questions: it returns the report's totals row or report_summary, or the rows with summary_unavailable when the report has neither. Supports Script Reports, Query Reports, and Custom Reports. Report Builder reports are not supported. A large prepared report is waited on for at most 15 seconds; if the result status is 'timeout', call generate_report again with the same filters to pick it up. Returns at most max_rows rows (default 500); check truncated and row_count."
         self.requires_permission = None  # Permission checked dynamically per report

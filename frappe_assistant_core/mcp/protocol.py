@@ -166,6 +166,13 @@ def set_request_state(era: str = "handshake", caps: ClientCaps | None = None) ->
     frappe.local.mcp_client_caps = caps or ClientCaps()
 
 
+def is_modern_era() -> bool:
+    """Whether the request being served is in the modern era (``set_request_state``)."""
+    import frappe
+
+    return getattr(frappe.local, "mcp_era", None) == "modern"
+
+
 def resolve_request(headers: Mapping[str, str], body: dict) -> tuple[str, ClientCaps]:
     """Decide a request's era and, in the modern era, check its headers and read its capabilities.
 

@@ -67,6 +67,21 @@ def _compact_row(row: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in row.items() if k not in CHILD_ROW_BOOKKEEPING and not _is_empty(v)}
 
 
+#: What a successful call returns. Loose on purpose: see BaseTool.outputSchema.
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "success": {"type": "boolean"},
+        "doctype": {"type": "string"},
+        "name": {"type": "string"},
+        "data": {
+            "type": "object",
+            "description": "The record's fields. A child table is a list of row objects under its fieldname, e.g. data.items.",
+        },
+    },
+}
+
+
 class DocumentGet(BaseTool):
     """
     Tool for retrieving Frappe documents.
@@ -80,6 +95,7 @@ class DocumentGet(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "get_document"
+        self.outputSchema = OUTPUT_SCHEMA
         self.description = (
             "Retrieve a specific Frappe document by its name/ID, with its child tables. Empty fields are "
             "left out, so a field that is missing is empty. Pass fields to get only those fields."
