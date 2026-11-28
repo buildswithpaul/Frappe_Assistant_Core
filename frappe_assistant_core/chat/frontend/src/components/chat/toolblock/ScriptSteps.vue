@@ -15,7 +15,7 @@
 				<ToolSummary :block="row.block" :has-raw="false" />
 			</div>
 		</li>
-		<li v-if="calls > rows.length" class="steps-more">{{ __("The first {0} of {1} lookups.", [rows.length, calls]) }}</li>
+		<li v-if="calls > rows.length" class="steps-more">{{ __("The first {0} of {1} steps.", [rows.length, calls]) }}</li>
 	</ol>
 </template>
 
