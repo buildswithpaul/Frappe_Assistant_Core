@@ -452,6 +452,10 @@ export function useStreaming() {
 				chatStore.handleChangesMadeEvent(data);
 				break;
 
+			case "suggested_replies":
+				chatStore.handleSuggestedReplies(data);
+				break;
+
 			default:
 				// Unknown event type - ignore silently
 				break;

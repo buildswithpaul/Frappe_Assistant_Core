@@ -27,6 +27,7 @@
 				@continue-turn="$emit('continue-turn')"
 				@pin="(messageId) => $emit('pin', messageId)"
 				@unqueue="(id) => $emit('unqueue', id)"
+				@suggest="(text) => $emit('suggest', text)"
 			/>
 		</template>
 
@@ -76,6 +77,7 @@ defineEmits([
 	"unqueue",
 	"send-anyway",
 	"continue-turn",
+	"suggest",
 ]);
 
 const pulse = usePulseStore();

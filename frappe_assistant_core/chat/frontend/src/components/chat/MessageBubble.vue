@@ -80,6 +80,9 @@
 			<!-- Retry: the latest turn ended in an error or an interruption -->
 			<ReportFailedTurn v-if="canRetry" :last-error="message.lastError" @retry="$emit('retry')" />
 
+			<!-- Answers the latest reply offered; a tap sends one as the user's message (#35327) -->
+			<SuggestedReplies v-if="suggested.length" :replies="suggested" @pick="(text) => $emit('suggest', text)" />
+
 			<TurnCreditNotices
 				:message="message"
 				:is-latest="isLatest"
@@ -122,6 +125,8 @@ import MessageFooter from "./MessageFooter.vue";
 import AnswerRating from "./feedback/AnswerRating.vue";
 import ReportFailedTurn from "./feedback/ReportFailedTurn.vue";
 import TurnCreditNotices from "./TurnCreditNotices.vue";
+import SuggestedReplies from "./SuggestedReplies.vue";
+import { repliesToShow } from "@/stores/chat/suggestedReplies";
 import FacoRobot from "@/components/common/FacoRobot.vue";
 import { ensureHljs } from "@/utils/markdown.js";
 import { __ } from "@/utils/i18n";
@@ -167,9 +172,14 @@ defineEmits([
 	"unqueue",
 	"send-anyway",
 	"continue-turn",
+	"suggest",
 ]);
 
 const userStore = useUserStore();
+
+const suggested = computed(() =>
+	repliesToShow(props.message, { isLatest: props.isLatest, isStreaming: props.isStreaming }),
+);
 
 // Bump on hljs load so renderBlocks re-renders with syntax highlighting
 // once the chunk arrives.

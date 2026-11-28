@@ -10,6 +10,7 @@ import { generateBlockId, findActiveMessage } from "./utils";
 import { INTERNAL_TOOLS } from "@/utils/internalTools";
 import { canTrust } from "@/utils/toolNames";
 import { mergeChanges, usableChanges } from "./changes";
+import { SUGGESTED_REPLIES_BLOCK, suggestedReplies } from "./suggestedReplies";
 
 export { INTERNAL_TOOLS };
 
@@ -139,6 +140,16 @@ export function createBlockHandlers({
 		const msg = findMessageById(data.message_id) || getOrCreateStreamingMessage();
 		if (!msg.blocks) msg.blocks = [];
 		mergeChanges(msg.blocks, changes);
+	}
+
+	// The short answers a reply offered (#35327), shown as buttons under it while it is the latest.
+	function handleSuggestedReplies(data) {
+		const replies = suggestedReplies(data?.replies);
+		if (!replies.length) return;
+		const msg = findMessageById(data.message_id) || getOrCreateStreamingMessage();
+		if (!msg.blocks) msg.blocks = [];
+		msg.blocks = msg.blocks.filter((b) => b.type !== SUGGESTED_REPLIES_BLOCK);
+		msg.blocks.push({ type: SUGGESTED_REPLIES_BLOCK, id: generateBlockId(SUGGESTED_REPLIES_BLOCK), replies });
 	}
 
 	function findMessageById(messageId) {
@@ -598,6 +609,7 @@ export function createBlockHandlers({
 		handleTaskActivity,
 		handleWorkflowCreatedEvent,
 		handleChangesMadeEvent,
+		handleSuggestedReplies,
 		handleModelSelected,
 		handleRoutingNotice,
 		handleStreamStatus,
