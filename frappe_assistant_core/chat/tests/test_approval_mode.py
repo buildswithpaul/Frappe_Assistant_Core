@@ -54,10 +54,12 @@ class TestApprovalMode(BaseAssistantTest):
         self.assertTrue(set_approval_mode(on="1")["on"])
         self.assertEqual(self.mode(), "auto")
 
-    def test_only_the_client_that_shows_the_switch_sends_it(self):
+    def test_only_the_clients_that_show_the_switch_send_it(self):
         acknowledge_approval_mode()
 
-        for client_type in ("widget", "mobile", "raven", "api", None):
+        # The Desk widget is built from the same composer as FAC Chat, switch included.
+        self.assertEqual(self.mode("widget"), "auto")
+        for client_type in ("mobile", "raven", "api", None):
             self.assertIsNone(self.mode(client_type), client_type)
 
     def test_a_runtime_that_does_not_offer_it_gets_nothing(self):
